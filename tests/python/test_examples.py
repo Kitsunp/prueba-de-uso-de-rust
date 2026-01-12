@@ -11,9 +11,9 @@ def load_engine():
 
 class ExampleUsageTests(unittest.TestCase):
     def test_basic_engine_example(self):
-        PyEngine, err = load_engine()
-        if PyEngine is None:
-            self.skipTest(f"PyEngine not available: {err}")
+        py_engine, err = load_engine()
+        if py_engine is None:
+            self.skipTest(f"py_engine not available: {err}")
         script_json = """
         {
           "events": [
@@ -27,7 +27,7 @@ class ExampleUsageTests(unittest.TestCase):
           "labels": {"start": 0, "end": 2}
         }
         """
-        engine = PyEngine(script_json)
+        engine = py_engine(script_json)
         event = engine.current_event()
         self.assertEqual(event["type"], "dialogue")
         engine.step()
