@@ -18,37 +18,41 @@ pub use security::SecurityPolicy;
 pub use state::EngineState;
 pub use visual::VisualState;
 
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 fn vn_error_to_py(err: VnError) -> pyo3::PyErr {
     let report = miette::Report::new(err);
     pyo3::exceptions::PyValueError::new_err(report.to_string())
 }
 
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 #[pymodule]
 fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     Ok(())
 }
 
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 #[pyclass]
 #[derive(Debug)]
 pub struct PyEngine {
     inner: Engine,
 }
 
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 #[pymethods]
 impl PyEngine {
     #[new]
     pub fn new(script_json: &str) -> PyResult<Self> {
         let script = Script::from_json(script_json).map_err(vn_error_to_py)?;
-        let inner = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())
-            .map_err(vn_error_to_py)?;
+        let inner = Engine::new(
+            script,
+            SecurityPolicy::default(),
+            ResourceLimiter::default(),
+        )
+        .map_err(vn_error_to_py)?;
         Ok(Self { inner })
     }
 
@@ -90,11 +94,15 @@ impl PyEngine {
     }
 }
 
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 impl PyEngine {
     pub fn new_from_json(script_json: &str) -> VnResult<Self> {
         let script = Script::from_json(script_json)?;
-        let inner = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())?;
+        let inner = Engine::new(
+            script,
+            SecurityPolicy::default(),
+            ResourceLimiter::default(),
+        )?;
         Ok(Self { inner })
     }
 }

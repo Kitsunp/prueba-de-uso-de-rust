@@ -69,8 +69,12 @@ fn script_with_invalid_choice_target() -> Script {
 #[test]
 fn engine_steps_through_dialogue() {
     let script = sample_script();
-    let mut engine =
-        Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default()).unwrap();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
     let scene = engine.step().unwrap();
     assert!(matches!(scene, Event::Scene(_)));
     let dialogue = engine.step().unwrap();
@@ -80,8 +84,12 @@ fn engine_steps_through_dialogue() {
 #[test]
 fn engine_choice_jumps() {
     let script = sample_script();
-    let mut engine =
-        Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default()).unwrap();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
     engine.step().unwrap();
     engine.step().unwrap();
     let choice = engine.choose(0).unwrap();
@@ -105,8 +113,12 @@ fn json_round_trip() {
 #[test]
 fn engine_rejects_missing_start_label() {
     let script = script_without_start_label();
-    let error = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())
-        .expect_err("should reject missing start label");
+    let error = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .expect_err("should reject missing start label");
     assert!(matches!(
         error,
         visual_novel_engine::VnError::InvalidScript(_)
@@ -116,8 +128,12 @@ fn engine_rejects_missing_start_label() {
 #[test]
 fn engine_rejects_invalid_choice_target() {
     let script = script_with_invalid_choice_target();
-    let error = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())
-        .expect_err("should reject missing choice target");
+    let error = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .expect_err("should reject missing choice target");
     assert!(matches!(
         error,
         visual_novel_engine::VnError::InvalidScript(_)
@@ -127,21 +143,32 @@ fn engine_rejects_invalid_choice_target() {
 #[test]
 fn engine_signals_end_of_script() {
     let script = sample_script();
-    let mut engine =
-        Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default()).unwrap();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
     engine.step().unwrap();
     engine.step().unwrap();
     engine.choose(0).unwrap();
     engine.step().unwrap();
     let result = engine.step();
-    assert!(matches!(result, Err(visual_novel_engine::VnError::EndOfScript)));
+    assert!(matches!(
+        result,
+        Err(visual_novel_engine::VnError::EndOfScript)
+    ));
 }
 
 #[test]
 fn scene_updates_visual_state_and_renderer_output() {
     let script = sample_script();
-    let mut engine =
-        Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default()).unwrap();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
     let scene = engine.step().unwrap();
     assert!(matches!(scene, Event::Scene(_)));
     let visual = engine.visual_state();
@@ -158,8 +185,12 @@ fn scene_updates_visual_state_and_renderer_output() {
 #[test]
 fn renderer_formats_choice_and_dialogue() {
     let script = sample_script();
-    let mut engine =
-        Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default()).unwrap();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
     engine.step().unwrap();
     let dialogue = engine.step().unwrap();
     let renderer = TextRenderer::default();
