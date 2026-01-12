@@ -79,10 +79,12 @@ class CharacterPlacement:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CharacterPlacement":
+        expression = data.get("expression")
+        position = data.get("position")
         return cls(
             name=str(data["name"]),
-            expression=data.get("expression"),
-            position=data.get("position"),
+            expression=str(expression) if expression is not None else None,
+            position=str(position) if position is not None else None,
         )
 
 
@@ -140,7 +142,13 @@ class SetFlag:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SetFlag":
-        return cls(key=str(data["key"]), value=bool(data["value"]))
+        value = data["value"]
+        if not isinstance(value, bool):
+            raise ValueError(
+                "SetFlag 'value' must be bool, got "
+                f"{type(value).__name__}"
+            )
+        return cls(key=str(data["key"]), value=value)
 
 
 Event = Union[Dialogue, Choice, Scene, Jump, SetFlag]

@@ -8,6 +8,7 @@ from vnengine.app import EngineApp
 from vnengine.builder import ScriptBuilder
 from vnengine.engine import Engine, _load_native_engine
 from vnengine.types import (
+    CharacterPlacement,
     Choice,
     ChoiceOption,
     Dialogue,
@@ -34,6 +35,17 @@ class TypesTests(unittest.TestCase):
     def test_event_from_dict_rejects_unknown_type(self):
         with self.assertRaises(ValueError):
             event_from_dict({"type": "unknown"})
+
+    def test_character_from_dict_coerces_optional_fields(self):
+        placement = CharacterPlacement.from_dict(
+            {"name": "Ava", "expression": 1, "position": True}
+        )
+        self.assertEqual(placement.expression, "1")
+        self.assertEqual(placement.position, "True")
+
+    def test_set_flag_from_dict_requires_bool(self):
+        with self.assertRaises(ValueError):
+            SetFlag.from_dict({"key": "flag", "value": "false"})
 
 
 class BuilderTests(unittest.TestCase):
@@ -105,7 +117,7 @@ class EngineAppTests(unittest.TestCase):
 
             def current_event(self):
                 if self.index >= len(events):
-                    raise RuntimeError("end")
+                    raise ValueError("script exhausted")
                 return events[self.index]
 
             def choose(self, option_index):
@@ -121,6 +133,15 @@ class EngineAppTests(unittest.TestCase):
         self.assertEqual(len(collected), 2)
         self.assertEqual(collected[0]["type"], "choice")
         self.assertEqual(collected[1]["type"], "dialogue")
+
+    def test_engine_app_propagates_unexpected_errors(self):
+        class BrokenEngine:
+            def current_event(self):
+                raise RuntimeError("boom")
+
+        app = EngineApp(BrokenEngine())
+        with self.assertRaises(RuntimeError):
+            app.run()
 
 
 if __name__ == "__main__":

@@ -34,7 +34,9 @@ class EngineApp:
         while True:
             try:
                 event = self.engine.current_event()
-            except Exception:
+            except ValueError as exc:
+                if "script exhausted" not in str(exc):
+                    raise
                 break
             events.append(event)
             if event.get("type") == "choice":
