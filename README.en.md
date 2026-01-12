@@ -87,6 +87,15 @@ Rendering example:
 ```rust
 use visual_novel_engine::{Engine, Script, SecurityPolicy, ResourceLimiter, TextRenderer};
 
+let script_json = r#"
+{
+  "events": [
+    {"type": "dialogue", "speaker": "Ava", "text": "Hello world"}
+  ],
+  "labels": {"start": 0}
+}
+"#;
+
 let script = Script::from_json(script_json)?;
 let engine = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())?;
 let output = engine.render_current(&TextRenderer)?;
