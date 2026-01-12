@@ -22,7 +22,7 @@ mod python_bindings {
     fn python_engine_exposes_methods() {
         Python::with_gil(|py| {
             let engine = Py::new(py, PyEngine::new_from_json(&sample_script()).unwrap()).unwrap();
-            let engine_ref = engine.as_ref(py);
+            let engine_ref = engine.bind(py);
             let event = engine_ref.call_method0("current_event").unwrap();
             let dict = event.downcast::<PyDict>().unwrap();
             let event_type: String = dict.get_item("type").unwrap().unwrap().extract().unwrap();
@@ -51,7 +51,7 @@ mod python_bindings {
             other => panic!("unexpected error: {other:?}"),
         }
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let result = PyEngine::new(broken_json);
             let py_err = result.err().expect("should be error");
             let message = py_err.to_string();

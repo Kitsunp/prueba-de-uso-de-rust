@@ -29,7 +29,7 @@ fn vn_error_to_py(err: VnError) -> pyo3::PyErr {
 
 #[cfg(feature = "python")]
 #[pymodule]
-fn visual_novel_engine(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     Ok(())
 }
@@ -72,14 +72,14 @@ impl PyEngine {
     }
 
     fn visual_state<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
-        use pyo3::types::{PyDict, PyList};
+        use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
         let state = self.inner.visual_state();
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("background", state.background.as_deref())?;
         dict.set_item("music", state.music.as_deref())?;
-        let characters = PyList::empty(py);
+        let characters = PyList::empty_bound(py);
         for character in &state.characters {
-            let character_dict = PyDict::new(py);
+            let character_dict = PyDict::new_bound(py);
             character_dict.set_item("name", character.name.as_str())?;
             character_dict.set_item("expression", character.expression.as_deref())?;
             character_dict.set_item("position", character.position.as_deref())?;

@@ -26,10 +26,27 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+    - name: Install Python build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-dev pkg-config
     - name: Set Python environment for PyO3
       run: |
         echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=$(python3 -c 'import sys; print(sys.prefix)')/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-    - run: pip install maturin
-    - run: maturin develop --features python
-    - run: python -m unittest tests.python.test_examples -v
+        echo "PYTHON_SYS_EXECUTABLE=$(which python3)" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var(\"LIBDIR\"))'):$LD_LIBRARY_PATH" >> $GITHUB_ENV
+    - name: Create virtualenv
+      run: python -m venv .venv
+    - name: Install maturin in venv
+      run: |
+        source .venv/bin/activate
+        python -m pip install --upgrade pip
+        python -m pip install maturin
+    - name: Build and install Python module
+      run: |
+        source .venv/bin/activate
+        maturin develop --features python
+    - name: Run Python tests
+      run: |
+        source .venv/bin/activate
+        python -m unittest tests.python.test_examples -v
