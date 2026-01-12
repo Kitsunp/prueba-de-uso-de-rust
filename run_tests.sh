@@ -6,13 +6,21 @@ set -e
 echo "=== Ejecutando tests de Rust ==="
 cargo test --verbose
 
-echo ""
-echo "=== Ejecutando tests de Rust con feature Python (embed) ==="
-# python-embed habilita PyO3 auto-initialize para tests Rust que embeben CPython.
-export LD_LIBRARY_PATH="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-cargo test --features python-embed --verbose
+
 
 echo ""
+
+echo "=== Ejecutando tests de Rust con feature Python (embed) ==="
+
+# python-embed habilita PyO3 auto-initialize para tests Rust que embeben CPython.
+
+PYTHON_LIBDIR=$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))') || {
+    echo "Error: No se pudo obtener LIBDIR de Python"
+    exit 1
+}
+export LD_LIBRARY_PATH="${PYTHON_LIBDIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+cargo test --features python-embed --verbose
 echo "=== Verificando formato del código ==="
 cargo fmt -- --check || {
     echo "Error: El código no está formateado correctamente."
