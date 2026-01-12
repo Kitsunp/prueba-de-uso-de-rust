@@ -362,6 +362,7 @@ impl PyEvent {
         };
         if list.is_some() {
             *self.cached_options.borrow_mut() = list.clone();
+            *self.cached_dict.borrow_mut() = None;
         }
         Ok(list)
     }
@@ -399,6 +400,7 @@ impl PyEvent {
         };
         if list.is_some() {
             *self.cached_characters.borrow_mut() = list.clone();
+            *self.cached_dict.borrow_mut() = None;
         }
         Ok(list)
     }
