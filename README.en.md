@@ -25,7 +25,7 @@ Event-driven visual novel engine. It loads a JSON script, advances through event
 
 ```toml
 [dependencies]
-visual_novel_engine = { path = "." }
+visual_novel_engine = { path = "crates/core" }
 ```
 
 > Adjust the path for your project. This repository works as a local crate.
@@ -136,12 +136,12 @@ More examples in `examples/python`.
 
 ## Code layout
 
-- `src/engine.rs`: engine core and event navigation.
-- `src/script.rs`: JSON loading and script validation helpers.
-- `src/event.rs`: event definitions and serialization.
-- `src/visual.rs`: visual state (background, music, characters).
-- `src/render.rs`: render interface and `TextRenderer`.
-- `src/security.rs`: validation policy and rules.
-- `src/resource.rs`: resource limits.
-- `src/error.rs`: error types with diagnostics.
-- `src/state.rs`: engine internal state.
+- `crates/core/src/engine.rs`: engine core and event navigation.
+- `crates/core/src/script.rs`: JSON loading and script validation helpers.
+- `crates/core/src/event.rs`: event definitions and serialization.
+- `crates/core/src/visual.rs`: visual state (background, music, characters).
+- `crates/core/src/render.rs`: render interface and `TextRenderer`.
+- `crates/core/src/security.rs`: validation policy and rules.
+- `crates/core/src/resource.rs`: resource limits.
+- `crates/core/src/error.rs`: error types with diagnostics.
+- `crates/core/src/state.rs`: engine internal state.

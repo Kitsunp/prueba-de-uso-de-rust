@@ -12,7 +12,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
-    - run: cargo test --verbose
+    - run: cargo test -p visual_novel_engine --verbose
   
   test-python-feature:
     runs-on: ubuntu-latest
@@ -32,4 +32,4 @@ jobs:
         echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
         libdir=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
         echo "LD_LIBRARY_PATH=${libdir}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
-    - run: cargo test --features python-embed --verbose
+    - run: cargo test -p visual_novel_engine --features python-embed --verbose

@@ -1,27 +1,9 @@
-[package]
-name = "visual_novel_engine"
-version = "0.1.0"
-edition = "2021"
-license = "MIT"
-
-[lib]
-name = "visual_novel_engine"
-crate-type = ["rlib", "cdylib"]
-
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
-miette = { version = "7.2.0", features = ["fancy"] }
-tabled = "0.16"
-tokei = "12.1"
-
-pyo3 = { version = "0.21", optional = true }
-
-[features]
-python = ["pyo3", "pyo3/extension-module"]
-python-embed = ["pyo3", "pyo3/auto-initialize"]
-
-[dev-dependencies]
-serde_json = "1.0"
-pyo3 = { version = "0.21", default-features = false, features = ["auto-initialize"] }
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/runtime",
+    "crates/assets",
+    "crates/py",
+    "tools/cli",
+]

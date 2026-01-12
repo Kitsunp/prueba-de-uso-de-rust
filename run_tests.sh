@@ -4,7 +4,7 @@
 set -e
 
 echo "=== Ejecutando tests de Rust ==="
-cargo test --verbose
+cargo test -p visual_novel_engine --verbose
 
 
 
@@ -20,7 +20,7 @@ PYTHON_LIBDIR=$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIB
 }
 export LD_LIBRARY_PATH="${PYTHON_LIBDIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-cargo test --features python-embed --verbose
+cargo test -p visual_novel_engine --features python-embed --verbose
 echo "=== Verificando formato del código ==="
 cargo fmt -- --check || {
     echo "Error: El código no está formateado correctamente."
@@ -30,7 +30,7 @@ cargo fmt -- --check || {
 
 echo ""
 echo "=== Ejecutando Clippy ==="
-cargo clippy --all-features -- -D warnings
+cargo clippy -p visual_novel_engine --all-features -- -D warnings
 
 echo ""
 echo "=== Construyendo extensión de Python ==="
@@ -47,7 +47,7 @@ if ! command -v maturin &> /dev/null; then
     python -m pip install maturin
 fi
 
-maturin develop --features python
+maturin develop --features python --manifest-path crates/core/Cargo.toml
 
 echo ""
 echo "=== Ejecutando tests de Python ==="
