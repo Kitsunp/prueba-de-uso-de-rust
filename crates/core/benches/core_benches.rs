@@ -3,14 +3,10 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
-use visual_novel_engine::engine::Engine;
-use visual_novel_engine::event::{
-    CharacterPlacementCompiled, ChoiceOptionRaw, ChoiceRaw, DialogueRaw, EventRaw, SceneUpdateRaw,
+use visual_novel_engine::{
+    CharacterPlacementCompiled, ChoiceOptionRaw, ChoiceRaw, DialogueRaw, Engine, EventRaw,
+    ResourceLimiter, SceneUpdateCompiled, SceneUpdateRaw, ScriptRaw, SecurityPolicy, VisualState,
 };
-use visual_novel_engine::resource::ResourceLimiter;
-use visual_novel_engine::script::ScriptRaw;
-use visual_novel_engine::security::SecurityPolicy;
-use visual_novel_engine::visual::VisualState;
 
 fn sample_raw_script() -> ScriptRaw {
     let events = vec![
@@ -134,7 +130,7 @@ fn bench_choice(c: &mut Criterion) {
     });
 }
 
-fn build_scene_update(count: usize) -> visual_novel_engine::event::SceneUpdateCompiled {
+fn build_scene_update(count: usize) -> SceneUpdateCompiled {
     let mut characters = Vec::with_capacity(count);
     for idx in 0..count {
         let name: Arc<str> = Arc::from(format!("Hero{idx}"));
@@ -144,7 +140,7 @@ fn build_scene_update(count: usize) -> visual_novel_engine::event::SceneUpdateCo
             position: Some(Arc::from("center")),
         });
     }
-    visual_novel_engine::event::SceneUpdateCompiled {
+    SceneUpdateCompiled {
         background: Some(Arc::from("bg_scene")),
         music: Some(Arc::from("theme")),
         characters,

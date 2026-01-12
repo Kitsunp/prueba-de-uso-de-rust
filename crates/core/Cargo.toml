@@ -28,3 +28,7 @@ python-embed = ["pyo3", "pyo3/auto-initialize"]
 serde_json = "1.0"
 pyo3 = { version = "0.21", default-features = false, features = ["auto-initialize"] }
 criterion = "0.5"
+
+[[bench]]
+name = "core_benches"
+harness = false
