@@ -1,20 +1,25 @@
-use crate::event::{Event, SceneUpdate};
+//! Rendering helpers for compiled events.
+
+use crate::event::{EventCompiled, SceneUpdateCompiled};
 use crate::visual::VisualState;
 
+/// Renderer interface used by the engine.
 pub trait RenderBackend {
-    fn render(&self, event: &Event, visual: &VisualState) -> RenderOutput;
+    fn render(&self, event: &EventCompiled, visual: &VisualState) -> RenderOutput;
 }
 
+/// Rendered text output.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderOutput {
     pub text: String,
 }
 
+/// Simple renderer that formats events as text.
 #[derive(Clone, Debug, Default)]
 pub struct TextRenderer;
 
 impl TextRenderer {
-    fn render_scene(&self, scene: &SceneUpdate, visual: &VisualState) -> String {
+    fn render_scene(&self, scene: &SceneUpdateCompiled, visual: &VisualState) -> String {
         let mut lines = Vec::new();
         if let Some(background) = scene.background.as_deref().or(visual.background.as_deref()) {
             lines.push(format!("Background: {background}"));
@@ -27,7 +32,7 @@ impl TextRenderer {
                 .characters
                 .iter()
                 .map(|character| {
-                    let mut descriptor = character.name.clone();
+                    let mut descriptor = character.name.to_string();
                     if let Some(expression) = &character.expression {
                         descriptor.push_str(&format!(" ({expression})"));
                     }
@@ -49,10 +54,12 @@ impl TextRenderer {
 }
 
 impl RenderBackend for TextRenderer {
-    fn render(&self, event: &Event, visual: &VisualState) -> RenderOutput {
+    fn render(&self, event: &EventCompiled, visual: &VisualState) -> RenderOutput {
         let text = match event {
-            Event::Dialogue(dialogue) => format!("{}: {}", dialogue.speaker, dialogue.text),
-            Event::Choice(choice) => {
+            EventCompiled::Dialogue(dialogue) => {
+                format!("{}: {}", dialogue.speaker, dialogue.text)
+            }
+            EventCompiled::Choice(choice) => {
                 let options = choice
                     .options
                     .iter()
@@ -62,9 +69,11 @@ impl RenderBackend for TextRenderer {
                     .join("\n");
                 format!("{}\n{}", choice.prompt, options)
             }
-            Event::Scene(scene) => self.render_scene(scene, visual),
-            Event::Jump { target } => format!("Jump to {target}"),
-            Event::SetFlag { key, value } => format!("Flag {key} = {value}"),
+            EventCompiled::Scene(scene) => self.render_scene(scene, visual),
+            EventCompiled::Jump { target_ip } => format!("Jump to {target_ip}"),
+            EventCompiled::SetFlag { flag_id, value } => {
+                format!("Flag {flag_id} = {value}")
+            }
         };
         RenderOutput { text }
     }

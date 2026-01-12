@@ -1,6 +1,10 @@
+"""Example that shows scene updates in the visual state."""
+
+from __future__ import annotations
+
 from visual_novel_engine import PyEngine
 
-script_json = """
+SCRIPT_JSON = """
 {
   "events": [
     {"type": "scene", "background": "bg/room.png", "music": "music/theme.ogg", "characters": [
@@ -12,8 +16,14 @@ script_json = """
 }
 """
 
-engine = PyEngine(script_json)
-print(engine.current_event())
-print(engine.visual_state())
-engine.step()
-print(engine.visual_state())
+
+def main() -> None:
+    engine = PyEngine(SCRIPT_JSON)
+    print("current:", engine.current_event())
+    print("visual:", engine.visual_state())
+    print("step:", engine.step())
+    print("visual:", engine.visual_state())
+
+
+if __name__ == "__main__":
+    main()

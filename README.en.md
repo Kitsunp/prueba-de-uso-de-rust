@@ -55,16 +55,23 @@ let mut engine = Engine::new(script, SecurityPolicy::default(), ResourceLimiter:
 let event = engine.current_event()?;
 println!("Current event: {event:?}");
 
-engine.step()?; // advance in the flow
+engine.step()?; // advance to the next event
+let choice = engine.current_event()?;
+println!("Choice: {choice:?}");
 engine.choose(0)?; // pick the first option
+
+// Alternative: step_event() returns the event and advances in one call.
 ```
 
 ## Script format
 
 A script is JSON with:
 
-- `events`: list of events.
+- `events`: list of events (the `ScriptRaw` format).
 - `labels`: map of labels to `events` indices (`start` is required).
+
+At runtime the engine compiles the script into `ScriptCompiled`, resolving label
+targets to direct indices and interning strings for reuse.
 
 Supported event types:
 
@@ -110,6 +117,7 @@ Validation enforces:
 - Length limits for text, labels, and asset references.
 - Valid label indices.
 - Non-empty choice options with valid targets.
+- Compiled targets and flag ids within bounds before execution.
 
 Tune limits via `ResourceLimiter` or relax rules with `SecurityPolicy`.
 
@@ -136,9 +144,9 @@ More examples in `examples/python`.
 
 ## Code layout
 
-- `crates/core/src/engine.rs`: engine core and event navigation.
-- `crates/core/src/script.rs`: JSON loading and script validation helpers.
-- `crates/core/src/event.rs`: event definitions and serialization.
+- `crates/core/src/engine.rs`: engine core and compiled event navigation.
+- `crates/core/src/script.rs`: JSON loading and script compilation (`ScriptRaw`/`ScriptCompiled`).
+- `crates/core/src/event.rs`: raw/compiled event definitions and serialization.
 - `crates/core/src/visual.rs`: visual state (background, music, characters).
 - `crates/core/src/render.rs`: render interface and `TextRenderer`.
 - `crates/core/src/security.rs`: validation policy and rules.

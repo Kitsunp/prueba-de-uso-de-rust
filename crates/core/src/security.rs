@@ -1,15 +1,19 @@
-use crate::error::{VnError, VnResult};
-use crate::event::Event;
-use crate::resource::ResourceLimiter;
-use crate::script::Script;
+//! Security policy validation for scripts.
 
+use crate::error::{VnError, VnResult};
+use crate::event::{EventCompiled, EventRaw};
+use crate::resource::ResourceLimiter;
+use crate::script::{ScriptCompiled, ScriptRaw};
+
+/// Policy used to validate script content and compiled ranges.
 #[derive(Clone, Debug, Default)]
 pub struct SecurityPolicy {
     pub allow_empty_speaker: bool,
 }
 
 impl SecurityPolicy {
-    pub fn validate(&self, script: &Script, limits: ResourceLimiter) -> VnResult<()> {
+    /// Validates a raw script against policy and resource limits.
+    pub fn validate_raw(&self, script: &ScriptRaw, limits: ResourceLimiter) -> VnResult<()> {
         if script.events.len() > limits.max_events {
             return Err(VnError::ResourceLimit("event count".to_string()));
         }
@@ -31,7 +35,7 @@ impl SecurityPolicy {
 
         for event in &script.events {
             match event {
-                Event::Dialogue(dialogue) => {
+                EventRaw::Dialogue(dialogue) => {
                     if !self.allow_empty_speaker && dialogue.speaker.trim().is_empty() {
                         return Err(VnError::SecurityPolicy(
                             "speaker cannot be empty".to_string(),
@@ -41,7 +45,7 @@ impl SecurityPolicy {
                         return Err(VnError::ResourceLimit("dialogue text".to_string()));
                     }
                 }
-                Event::Choice(choice) => {
+                EventRaw::Choice(choice) => {
                     if choice.prompt.len() > limits.max_text_length {
                         return Err(VnError::ResourceLimit("choice prompt".to_string()));
                     }
@@ -65,7 +69,7 @@ impl SecurityPolicy {
                         }
                     }
                 }
-                Event::Scene(scene) => {
+                EventRaw::Scene(scene) => {
                     if scene.characters.len() > limits.max_characters {
                         return Err(VnError::ResourceLimit("character count".to_string()));
                     }
@@ -99,7 +103,7 @@ impl SecurityPolicy {
                         }
                     }
                 }
-                Event::Jump { target } => {
+                EventRaw::Jump { target } => {
                     if target.len() > limits.max_label_length {
                         return Err(VnError::ResourceLimit("jump target".to_string()));
                     }
@@ -109,7 +113,7 @@ impl SecurityPolicy {
                         )));
                     }
                 }
-                Event::SetFlag { key, .. } => {
+                EventRaw::SetFlag { key, .. } => {
                     if key.len() > limits.max_label_length {
                         return Err(VnError::ResourceLimit("flag key".to_string()));
                     }
@@ -117,5 +121,56 @@ impl SecurityPolicy {
             }
         }
         Ok(())
+    }
+
+    /// Validates compiled targets and flag ids for runtime safety.
+    pub fn validate_compiled(
+        &self,
+        script: &ScriptCompiled,
+        _limits: ResourceLimiter,
+    ) -> VnResult<()> {
+        if script.start_ip as usize >= script.events.len() {
+            return Err(VnError::InvalidScript(
+                "compiled start_ip outside events".to_string(),
+            ));
+        }
+
+        for event in &script.events {
+            match event {
+                EventCompiled::Choice(choice) => {
+                    for option in &choice.options {
+                        if option.target_ip as usize >= script.events.len() {
+                            return Err(VnError::InvalidScript(format!(
+                                "choice target_ip {} outside events",
+                                option.target_ip
+                            )));
+                        }
+                    }
+                }
+                EventCompiled::Jump { target_ip } => {
+                    if *target_ip as usize >= script.events.len() {
+                        return Err(VnError::InvalidScript(format!(
+                            "jump target_ip {} outside events",
+                            target_ip
+                        )));
+                    }
+                }
+                EventCompiled::SetFlag { flag_id, .. } => {
+                    if *flag_id >= script.flag_count {
+                        return Err(VnError::InvalidScript(format!(
+                            "flag id {} outside compiled range",
+                            flag_id
+                        )));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Backwards-compatible validation entrypoint for raw scripts.
+    pub fn validate(&self, script: &ScriptRaw, limits: ResourceLimiter) -> VnResult<()> {
+        self.validate_raw(script, limits)
     }
 }

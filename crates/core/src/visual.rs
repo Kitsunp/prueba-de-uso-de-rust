@@ -1,14 +1,18 @@
-use crate::event::{CharacterPlacement, SceneUpdate};
+//! Visual state handling for scenes.
 
+use crate::event::{CharacterPlacementCompiled, SceneUpdateCompiled, SharedStr};
+
+/// Current visual state for rendering.
 #[derive(Clone, Debug, Default)]
 pub struct VisualState {
-    pub background: Option<String>,
-    pub music: Option<String>,
-    pub characters: Vec<CharacterPlacement>,
+    pub background: Option<SharedStr>,
+    pub music: Option<SharedStr>,
+    pub characters: Vec<CharacterPlacementCompiled>,
 }
 
 impl VisualState {
-    pub fn apply_scene(&mut self, update: &SceneUpdate) {
+    /// Applies a scene update to the visual state.
+    pub fn apply_scene(&mut self, update: &SceneUpdateCompiled) {
         if let Some(background) = &update.background {
             self.background = Some(background.clone());
         }

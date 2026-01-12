@@ -1,6 +1,10 @@
+"""Minimal example that advances a script and resolves a choice."""
+
+from __future__ import annotations
+
 from visual_novel_engine import PyEngine
 
-script_json = """
+SCRIPT_JSON = """
 {
   "events": [
     {"type": "dialogue", "speaker": "Ava", "text": "Hola"},
@@ -14,8 +18,15 @@ script_json = """
 }
 """
 
-engine = PyEngine(script_json)
-print(engine.current_event())
-print(engine.step())
-print(engine.choose(0))
-print(engine.step())
+
+def main() -> None:
+    engine = PyEngine(SCRIPT_JSON)
+    print("current:", engine.current_event())
+    print("step:", engine.step())
+    print("choice:", engine.current_event())
+    print("choose:", engine.choose(0))
+    print("step:", engine.step())
+
+
+if __name__ == "__main__":
+    main()
