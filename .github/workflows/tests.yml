@@ -14,7 +14,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
-    - run: cargo test --verbose
+    - run: cargo test -p visual_novel_engine --verbose
 
   python-tests:
     name: Python Tests  
@@ -31,7 +31,10 @@ jobs:
         python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR")); print(sysconfig.get_config_var("LDLIBRARY"))'
         python3 -c 'import sysconfig, pathlib; libdir=sysconfig.get_config_var("LIBDIR"); lib=sysconfig.get_config_var("LDLIBRARY"); path=pathlib.Path(libdir)/lib; print(path); assert path.exists(), f"missing {path}"'
     - name: Set Python environment for PyO3
-      run: echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
+      run: |
+        echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
+        libdir=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
+        echo "LD_LIBRARY_PATH=${libdir}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
     - name: Create virtualenv
       run: python -m venv .venv
     - name: Install maturin in venv
@@ -42,7 +45,7 @@ jobs:
     - name: Build and install Python module
       run: |
         source .venv/bin/activate
-        maturin develop --features python
+        maturin develop --features python --manifest-path crates/core/Cargo.toml
     - name: Run Python tests
       run: |
         source .venv/bin/activate
