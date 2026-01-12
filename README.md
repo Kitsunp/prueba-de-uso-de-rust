@@ -26,7 +26,7 @@ Motor básico para novelas visuales basado en eventos. Permite interpretar un gu
 
 ```toml
 [dependencies]
-visual_novel_engine = { path = "." }
+visual_novel_engine = { path = "crates/core" }
 ```
 
 > Ajusta la ruta según tu proyecto. Este repositorio funciona como crate local.
@@ -137,22 +137,22 @@ Más ejemplos en `examples/python`.
 
 ## Estructura del código
 
-- `src/engine.rs`: núcleo del motor y navegación de eventos.
-- `src/script.rs`: carga y validación de guiones JSON.
-- `src/event.rs`: definición de eventos y serialización.
-- `src/visual.rs`: estado visual (fondo, música, personajes).
-- `src/render.rs`: interfaz de renderizado y `TextRenderer`.
-- `src/security.rs`: política de validación y reglas.
-- `src/resource.rs`: límites de recursos.
-- `src/error.rs`: errores con diagnósticos.
-- `src/state.rs`: estado interno del motor.
+- `crates/core/src/engine.rs`: núcleo del motor y navegación de eventos.
+- `crates/core/src/script.rs`: carga y validación de guiones JSON.
+- `crates/core/src/event.rs`: definición de eventos y serialización.
+- `crates/core/src/visual.rs`: estado visual (fondo, música, personajes).
+- `crates/core/src/render.rs`: interfaz de renderizado y `TextRenderer`.
+- `crates/core/src/security.rs`: política de validación y reglas.
+- `crates/core/src/resource.rs`: límites de recursos.
+- `crates/core/src/error.rs`: errores con diagnósticos.
+- `crates/core/src/state.rs`: estado interno del motor.
 
 ## Reporte automático de líneas
 
 El repositorio incluye un comando para generar un reporte de líneas por lenguaje usando la librería `tokei` y formateado con `tabled`.
 
 ```bash
-cargo run --bin repo_report -- --output docs/line_report.md
+cargo run -p vnengine_cli --bin repo_report -- --output docs/line_report.md
 ```
 
 El reporte queda en `docs/line_report.md` y puede ejecutarse nuevamente cada vez que se necesite actualizar.

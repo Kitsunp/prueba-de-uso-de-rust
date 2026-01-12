@@ -1509,6 +1509,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "vnengine_assets"
+version = "0.1.0"
+dependencies = [
+ "visual_novel_engine",
+]
+
+[[package]]
+name = "vnengine_cli"
+version = "0.1.0"
+dependencies = [
+ "tabled",
+ "tokei",
+]
+
+[[package]]
+name = "vnengine_py"
+version = "0.1.0"
+dependencies = [
+ "visual_novel_engine",
+]
+
+[[package]]
+name = "vnengine_runtime"
+version = "0.1.0"
+dependencies = [
+ "visual_novel_engine",
+]
+
+[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
