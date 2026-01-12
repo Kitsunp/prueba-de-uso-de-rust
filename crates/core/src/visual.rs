@@ -20,7 +20,8 @@ impl VisualState {
             self.music = Some(music.clone());
         }
         if !update.characters.is_empty() {
-            self.characters = update.characters.clone();
+            self.characters.clear();
+            self.characters.extend_from_slice(&update.characters);
         }
     }
 }
