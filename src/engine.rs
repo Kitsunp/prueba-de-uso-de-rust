@@ -18,9 +18,13 @@ impl Engine {
     pub fn new(script: Script, policy: SecurityPolicy, limits: ResourceLimiter) -> VnResult<Self> {
         policy.validate(&script, limits)?;
         let position = script.start_index()?;
+        let mut state = EngineState::new(position);
+        if let Some(Event::Scene(scene)) = script.events.get(position) {
+            state.visual.apply_scene(scene);
+        }
         Ok(Self {
             script,
-            state: EngineState::new(position),
+            state,
             policy,
             limits,
         })
