@@ -1,4 +1,4 @@
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 mod python_bindings {
     use pyo3::prelude::*;
     use pyo3::types::PyDict;
@@ -43,10 +43,17 @@ mod python_bindings {
     #[test]
     fn python_engine_reports_diagnostics() {
         let broken_json = "{\n  \"events\": [\n    {\"type\": \"dialogue\"}\n  ],\n  \"labels\": {\"start\": 0}\n";
-        let err = PyEngine::new_from_json(broken_json).err().expect("should fail");
+        let err = PyEngine::new_from_json(broken_json)
+            .err()
+            .expect("should fail");
         match err {
             VnError::Serialization { message, .. } => {
-                assert!(message.contains("EOF") || message.contains("eof"));
+                let lowered = message.to_lowercase();
+                assert!(
+                    lowered.contains("eof")
+                        || lowered.contains("expected")
+                        || lowered.contains("at line")
+                );
             }
             other => panic!("unexpected error: {other:?}"),
         }

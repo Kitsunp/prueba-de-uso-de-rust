@@ -44,7 +44,7 @@ pub struct CharacterPlacement {
 
 impl Event {
     pub fn to_json_value(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap_or_else(|_| serde_json::Value::Null)
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
 
     pub fn to_json_string(&self) -> String {
@@ -52,7 +52,7 @@ impl Event {
     }
 }
 
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "python-embed"))]
 impl Event {
     pub fn to_python(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};

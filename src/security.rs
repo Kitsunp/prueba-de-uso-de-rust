@@ -3,17 +3,9 @@ use crate::event::Event;
 use crate::resource::ResourceLimiter;
 use crate::script::Script;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SecurityPolicy {
     pub allow_empty_speaker: bool,
-}
-
-impl Default for SecurityPolicy {
-    fn default() -> Self {
-        Self {
-            allow_empty_speaker: false,
-        }
-    }
 }
 
 impl SecurityPolicy {
@@ -23,16 +15,12 @@ impl SecurityPolicy {
         }
 
         if !script.labels.contains_key("start") {
-            return Err(VnError::InvalidScript(
-                "missing 'start' label".to_string(),
-            ));
+            return Err(VnError::InvalidScript("missing 'start' label".to_string()));
         }
 
         for (label, index) in &script.labels {
             if label.len() > limits.max_label_length {
-                return Err(VnError::ResourceLimit(format!(
-                    "label '{label}' too long"
-                )));
+                return Err(VnError::ResourceLimit(format!("label '{label}' too long")));
             }
             if *index >= script.events.len() {
                 return Err(VnError::InvalidScript(format!(
