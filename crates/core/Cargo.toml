@@ -6,7 +6,7 @@ license = "MIT"
 
 [lib]
 name = "visual_novel_engine"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

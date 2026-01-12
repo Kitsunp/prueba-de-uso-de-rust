@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
-use serde::Serialize;
-use visual_novel_engine::{
+use ::visual_novel_engine::{
     CharacterPlacement, Choice, ChoiceOption, Dialogue, Engine as CoreEngine, Event,
     ResourceLimiter, SceneUpdate, Script, SecurityPolicy, VnError,
 };
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
+use serde::Serialize;
 
 fn vn_error_to_py(err: VnError) -> PyErr {
     let report = miette::Report::new(err);
@@ -17,6 +17,7 @@ fn vn_error_to_py(err: VnError) -> PyErr {
 fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyScriptBuilder>()?;
+    m.add("PyEngine", m.getattr("Engine")?)?;
     Ok(())
 }
 
@@ -98,11 +99,10 @@ impl PyScriptBuilder {
     }
 
     fn dialogue(&mut self, speaker: &str, text: &str) {
-        self.events
-            .push(Event::Dialogue(Dialogue {
-                speaker: speaker.to_string(),
-                text: text.to_string(),
-            }));
+        self.events.push(Event::Dialogue(Dialogue {
+            speaker: speaker.to_string(),
+            text: text.to_string(),
+        }));
     }
 
     fn choice(&mut self, prompt: &str, options: Vec<(String, String)>) {
@@ -116,6 +116,7 @@ impl PyScriptBuilder {
         }));
     }
 
+    #[pyo3(signature = (background=None, music=None, characters=Vec::new()))]
     fn scene(
         &mut self,
         background: Option<String>,
@@ -138,21 +139,22 @@ impl PyScriptBuilder {
     }
 
     fn jump(&mut self, target: &str) {
-        self.events
-            .push(Event::Jump { target: target.to_string() });
+        self.events.push(Event::Jump {
+            target: target.to_string(),
+        });
     }
 
     fn set_flag(&mut self, key: &str, value: bool) {
-        self.events
-            .push(Event::SetFlag { key: key.to_string(), value });
+        self.events.push(Event::SetFlag {
+            key: key.to_string(),
+            value,
+        });
     }
 
     fn build_json(&self) -> PyResult<String> {
         let script = StableScript::from_parts(&self.events, &self.labels);
         serde_json::to_string(&script).map_err(|err| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "Failed to serialize script: {err}"
-            ))
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to serialize script: {err}"))
         })
     }
 }

@@ -47,11 +47,12 @@ if ! command -v maturin &> /dev/null; then
     python -m pip install maturin
 fi
 
-maturin develop --features python --manifest-path crates/core/Cargo.toml
+maturin develop --manifest-path crates/py/Cargo.toml
 
 echo ""
 echo "=== Ejecutando tests de Python ==="
-python -m unittest tests.python.test_examples -v
+export PYTHONPATH="${PWD}/python${PYTHONPATH:+:$PYTHONPATH}"
+python -m unittest tests.python.test_examples tests.python.test_vnengine -v
 
 echo ""
 echo "✅ Todos los tests pasaron exitosamente!"
