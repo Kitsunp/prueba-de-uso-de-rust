@@ -25,7 +25,11 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
     - uses: actions/setup-python@v5
       with:
-        python-version: 3.11
+        python-version: '3.11'
+    - name: Set Python environment for PyO3
+      run: |
+        echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=$(python3 -c 'import sys; print(sys.prefix)')/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
     - run: pip install maturin
     - run: maturin develop --features python
     - run: python -m unittest tests.python.test_examples -v
