@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use ::visual_novel_engine::{
-    CharacterPlacement, Choice, ChoiceOption, Dialogue, Engine as CoreEngine, Event,
-    ResourceLimiter, SceneUpdate, Script, SecurityPolicy, VnError,
+    CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, DialogueRaw, Engine as CoreEngine,
+    EventCompiled, EventRaw, ResourceLimiter, SceneUpdateRaw, ScriptRaw, SecurityPolicy, VnError,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
@@ -31,7 +31,7 @@ pub struct PyEngine {
 impl PyEngine {
     #[new]
     pub fn new(script_json: &str) -> PyResult<Self> {
-        let script = Script::from_json(script_json).map_err(vn_error_to_py)?;
+        let script = ScriptRaw::from_json(script_json).map_err(vn_error_to_py)?;
         let inner = CoreEngine::new(
             script,
             SecurityPolicy::default(),
@@ -47,7 +47,7 @@ impl PyEngine {
     }
 
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<PyObject> {
-        let event = self.inner.step().map_err(vn_error_to_py)?;
+        let event = self.inner.step_event().map_err(vn_error_to_py)?;
         event_to_python(&event, py)
     }
 
@@ -68,7 +68,7 @@ impl PyEngine {
         let characters = PyList::empty_bound(py);
         for character in &state.characters {
             let character_dict = PyDict::new_bound(py);
-            character_dict.set_item("name", character.name.as_str())?;
+            character_dict.set_item("name", character.name.as_ref())?;
             character_dict.set_item("expression", character.expression.as_deref())?;
             character_dict.set_item("position", character.position.as_deref())?;
             characters.append(character_dict)?;
@@ -80,7 +80,7 @@ impl PyEngine {
 
 #[pyclass(name = "ScriptBuilder")]
 pub struct PyScriptBuilder {
-    events: Vec<Event>,
+    events: Vec<EventRaw>,
     labels: HashMap<String, usize>,
 }
 
@@ -99,7 +99,7 @@ impl PyScriptBuilder {
     }
 
     fn dialogue(&mut self, speaker: &str, text: &str) {
-        self.events.push(Event::Dialogue(Dialogue {
+        self.events.push(EventRaw::Dialogue(DialogueRaw {
             speaker: speaker.to_string(),
             text: text.to_string(),
         }));
@@ -108,9 +108,9 @@ impl PyScriptBuilder {
     fn choice(&mut self, prompt: &str, options: Vec<(String, String)>) {
         let options = options
             .into_iter()
-            .map(|(text, target)| ChoiceOption { text, target })
+            .map(|(text, target)| ChoiceOptionRaw { text, target })
             .collect();
-        self.events.push(Event::Choice(Choice {
+        self.events.push(EventRaw::Choice(ChoiceRaw {
             prompt: prompt.to_string(),
             options,
         }));
@@ -125,13 +125,13 @@ impl PyScriptBuilder {
     ) {
         let characters = characters
             .into_iter()
-            .map(|(name, expression, position)| CharacterPlacement {
+            .map(|(name, expression, position)| CharacterPlacementRaw {
                 name,
                 expression,
                 position,
             })
             .collect();
-        self.events.push(Event::Scene(SceneUpdate {
+        self.events.push(EventRaw::Scene(SceneUpdateRaw {
             background,
             music,
             characters,
@@ -139,13 +139,13 @@ impl PyScriptBuilder {
     }
 
     fn jump(&mut self, target: &str) {
-        self.events.push(Event::Jump {
+        self.events.push(EventRaw::Jump {
             target: target.to_string(),
         });
     }
 
     fn set_flag(&mut self, key: &str, value: bool) {
-        self.events.push(Event::SetFlag {
+        self.events.push(EventRaw::SetFlag {
             key: key.to_string(),
             value,
         });
@@ -161,12 +161,12 @@ impl PyScriptBuilder {
 
 #[derive(Serialize)]
 struct StableScript {
-    events: Vec<Event>,
+    events: Vec<EventRaw>,
     labels: BTreeMap<String, usize>,
 }
 
 impl StableScript {
-    fn from_parts(events: &[Event], labels: &HashMap<String, usize>) -> Self {
+    fn from_parts(events: &[EventRaw], labels: &HashMap<String, usize>) -> Self {
         let mut ordered_labels = BTreeMap::new();
         for (key, value) in labels {
             ordered_labels.insert(key.clone(), *value);
@@ -178,47 +178,47 @@ impl StableScript {
     }
 }
 
-fn event_to_python(event: &Event, py: Python<'_>) -> PyResult<PyObject> {
+fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> {
     let dict = PyDict::new_bound(py);
     match event {
-        Event::Dialogue(dialogue) => {
+        EventCompiled::Dialogue(dialogue) => {
             dict.set_item("type", "dialogue")?;
-            dict.set_item("speaker", dialogue.speaker.as_str())?;
-            dict.set_item("text", dialogue.text.as_str())?;
+            dict.set_item("speaker", dialogue.speaker.as_ref())?;
+            dict.set_item("text", dialogue.text.as_ref())?;
         }
-        Event::Choice(choice) => {
+        EventCompiled::Choice(choice) => {
             dict.set_item("type", "choice")?;
-            dict.set_item("prompt", choice.prompt.as_str())?;
+            dict.set_item("prompt", choice.prompt.as_ref())?;
             let options = PyList::empty_bound(py);
             for option in &choice.options {
                 let option_dict = PyDict::new_bound(py);
-                option_dict.set_item("text", option.text.as_str())?;
-                option_dict.set_item("target", option.target.as_str())?;
+                option_dict.set_item("text", option.text.as_ref())?;
+                option_dict.set_item("target_ip", option.target_ip)?;
                 options.append(option_dict)?;
             }
             dict.set_item("options", options)?;
         }
-        Event::Scene(scene) => {
+        EventCompiled::Scene(scene) => {
             dict.set_item("type", "scene")?;
             dict.set_item("background", scene.background.as_deref())?;
             dict.set_item("music", scene.music.as_deref())?;
             let characters = PyList::empty_bound(py);
             for character in &scene.characters {
                 let character_dict = PyDict::new_bound(py);
-                character_dict.set_item("name", character.name.as_str())?;
+                character_dict.set_item("name", character.name.as_ref())?;
                 character_dict.set_item("expression", character.expression.as_deref())?;
                 character_dict.set_item("position", character.position.as_deref())?;
                 characters.append(character_dict)?;
             }
             dict.set_item("characters", characters)?;
         }
-        Event::Jump { target } => {
+        EventCompiled::Jump { target_ip } => {
             dict.set_item("type", "jump")?;
-            dict.set_item("target", target.as_str())?;
+            dict.set_item("target_ip", *target_ip)?;
         }
-        Event::SetFlag { key, value } => {
+        EventCompiled::SetFlag { flag_id, value } => {
             dict.set_item("type", "set_flag")?;
-            dict.set_item("key", key.as_str())?;
+            dict.set_item("flag_id", *flag_id)?;
             dict.set_item("value", *value)?;
         }
     }

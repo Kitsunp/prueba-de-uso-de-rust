@@ -56,16 +56,23 @@ let mut engine = Engine::new(script, SecurityPolicy::default(), ResourceLimiter:
 let event = engine.current_event()?;
 println!("Evento actual: {event:?}");
 
-engine.step()?; // avanza en el flujo
+engine.step()?; // avanza al siguiente evento
+let choice = engine.current_event()?;
+println!("Elección: {choice:?}");
 engine.choose(0)?; // elige la primera opción
+
+// Alternativa: step_event() devuelve el evento y avanza en un solo paso.
 ```
 
 ## Formato del guion
 
 Un guion es un JSON con:
 
-- `events`: lista de eventos.
+- `events`: lista de eventos (formato `ScriptRaw`).
 - `labels`: mapa de etiquetas a índices de `events` (obligatorio `start`).
+
+En tiempo de ejecución el motor compila el guion a `ScriptCompiled`, resolviendo
+las etiquetas a índices directos y creando eventos compilados con strings internadas.
 
 Tipos de evento disponibles:
 
@@ -111,6 +118,7 @@ La validación comprueba:
 - Longitud de textos, etiquetas y assets.
 - Índices válidos de etiquetas.
 - Opciones de elección no vacías y con targets válidos.
+- Targets compilados y `flag_id` dentro de rango antes de ejecutar.
 
 Puedes ajustar límites creando tu propio `ResourceLimiter` o relajar ciertas reglas con `SecurityPolicy`.
 
@@ -137,9 +145,9 @@ Más ejemplos en `examples/python`.
 
 ## Estructura del código
 
-- `crates/core/src/engine.rs`: núcleo del motor y navegación de eventos.
-- `crates/core/src/script.rs`: carga y validación de guiones JSON.
-- `crates/core/src/event.rs`: definición de eventos y serialización.
+- `crates/core/src/engine.rs`: núcleo del motor y navegación de eventos compilados.
+- `crates/core/src/script.rs`: carga JSON y compilación de guiones (`ScriptRaw`/`ScriptCompiled`).
+- `crates/core/src/event.rs`: definición de eventos raw/compiled y serialización.
 - `crates/core/src/visual.rs`: estado visual (fondo, música, personajes).
 - `crates/core/src/render.rs`: interfaz de renderizado y `TextRenderer`.
 - `crates/core/src/security.rs`: política de validación y reglas.
