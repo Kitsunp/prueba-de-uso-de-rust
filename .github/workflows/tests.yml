@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  rust-tests:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo test --verbose
+
+  python-tests:
+    name: Python Tests  
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: actions/setup-python@v5
+      with:
+        python-version: 3.11
+    - run: pip install maturin
+    - run: maturin develop --features python
+    - run: python -m unittest tests.python.test_examples -v
