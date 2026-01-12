@@ -65,4 +65,53 @@ mod python_bindings {
             assert!(message.contains("serialization"));
         });
     }
+
+    #[test]
+    fn python_events_include_legacy_keys() {
+        Python::with_gil(|py| {
+            let choice_script = r#"{
+                "events": [
+                    {"type": "choice", "prompt": "Go?", "options": [
+                        {"text": "Yes", "target": "end"}
+                    ]},
+                    {"type": "dialogue", "speaker": "Ava", "text": "Done"}
+                ],
+                "labels": {"start": 0, "end": 1}
+            }"#;
+            let engine = Py::new(py, PyEngine::new_from_json(choice_script).unwrap()).unwrap();
+            let event = engine.bind(py).call_method0("current_event").unwrap();
+            let dict = event.downcast::<PyDict>().unwrap();
+            let options = dict.get_item("options").unwrap().unwrap();
+            let option_list = options.downcast::<pyo3::types::PyList>().unwrap();
+            let option_item = option_list.get_item(0).unwrap();
+            let first_option = option_item.downcast::<PyDict>().unwrap();
+            assert!(first_option.get_item("target").unwrap().is_some());
+            assert!(first_option.get_item("target_ip").unwrap().is_some());
+
+            let jump_script = r#"{
+                "events": [
+                    {"type": "jump", "target": "next"},
+                    {"type": "dialogue", "speaker": "Ava", "text": "Next"}
+                ],
+                "labels": {"start": 0, "next": 1}
+            }"#;
+            let engine = Py::new(py, PyEngine::new_from_json(jump_script).unwrap()).unwrap();
+            let event = engine.bind(py).call_method0("current_event").unwrap();
+            let dict = event.downcast::<PyDict>().unwrap();
+            assert!(dict.get_item("target").unwrap().is_some());
+            assert!(dict.get_item("target_ip").unwrap().is_some());
+
+            let flag_script = r#"{
+                "events": [
+                    {"type": "set_flag", "key": "seen", "value": true}
+                ],
+                "labels": {"start": 0}
+            }"#;
+            let engine = Py::new(py, PyEngine::new_from_json(flag_script).unwrap()).unwrap();
+            let event = engine.bind(py).call_method0("current_event").unwrap();
+            let dict = event.downcast::<PyDict>().unwrap();
+            assert!(dict.get_item("key").unwrap().is_some());
+            assert!(dict.get_item("flag_id").unwrap().is_some());
+        });
+    }
 }

@@ -193,6 +193,7 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
             for option in &choice.options {
                 let option_dict = PyDict::new_bound(py);
                 option_dict.set_item("text", option.text.as_ref())?;
+                option_dict.set_item("target", option.target_ip)?;
                 option_dict.set_item("target_ip", option.target_ip)?;
                 options.append(option_dict)?;
             }
@@ -214,10 +215,12 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
         }
         EventCompiled::Jump { target_ip } => {
             dict.set_item("type", "jump")?;
+            dict.set_item("target", *target_ip)?;
             dict.set_item("target_ip", *target_ip)?;
         }
         EventCompiled::SetFlag { flag_id, value } => {
             dict.set_item("type", "set_flag")?;
+            dict.set_item("key", *flag_id)?;
             dict.set_item("flag_id", *flag_id)?;
             dict.set_item("value", *value)?;
         }
