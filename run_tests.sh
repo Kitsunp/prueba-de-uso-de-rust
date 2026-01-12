@@ -8,6 +8,7 @@ cargo test --verbose
 
 echo ""
 echo "=== Ejecutando tests de Rust con feature Python (embed) ==="
+export LD_LIBRARY_PATH="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cargo test --features python-embed --verbose
 
 echo ""
