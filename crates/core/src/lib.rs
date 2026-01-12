@@ -38,6 +38,7 @@ fn vn_error_to_py(err: VnError) -> pyo3::PyErr {
 #[pymodule]
 fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
+    m.add_class::<crate::event::PyEvent>()?;
     Ok(())
 }
 

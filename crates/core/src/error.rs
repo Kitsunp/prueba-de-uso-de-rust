@@ -29,4 +29,7 @@ pub enum VnError {
         #[label("here")]
         span: SourceSpan,
     },
+    #[error("binary format error: {0}")]
+    #[diagnostic(code("vn.binary_format"))]
+    BinaryFormat(String),
 }

@@ -19,13 +19,16 @@ pub struct ScriptRaw {
 }
 
 /// Runtime-ready script that resolves labels and interns strings.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScriptCompiled {
     pub events: Vec<EventCompiled>,
     pub labels: HashMap<String, u32>,
     pub start_ip: u32,
     pub flag_count: u32,
 }
+
+const SCRIPT_BINARY_MAGIC: [u8; 4] = *b"VNSC";
+const SCRIPT_BINARY_VERSION: u16 = 1;
 
 impl ScriptRaw {
     /// Creates a raw script from events and labels.
@@ -35,14 +38,7 @@ impl ScriptRaw {
 
     /// Parses a JSON script into a raw script structure.
     pub fn from_json(input: &str) -> VnResult<Self> {
-        serde_json::from_str(input).map_err(|err| {
-            let (offset, length) = json_error_span(input, &err);
-            VnError::Serialization {
-                message: err.to_string(),
-                src: input.to_string(),
-                span: (offset, length).into(),
-            }
-        })
+        serde_json::from_str(input).map_err(|err| json_deserialize_error(input, &err))
     }
 
     /// Returns the index of the `start` label.
@@ -162,6 +158,80 @@ impl ScriptRaw {
     }
 }
 
+impl ScriptCompiled {
+    /// Serializes the compiled script to a binary format with magic bytes, version, and checksum.
+    pub fn to_binary(&self) -> VnResult<Vec<u8>> {
+        let payload = bincode::serialize(self).map_err(binary_serialize_error)?;
+        let checksum = crc32fast::hash(&payload);
+        let payload_len = u32::try_from(payload.len()).map_err(|_| {
+            VnError::BinaryFormat("compiled script too large for binary format".to_string())
+        })?;
+        let mut output =
+            Vec::with_capacity(4 + 2 + 4 + 4 + payload.len());
+        output.extend_from_slice(&SCRIPT_BINARY_MAGIC);
+        output.extend_from_slice(&SCRIPT_BINARY_VERSION.to_le_bytes());
+        output.extend_from_slice(&checksum.to_le_bytes());
+        output.extend_from_slice(&payload_len.to_le_bytes());
+        output.extend_from_slice(&payload);
+        Ok(output)
+    }
+
+    /// Deserializes a compiled script from binary data.
+    pub fn from_binary(input: &[u8]) -> VnResult<Self> {
+        if input.len() < 14 {
+            return Err(binary_format_error("binary payload too small"));
+        }
+        if input[0..4] != SCRIPT_BINARY_MAGIC {
+            return Err(binary_format_error("missing script magic bytes"));
+        }
+        let version = u16::from_le_bytes([input[4], input[5]]);
+        if version != SCRIPT_BINARY_VERSION {
+            return Err(binary_format_error(format!(
+                "unsupported script version {version}"
+            )));
+        }
+        let checksum = u32::from_le_bytes([input[6], input[7], input[8], input[9]]);
+        let payload_len = u32::from_le_bytes([input[10], input[11], input[12], input[13]]) as usize;
+        let payload = input.get(14..).ok_or_else(|| binary_format_error("missing payload"))?;
+        if payload.len() != payload_len {
+            return Err(binary_format_error("payload length mismatch"));
+        }
+        let payload_checksum = crc32fast::hash(payload);
+        if payload_checksum != checksum {
+            return Err(binary_format_error("payload checksum mismatch"));
+        }
+        bincode::deserialize(payload).map_err(binary_serialize_error)
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn json_deserialize_error(input: &str, err: &serde_json::Error) -> VnError {
+    let (offset, length) = json_error_span(input, err);
+    let (window, local_offset) = json_error_window(input, offset, length);
+    let max_len = window.len().saturating_sub(local_offset);
+    let span_len = if max_len == 0 { 0 } else { length.min(max_len) };
+    VnError::Serialization {
+        message: err.to_string(),
+        src: window,
+        span: (local_offset, span_len).into(),
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn binary_format_error(message: impl Into<String>) -> VnError {
+    VnError::BinaryFormat(message.into())
+}
+
+#[cold]
+#[inline(never)]
+fn binary_serialize_error(error: impl std::fmt::Display) -> VnError {
+    VnError::BinaryFormat(format!("binary serialization error: {error}"))
+}
+
+#[cold]
+#[inline(never)]
 fn json_error_span(input: &str, error: &serde_json::Error) -> (usize, usize) {
     let line = error.line();
     let column = error.column();
@@ -185,6 +255,22 @@ fn json_error_span(input: &str, error: &serde_json::Error) -> (usize, usize) {
         current_line += 1;
     }
     (input.len().saturating_sub(1), 1)
+}
+
+#[cold]
+#[inline(never)]
+fn json_error_window(input: &str, offset: usize, length: usize) -> (String, usize) {
+    const CONTEXT: usize = 160;
+    let mut start = offset.saturating_sub(CONTEXT);
+    let mut end = (offset + length + CONTEXT).min(input.len());
+    while start > 0 && !input.is_char_boundary(start) {
+        start = start.saturating_sub(1);
+    }
+    while end < input.len() && !input.is_char_boundary(end) {
+        end = end.saturating_add(1).min(input.len());
+    }
+    let window = input[start..end].to_string();
+    (window, offset.saturating_sub(start))
 }
 
 #[derive(Default)]

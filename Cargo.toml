@@ -7,3 +7,11 @@ members = [
     "crates/py",
     "tools/cli",
 ]
+
+[profile.release]
+# Optimize for runtime performance with smaller binaries; longer compile times and reduced backtraces.
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+debug = 1

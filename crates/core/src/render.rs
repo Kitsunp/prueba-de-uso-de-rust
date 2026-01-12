@@ -1,5 +1,7 @@
 //! Rendering helpers for compiled events.
 
+use std::fmt::Write;
+
 use crate::event::{EventCompiled, SceneUpdateCompiled};
 use crate::visual::VisualState;
 
@@ -20,35 +22,34 @@ pub struct TextRenderer;
 
 impl TextRenderer {
     fn render_scene(&self, scene: &SceneUpdateCompiled, visual: &VisualState) -> String {
-        let mut lines = Vec::new();
+        let mut output = String::with_capacity(128);
         if let Some(background) = scene.background.as_deref().or(visual.background.as_deref()) {
-            lines.push(format!("Background: {background}"));
+            let _ = writeln!(output, "Background: {background}");
         }
         if let Some(music) = scene.music.as_deref().or(visual.music.as_deref()) {
-            lines.push(format!("Music: {music}"));
+            let _ = writeln!(output, "Music: {music}");
         }
         if !visual.characters.is_empty() {
-            let roster = visual
-                .characters
-                .iter()
-                .map(|character| {
-                    let mut descriptor = character.name.to_string();
-                    if let Some(expression) = &character.expression {
-                        descriptor.push_str(&format!(" ({expression})"));
-                    }
-                    if let Some(position) = &character.position {
-                        descriptor.push_str(&format!(" @ {position}"));
-                    }
-                    descriptor
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            lines.push(format!("Characters: {roster}"));
+            let mut roster = String::with_capacity(visual.characters.len() * 24);
+            for (idx, character) in visual.characters.iter().enumerate() {
+                if idx > 0 {
+                    roster.push_str(", ");
+                }
+                roster.push_str(character.name.as_ref());
+                if let Some(expression) = &character.expression {
+                    let _ = write!(roster, " ({expression})");
+                }
+                if let Some(position) = &character.position {
+                    let _ = write!(roster, " @ {position}");
+                }
+            }
+            let _ = writeln!(output, "Characters: {roster}");
         }
-        if lines.is_empty() {
+        if output.is_empty() {
             "Scene updated".to_string()
         } else {
-            lines.join("\n")
+            output.truncate(output.trim_end_matches('\n').len());
+            output
         }
     }
 }
@@ -60,14 +61,15 @@ impl RenderBackend for TextRenderer {
                 format!("{}: {}", dialogue.speaker, dialogue.text)
             }
             EventCompiled::Choice(choice) => {
-                let options = choice
-                    .options
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, option)| format!("{}. {}", idx + 1, option.text))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("{}\n{}", choice.prompt, options)
+                let mut options =
+                    String::with_capacity(choice.options.len().saturating_mul(12));
+                for (idx, option) in choice.options.iter().enumerate() {
+                    let _ = writeln!(options, "{}. {}", idx + 1, option.text);
+                }
+                options.truncate(options.trim_end_matches('\n').len());
+                let mut text = String::with_capacity(choice.prompt.len() + 1 + options.len());
+                let _ = write!(text, "{}\n{}", choice.prompt, options);
+                text
             }
             EventCompiled::Scene(scene) => self.render_scene(scene, visual),
             EventCompiled::Jump { target_ip } => format!("Jump to {target_ip}"),
