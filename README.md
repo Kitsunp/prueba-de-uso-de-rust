@@ -12,6 +12,7 @@ Motor básico para novelas visuales basado en eventos. Permite interpretar un gu
 - [Políticas de seguridad y límites](#políticas-de-seguridad-y-límites)
 - [Bindings de Python](#bindings-de-python)
 - [Estructura del código](#estructura-del-código)
+- [Reporte automático de líneas](#reporte-automático-de-líneas)
 
 ## Características
 
@@ -145,3 +146,13 @@ Más ejemplos en `examples/python`.
 - `src/resource.rs`: límites de recursos.
 - `src/error.rs`: errores con diagnósticos.
 - `src/state.rs`: estado interno del motor.
+
+## Reporte automático de líneas
+
+El repositorio incluye un comando para generar un reporte de líneas por lenguaje usando la librería `tokei` y formateado con `tabled`.
+
+```bash
+cargo run --bin repo_report -- --output docs/line_report.md
+```
+
+El reporte queda en `docs/line_report.md` y puede ejecutarse nuevamente cada vez que se necesite actualizar.
