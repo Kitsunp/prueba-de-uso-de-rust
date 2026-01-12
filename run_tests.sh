@@ -8,6 +8,7 @@ cargo test --verbose
 
 echo ""
 echo "=== Ejecutando tests de Rust con feature Python (embed) ==="
+# python-embed habilita PyO3 auto-initialize para tests Rust que embeben CPython.
 export LD_LIBRARY_PATH="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cargo test --features python-embed --verbose
 
@@ -25,6 +26,7 @@ cargo clippy --all-features -- -D warnings
 
 echo ""
 echo "=== Construyendo extensión de Python ==="
+# python habilita pyo3/extension-module para construir el módulo Python vía maturin.
 if [ ! -d ".venv" ]; then
     python -m venv .venv
 fi
