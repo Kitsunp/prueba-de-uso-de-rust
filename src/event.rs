@@ -55,8 +55,8 @@ impl Event {
 #[cfg(feature = "python")]
 impl Event {
     pub fn to_python(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        use pyo3::types::{PyDict, PyList};
-        let dict = PyDict::new(py);
+        use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
+        let dict = PyDict::new_bound(py);
         match self {
             Event::Dialogue(dialogue) => {
                 dict.set_item("type", "dialogue")?;
@@ -66,9 +66,9 @@ impl Event {
             Event::Choice(choice) => {
                 dict.set_item("type", "choice")?;
                 dict.set_item("prompt", choice.prompt.as_str())?;
-                let options = PyList::empty(py);
+                let options = PyList::empty_bound(py);
                 for option in &choice.options {
-                    let option_dict = PyDict::new(py);
+                    let option_dict = PyDict::new_bound(py);
                     option_dict.set_item("text", option.text.as_str())?;
                     option_dict.set_item("target", option.target.as_str())?;
                     options.append(option_dict)?;
@@ -79,9 +79,9 @@ impl Event {
                 dict.set_item("type", "scene")?;
                 dict.set_item("background", scene.background.as_deref())?;
                 dict.set_item("music", scene.music.as_deref())?;
-                let characters = PyList::empty(py);
+                let characters = PyList::empty_bound(py);
                 for character in &scene.characters {
-                    let character_dict = PyDict::new(py);
+                    let character_dict = PyDict::new_bound(py);
                     character_dict.set_item("name", character.name.as_str())?;
                     character_dict.set_item("expression", character.expression.as_deref())?;
                     character_dict.set_item("position", character.position.as_deref())?;

@@ -35,9 +35,9 @@ class ExampleUsageTests(unittest.TestCase):
         self.assertEqual(choice["type"], "choice")
 
     def test_scene_visuals_example(self):
-        PyEngine, err = load_engine()
-        if PyEngine is None:
-            self.skipTest(f"PyEngine not available: {err}")
+        py_engine, err = load_engine()
+        if py_engine is None:
+            self.skipTest(f"py_engine not available: {err}")
         script_json = """
         {
           "events": [
@@ -49,7 +49,7 @@ class ExampleUsageTests(unittest.TestCase):
           "labels": {"start": 0}
         }
         """
-        engine = PyEngine(script_json)
+        engine = py_engine(script_json)
         state = engine.visual_state()
         self.assertEqual(state["background"], "bg/room.png")
         self.assertEqual(state["music"], "music/theme.ogg")
