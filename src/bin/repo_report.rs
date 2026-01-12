@@ -102,7 +102,7 @@ impl Args {
                 }
                 "-h" | "--help" => {
                     print_help();
-                    return Ok(Self { output: None });
+                    std::process::exit(0);
                 }
                 _ => {
                     return Err(format!("Argumento desconocido: {arg}").into());
