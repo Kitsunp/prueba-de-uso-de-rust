@@ -18,13 +18,22 @@ mod python_bindings {
             .to_string()
     }
 
+    fn event_to_dict(event: &Bound<'_, PyAny>) -> Py<PyDict> {
+        if let Ok(dict) = event.downcast::<PyDict>() {
+            return dict.to_owned().into();
+        }
+        let dict = event.call_method0("to_dict").unwrap();
+        dict.downcast::<PyDict>().unwrap().to_owned().into()
+    }
+
     #[test]
     fn python_engine_exposes_methods() {
         Python::with_gil(|py| {
             let engine = Py::new(py, PyEngine::new_from_json(&sample_script()).unwrap()).unwrap();
             let engine_ref = engine.bind(py);
             let event = engine_ref.call_method0("current_event").unwrap();
-            let dict = event.downcast::<PyDict>().unwrap();
+            let dict = event_to_dict(&event);
+            let dict = dict.bind(py);
             let event_type: String = dict.get_item("type").unwrap().unwrap().extract().unwrap();
             assert_eq!(event_type, "scene");
 
@@ -80,7 +89,8 @@ mod python_bindings {
             }"#;
             let engine = Py::new(py, PyEngine::new_from_json(choice_script).unwrap()).unwrap();
             let event = engine.bind(py).call_method0("current_event").unwrap();
-            let dict = event.downcast::<PyDict>().unwrap();
+            let dict = event_to_dict(&event);
+            let dict = dict.bind(py);
             let options = dict.get_item("options").unwrap().unwrap();
             let option_list = options.downcast::<pyo3::types::PyList>().unwrap();
             let option_item = option_list.get_item(0).unwrap();
@@ -97,7 +107,8 @@ mod python_bindings {
             }"#;
             let engine = Py::new(py, PyEngine::new_from_json(jump_script).unwrap()).unwrap();
             let event = engine.bind(py).call_method0("current_event").unwrap();
-            let dict = event.downcast::<PyDict>().unwrap();
+            let dict = event_to_dict(&event);
+            let dict = dict.bind(py);
             assert!(dict.get_item("target").unwrap().is_some());
             assert!(dict.get_item("target_ip").unwrap().is_some());
 
@@ -109,7 +120,8 @@ mod python_bindings {
             }"#;
             let engine = Py::new(py, PyEngine::new_from_json(flag_script).unwrap()).unwrap();
             let event = engine.bind(py).call_method0("current_event").unwrap();
-            let dict = event.downcast::<PyDict>().unwrap();
+            let dict = event_to_dict(&event);
+            let dict = dict.bind(py);
             assert!(dict.get_item("key").unwrap().is_some());
             assert!(dict.get_item("flag_id").unwrap().is_some());
         });

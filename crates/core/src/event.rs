@@ -4,6 +4,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(feature = "python", feature = "python-embed"))]
+use pyo3::{prelude::PyAnyMethods, IntoPy};
+
 /// Shared string storage used by compiled events.
 pub type SharedStr = Arc<str>;
 
@@ -202,46 +205,46 @@ impl PyEvent {
         use pyo3::types::{PyDict, PyDictMethods};
         let dict = PyDict::new_bound(py);
         dict.set_item("type", self.event_type())?;
-        if let Some(value) = self.speaker() {
+        if let Some(value) = self.speaker_value() {
             dict.set_item("speaker", value)?;
         }
-        if let Some(value) = self.text() {
+        if let Some(value) = self.text_value() {
             dict.set_item("text", value)?;
         }
-        if let Some(value) = self.prompt() {
+        if let Some(value) = self.prompt_value() {
             dict.set_item("prompt", value)?;
         }
-        if let Some(options) = self.options(py)? {
+        if let Some(options) = self.options_value(py)? {
             dict.set_item("options", options)?;
         }
-        if let Some(value) = self.background() {
+        if let Some(value) = self.background_value() {
             dict.set_item("background", value)?;
         }
-        if let Some(value) = self.music() {
+        if let Some(value) = self.music_value() {
             dict.set_item("music", value)?;
         }
-        if let Some(characters) = self.characters(py)? {
+        if let Some(characters) = self.characters_value(py)? {
             dict.set_item("characters", characters)?;
         }
-        if let Some(value) = self.target(py)? {
+        if let Some(value) = self.target_value(py)? {
             dict.set_item("target", value)?;
         }
-        if let Some(value) = self.target_ip() {
+        if let Some(value) = self.target_ip_value() {
             dict.set_item("target_ip", value)?;
         }
-        if let Some(value) = self.key(py)? {
+        if let Some(value) = self.key_value(py)? {
             dict.set_item("key", value)?;
         }
-        if let Some(value) = self.flag_id() {
+        if let Some(value) = self.flag_id_value() {
             dict.set_item("flag_id", value)?;
         }
-        if let Some(value) = self.value() {
+        if let Some(value) = self.value_flag() {
             dict.set_item("value", value)?;
         }
         Ok(dict.into())
     }
 
-    fn speaker(&self) -> Option<&str> {
+    fn speaker_value(&self) -> Option<&str> {
         match &self.data {
             PyEventData::Raw(EventRaw::Dialogue(dialogue)) => Some(dialogue.speaker.as_str()),
             PyEventData::Compiled(EventCompiled::Dialogue(dialogue)) => {
@@ -251,7 +254,7 @@ impl PyEvent {
         }
     }
 
-    fn text(&self) -> Option<&str> {
+    fn text_value(&self) -> Option<&str> {
         match &self.data {
             PyEventData::Raw(EventRaw::Dialogue(dialogue)) => Some(dialogue.text.as_str()),
             PyEventData::Compiled(EventCompiled::Dialogue(dialogue)) => Some(dialogue.text.as_ref()),
@@ -259,7 +262,7 @@ impl PyEvent {
         }
     }
 
-    fn prompt(&self) -> Option<&str> {
+    fn prompt_value(&self) -> Option<&str> {
         match &self.data {
             PyEventData::Raw(EventRaw::Choice(choice)) => Some(choice.prompt.as_str()),
             PyEventData::Compiled(EventCompiled::Choice(choice)) => Some(choice.prompt.as_ref()),
@@ -267,7 +270,7 @@ impl PyEvent {
         }
     }
 
-    fn background(&self) -> Option<&str> {
+    fn background_value(&self) -> Option<&str> {
         match &self.data {
             PyEventData::Raw(EventRaw::Scene(scene)) => scene.background.as_deref(),
             PyEventData::Compiled(EventCompiled::Scene(scene)) => scene.background.as_deref(),
@@ -275,7 +278,7 @@ impl PyEvent {
         }
     }
 
-    fn music(&self) -> Option<&str> {
+    fn music_value(&self) -> Option<&str> {
         match &self.data {
             PyEventData::Raw(EventRaw::Scene(scene)) => scene.music.as_deref(),
             PyEventData::Compiled(EventCompiled::Scene(scene)) => scene.music.as_deref(),
@@ -283,21 +286,21 @@ impl PyEvent {
         }
     }
 
-    fn target_ip(&self) -> Option<u32> {
+    fn target_ip_value(&self) -> Option<u32> {
         match &self.data {
             PyEventData::Compiled(EventCompiled::Jump { target_ip }) => Some(*target_ip),
             _ => None,
         }
     }
 
-    fn flag_id(&self) -> Option<u32> {
+    fn flag_id_value(&self) -> Option<u32> {
         match &self.data {
             PyEventData::Compiled(EventCompiled::SetFlag { flag_id, .. }) => Some(*flag_id),
             _ => None,
         }
     }
 
-    fn value(&self) -> Option<bool> {
+    fn value_flag(&self) -> Option<bool> {
         match &self.data {
             PyEventData::Raw(EventRaw::SetFlag { value, .. }) => Some(*value),
             PyEventData::Compiled(EventCompiled::SetFlag { value, .. }) => Some(*value),
@@ -305,7 +308,7 @@ impl PyEvent {
         }
     }
 
-    fn target(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
+    fn target_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
         use pyo3::IntoPy;
         match &self.data {
             PyEventData::Raw(EventRaw::Jump { target }) => Ok(Some(target.as_str().into_py(py))),
@@ -316,7 +319,7 @@ impl PyEvent {
         }
     }
 
-    fn key(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
+    fn key_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
         use pyo3::IntoPy;
         match &self.data {
             PyEventData::Raw(EventRaw::SetFlag { key, .. }) => Ok(Some(key.as_str().into_py(py))),
@@ -327,7 +330,7 @@ impl PyEvent {
         }
     }
 
-    fn options(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
+    fn options_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
         if self.cached_options.borrow().is_some() {
             return Ok(self.cached_options.borrow().clone());
         }
@@ -363,7 +366,7 @@ impl PyEvent {
         Ok(list)
     }
 
-    fn characters(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
+    fn characters_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
         if self.cached_characters.borrow().is_some() {
             return Ok(self.cached_characters.borrow().clone());
         }
@@ -411,67 +414,81 @@ impl PyEvent {
 
     #[getter]
     fn speaker(&self) -> Option<&str> {
-        self.speaker()
+        self.speaker_value()
     }
 
     #[getter]
     fn text(&self) -> Option<&str> {
-        self.text()
+        self.text_value()
     }
 
     #[getter]
     fn prompt(&self) -> Option<&str> {
-        self.prompt()
+        self.prompt_value()
     }
 
     #[getter]
     fn background(&self) -> Option<&str> {
-        self.background()
+        self.background_value()
     }
 
     #[getter]
     fn music(&self) -> Option<&str> {
-        self.music()
+        self.music_value()
     }
 
     #[getter]
     fn target(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        self.target(py)
+        self.target_value(py)
     }
 
     #[getter]
     fn target_ip(&self) -> Option<u32> {
-        self.target_ip()
+        self.target_ip_value()
     }
 
     #[getter]
     fn key(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        self.key(py)
+        self.key_value(py)
     }
 
     #[getter]
     fn flag_id(&self) -> Option<u32> {
-        self.flag_id()
+        self.flag_id_value()
     }
 
     #[getter]
     fn value(&self) -> Option<bool> {
-        self.value()
+        self.value_flag()
     }
 
     #[getter]
     fn options(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        self.options(py)
+        self.options_value(py)
     }
 
     #[getter]
     fn characters(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        self.characters(py)
+        self.characters_value(py)
     }
 
     #[getter]
     fn as_dict(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         self.to_dict(py)
+    }
+
+    fn __getitem__(
+        &self,
+        py: pyo3::Python<'_>,
+        key: &pyo3::Bound<'_, pyo3::PyAny>,
+    ) -> pyo3::PyResult<pyo3::PyObject> {
+        use pyo3::types::PyDictMethods;
+        let dict = self.to_dict(py)?;
+        let dict = dict.bind(py).downcast::<pyo3::types::PyDict>()?;
+        match dict.get_item(key)? {
+            Some(value) => Ok(value.into_py(py)),
+            None => Err(pyo3::exceptions::PyKeyError::new_err("missing key")),
+        }
     }
 
     fn to_dict(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
