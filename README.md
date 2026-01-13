@@ -1,37 +1,48 @@
 # Visual Novel Engine (Rust)
 
-Motor básico para novelas visuales basado en eventos. Permite interpretar un guion en JSON, avanzar por los eventos, tomar decisiones y mantener estado visual (fondo, música y personajes).
+Motor completo para novelas visuales basado en eventos. Permite interpretar un guion en JSON, avanzar por los eventos, tomar decisiones, guardar/cargar partidas y visualizar la historia con una interfaz gráfica nativa.
 
 ## Contenido
 
 - [Características](#características)
 - [Instalación](#instalación)
 - [Uso rápido (Rust)](#uso-rápido-rust)
+- [Interfaz Gráfica (GUI)](#interfaz-gráfica-gui)
 - [Formato del guion](#formato-del-guion)
-- [Estado y renderizado](#estado-y-renderizado)
-- [Políticas de seguridad y límites](#políticas-de-seguridad-y-límites)
+- [Sistema de Guardado](#sistema-de-guardado)
+- [Herramientas de Desarrollo](#herramientas-de-desarrollo)
 - [Bindings de Python](#bindings-de-python)
 - [Estructura del código](#estructura-del-código)
-- [Reporte automático de líneas](#reporte-automático-de-líneas)
 
 ## Características
 
-- Eventos de diálogo, escena, elecciones, saltos y banderas.
-- Estado visual acumulado (fondo, música, personajes).
-- Validación de guiones con política de seguridad y límites de recursos.
-- Renderizador de texto de referencia para pruebas rápidas.
-- Bindings opcionales para Python mediante `pyo3`.
+- **Motor Lógico**: Eventos de diálogo, escena, elecciones, saltos y banderas.
+- **Estado Visual**: Mantiene fondo, música y personajes acumulados.
+- **Interfaz Gráfica Nativa**: Visualizador completo con `eframe` (egui).
+- **Persistencia**: Sistema de guardado/carga con verificación de integridad (checksum).
+- **Historial de Diálogo**: Backlog navegable de los últimos 200 mensajes.
+- **Inspector de Depuración**: Herramienta en tiempo real para modificar banderas y saltar etiquetas.
+- **Bindings Python**: Usa el motor desde Python con `pyo3`.
 
 ## Instalación
+
+### Solo el núcleo (sin GUI)
 
 ```toml
 [dependencies]
 visual_novel_engine = { path = "crates/core" }
 ```
 
-> Ajusta la ruta según tu proyecto. Este repositorio funciona como crate local.
+### Con interfaz gráfica
+
+```toml
+[dependencies]
+visual_novel_gui = { path = "crates/gui" }
+```
 
 ## Uso rápido (Rust)
+
+### Solo lógica (sin ventana)
 
 ```rust
 use visual_novel_engine::{Engine, Script, SecurityPolicy, ResourceLimiter};
@@ -53,28 +64,44 @@ let script_json = r#"
 let script = Script::from_json(script_json)?;
 let mut engine = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())?;
 
-let event = engine.current_event()?;
-println!("Evento actual: {event:?}");
-
-engine.step()?; // avanza al siguiente evento
-let choice = engine.current_event()?;
-println!("Elección: {choice:?}");
-engine.choose(0)?; // elige la primera opción
-
-// Alternativa: step_event() devuelve el evento y avanza en un solo paso.
+println!("Evento actual: {:?}", engine.current_event()?);
+engine.step()?;
+engine.choose(0)?; // Elige la primera opción
 ```
+
+### Con interfaz gráfica
+
+```rust
+use visual_novel_gui::{run_app, VnConfig};
+
+let script_json = include_str!("mi_historia.json");
+
+let config = VnConfig {
+    title: "Mi Novela Visual".to_string(),
+    width: Some(1280.0),
+    height: Some(720.0),
+    ..Default::default()
+};
+
+run_app(script_json.to_string(), Some(config))?;
+```
+
+## Interfaz Gráfica (GUI)
+
+La GUI proporciona una experiencia completa de novela visual:
+
+- **Renderizado de Escenas**: Muestra fondos, personajes y música.
+- **Caja de Diálogo**: Presenta el texto y opciones de forma interactiva.
+- **Menú de Configuración** (`ESC`): Ajusta escala de UI, pantalla completa y VSync.
+- **Historial** (botón en UI): Revisa los últimos diálogos leídos.
+- **Guardar/Cargar**: Desde el menú de configuración, usa diálogos de archivo nativos.
 
 ## Formato del guion
 
 Un guion es un JSON con:
 
-- `events`: lista de eventos (formato `ScriptRaw`).
-- `labels`: mapa de etiquetas a índices de `events` (obligatorio `start`).
-
-En tiempo de ejecución el motor compila el guion a `ScriptCompiled`, resolviendo
-las etiquetas a índices directos y creando eventos compilados con strings internadas.
-
-Tipos de evento disponibles:
+- `events`: lista de eventos.
+- `labels`: mapa de etiquetas a índices (`start` es obligatorio).
 
 ```json
 {"type": "dialogue", "speaker": "Ava", "text": "Hola"}
@@ -84,83 +111,55 @@ Tipos de evento disponibles:
 {"type": "set_flag", "key": "visited", "value": true}
 ```
 
-## Estado y renderizado
+## Sistema de Guardado
 
-- El motor mantiene `EngineState` con posición, banderas y estado visual.
-- `visual_state()` expone el fondo, música y personajes vigentes.
-- `TextRenderer` permite renderizar eventos a texto para depuración rápida.
+El motor incluye persistencia segura:
 
-Ejemplo de renderizado:
+- **Checksum de Script**: Cada save guarda un hash del guion original.
+- **Validación al Cargar**: Si el guion cambió, el save se rechaza para evitar corrupción.
+- **Formato JSON**: Los saves son legibles y depurables.
 
-```rust
-use visual_novel_engine::{Engine, Script, SecurityPolicy, ResourceLimiter, TextRenderer};
+## Herramientas de Desarrollo
 
-let script_json = r#"
-{
-  "events": [
-    {"type": "dialogue", "speaker": "Ava", "text": "Hola mundo"}
-  ],
-  "labels": {"start": 0}
-}
-"#;
+### Inspector (`F12`)
 
-let script = Script::from_json(script_json)?;
-let engine = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())?;
-let output = engine.render_current(&TextRenderer)?;
-println!("{}", output.text);
-```
+Ventana de depuración para desarrolladores:
 
-## Políticas de seguridad y límites
-
-La validación comprueba:
-
-- Existencia de la etiqueta `start`.
-- Longitud de textos, etiquetas y assets.
-- Índices válidos de etiquetas.
-- Opciones de elección no vacías y con targets válidos.
-- Targets compilados y `flag_id` dentro de rango antes de ejecutar.
-
-Puedes ajustar límites creando tu propio `ResourceLimiter` o relajar ciertas reglas con `SecurityPolicy`.
+- Ver y modificar **banderas** en tiempo real.
+- Saltar a cualquier **etiqueta** del guion.
+- Monitorear **FPS** y uso de memoria del historial.
 
 ## Bindings de Python
 
-Con la feature `python` se expone `PyEngine`:
+### Instalación
 
 ```bash
 maturin develop --features python
 ```
 
-Ejemplo:
+### Uso básico (solo lógica)
 
 ```python
 from visual_novel_engine import PyEngine
 
 engine = PyEngine(script_json)
 print(engine.current_event())
-print(engine.step())
-print(engine.choose(0))
+engine.step()
+engine.choose(0)
 ```
 
-Más ejemplos en `examples/python`.
+### Con interfaz gráfica
+
+```python
+import visual_novel_engine as vn
+
+config = vn.VnConfig(width=1280.0, height=720.0)
+vn.run_visual_novel(script_json, config)
+```
 
 ## Estructura del código
 
-- `crates/core/src/engine.rs`: núcleo del motor y navegación de eventos compilados.
-- `crates/core/src/script.rs`: carga JSON y compilación de guiones (`ScriptRaw`/`ScriptCompiled`).
-- `crates/core/src/event.rs`: definición de eventos raw/compiled y serialización.
-- `crates/core/src/visual.rs`: estado visual (fondo, música, personajes).
-- `crates/core/src/render.rs`: interfaz de renderizado y `TextRenderer`.
-- `crates/core/src/security.rs`: política de validación y reglas.
-- `crates/core/src/resource.rs`: límites de recursos.
-- `crates/core/src/error.rs`: errores con diagnósticos.
-- `crates/core/src/state.rs`: estado interno del motor.
-
-## Reporte automático de líneas
-
-El repositorio incluye un comando para generar un reporte de líneas por lenguaje usando la librería `tokei` y formateado con `tabled`.
-
-```bash
-cargo run -p vnengine_cli --bin repo_report -- --output docs/line_report.md
-```
-
-El reporte queda en `docs/line_report.md` y puede ejecutarse nuevamente cada vez que se necesite actualizar.
+- `crates/core/`: Núcleo del motor (lógica, compilación, estado).
+- `crates/gui/`: Interfaz gráfica con eframe.
+- `crates/py/`: Bindings de Python.
+- `examples/`: Ejemplos de uso en Rust y Python.

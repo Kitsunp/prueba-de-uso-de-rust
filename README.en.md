@@ -1,36 +1,48 @@
 # Visual Novel Engine (Rust)
 
-Event-driven visual novel engine. It loads a JSON script, advances through events, handles choices, and keeps visual state (background, music, characters).
+Complete visual novel engine based on events. It loads a JSON script, advances through events, handles choices, saves/loads game state, and displays the story with a native graphical interface.
 
 ## Contents
 
 - [Features](#features)
 - [Installation](#installation)
-- [Quick start (Rust)](#quick-start-rust)
-- [Script format](#script-format)
-- [State and rendering](#state-and-rendering)
-- [Security policy and limits](#security-policy-and-limits)
-- [Python bindings](#python-bindings)
-- [Code layout](#code-layout)
+- [Quick Start (Rust)](#quick-start-rust)
+- [Graphical Interface (GUI)](#graphical-interface-gui)
+- [Script Format](#script-format)
+- [Save System](#save-system)
+- [Development Tools](#development-tools)
+- [Python Bindings](#python-bindings)
+- [Code Layout](#code-layout)
 
 ## Features
 
-- Dialogue, scene, choice, jump, and flag events.
-- Accumulated visual state (background, music, characters).
-- Script validation with security policy and resource limits.
-- Reference text renderer for quick debugging.
-- Optional Python bindings via `pyo3`.
+- **Logic Engine**: Dialogue, scene, choice, jump, and flag events.
+- **Visual State**: Maintains accumulated background, music, and characters.
+- **Native GUI**: Full viewer built with `eframe` (egui).
+- **Persistence**: Save/load system with integrity verification (checksum).
+- **Dialogue History**: Scrollable backlog of the last 200 messages.
+- **Debug Inspector**: Real-time tool to modify flags and jump to labels.
+- **Python Bindings**: Use the engine from Python via `pyo3`.
 
 ## Installation
+
+### Core only (no GUI)
 
 ```toml
 [dependencies]
 visual_novel_engine = { path = "crates/core" }
 ```
 
-> Adjust the path for your project. This repository works as a local crate.
+### With graphical interface
 
-## Quick start (Rust)
+```toml
+[dependencies]
+visual_novel_gui = { path = "crates/gui" }
+```
+
+## Quick Start (Rust)
+
+### Logic only (no window)
 
 ```rust
 use visual_novel_engine::{Engine, Script, SecurityPolicy, ResourceLimiter};
@@ -52,28 +64,44 @@ let script_json = r#"
 let script = Script::from_json(script_json)?;
 let mut engine = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())?;
 
-let event = engine.current_event()?;
-println!("Current event: {event:?}");
-
-engine.step()?; // advance to the next event
-let choice = engine.current_event()?;
-println!("Choice: {choice:?}");
-engine.choose(0)?; // pick the first option
-
-// Alternative: step_event() returns the event and advances in one call.
+println!("Current event: {:?}", engine.current_event()?);
+engine.step()?;
+engine.choose(0)?; // Pick the first option
 ```
 
-## Script format
+### With graphical interface
+
+```rust
+use visual_novel_gui::{run_app, VnConfig};
+
+let script_json = include_str!("my_story.json");
+
+let config = VnConfig {
+    title: "My Visual Novel".to_string(),
+    width: Some(1280.0),
+    height: Some(720.0),
+    ..Default::default()
+};
+
+run_app(script_json.to_string(), Some(config))?;
+```
+
+## Graphical Interface (GUI)
+
+The GUI provides a complete visual novel experience:
+
+- **Scene Rendering**: Displays backgrounds, characters, and music info.
+- **Dialogue Box**: Presents text and choices interactively.
+- **Settings Menu** (`ESC`): Adjust UI scale, fullscreen, and VSync.
+- **History** (UI button): Review past dialogue lines.
+- **Save/Load**: Native file dialogs from the settings menu.
+
+## Script Format
 
 A script is JSON with:
 
-- `events`: list of events (the `ScriptRaw` format).
-- `labels`: map of labels to `events` indices (`start` is required).
-
-At runtime the engine compiles the script into `ScriptCompiled`, resolving label
-targets to direct indices and interning strings for reuse.
-
-Supported event types:
+- `events`: list of events.
+- `labels`: map of labels to indices (`start` is required).
 
 ```json
 {"type": "dialogue", "speaker": "Ava", "text": "Hello"}
@@ -83,73 +111,55 @@ Supported event types:
 {"type": "set_flag", "key": "visited", "value": true}
 ```
 
-## State and rendering
+## Save System
 
-- The engine maintains `EngineState` with position, flags, and visual state.
-- `visual_state()` exposes the current background, music, and characters.
-- `TextRenderer` renders events into text for quick checks.
+The engine includes secure persistence:
 
-Rendering example:
+- **Script Checksum**: Each save stores a hash of the original script.
+- **Validation on Load**: If the script changed, the save is rejected to prevent corruption.
+- **JSON Format**: Saves are human-readable and debuggable.
 
-```rust
-use visual_novel_engine::{Engine, Script, SecurityPolicy, ResourceLimiter, TextRenderer};
+## Development Tools
 
-let script_json = r#"
-{
-  "events": [
-    {"type": "dialogue", "speaker": "Ava", "text": "Hello world"}
-  ],
-  "labels": {"start": 0}
-}
-"#;
+### Inspector (`F12`)
 
-let script = Script::from_json(script_json)?;
-let engine = Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default())?;
-let output = engine.render_current(&TextRenderer)?;
-println!("{}", output.text);
-```
+Debug window for developers:
 
-## Security policy and limits
+- View and modify **flags** in real time.
+- Jump to any **label** in the script.
+- Monitor **FPS** and history memory usage.
 
-Validation enforces:
+## Python Bindings
 
-- Presence of the `start` label.
-- Length limits for text, labels, and asset references.
-- Valid label indices.
-- Non-empty choice options with valid targets.
-- Compiled targets and flag ids within bounds before execution.
-
-Tune limits via `ResourceLimiter` or relax rules with `SecurityPolicy`.
-
-## Python bindings
-
-Enable the `python` feature to expose `PyEngine`:
+### Installation
 
 ```bash
 maturin develop --features python
 ```
 
-Example:
+### Basic usage (logic only)
 
 ```python
 from visual_novel_engine import PyEngine
 
 engine = PyEngine(script_json)
 print(engine.current_event())
-print(engine.step())
-print(engine.choose(0))
+engine.step()
+engine.choose(0)
 ```
 
-More examples in `examples/python`.
+### With graphical interface
 
-## Code layout
+```python
+import visual_novel_engine as vn
 
-- `crates/core/src/engine.rs`: engine core and compiled event navigation.
-- `crates/core/src/script.rs`: JSON loading and script compilation (`ScriptRaw`/`ScriptCompiled`).
-- `crates/core/src/event.rs`: raw/compiled event definitions and serialization.
-- `crates/core/src/visual.rs`: visual state (background, music, characters).
-- `crates/core/src/render.rs`: render interface and `TextRenderer`.
-- `crates/core/src/security.rs`: validation policy and rules.
-- `crates/core/src/resource.rs`: resource limits.
-- `crates/core/src/error.rs`: error types with diagnostics.
-- `crates/core/src/state.rs`: engine internal state.
+config = vn.VnConfig(width=1280.0, height=720.0)
+vn.run_visual_novel(script_json, config)
+```
+
+## Code Layout
+
+- `crates/core/`: Engine core (logic, compilation, state).
+- `crates/gui/`: Graphical interface with eframe.
+- `crates/py/`: Python bindings.
+- `examples/`: Usage examples in Rust and Python.
