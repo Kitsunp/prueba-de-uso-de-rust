@@ -13,7 +13,7 @@ enum PyEventData {
     Compiled(EventCompiled),
 }
 
-#[pyo3::pyclass]
+#[pyo3::pyclass(unsendable)]
 #[derive(Debug)]
 pub struct PyEvent {
     data: PyEventData,
@@ -77,7 +77,7 @@ impl PyEvent {
 
     fn build_dict(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
         use pyo3::types::{PyDict, PyDictMethods};
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", self.event_type())?;
         if let Some(value) = self.speaker_value() {
             dict.set_item("speaker", value)?;
@@ -198,37 +198,41 @@ impl PyEvent {
     }
 
     fn target_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        use pyo3::IntoPy;
+        use pyo3::IntoPyObject;
         match &self.data {
-            PyEventData::Raw(EventRaw::Jump { target }) => Ok(Some(target.as_str().into_py(py))),
+            PyEventData::Raw(EventRaw::Jump { target }) => {
+                Ok(Some(target.as_str().into_pyobject(py)?.into_any().unbind()))
+            }
             PyEventData::Compiled(EventCompiled::Jump { target_ip }) => {
-                Ok(Some(target_ip.into_py(py)))
+                Ok(Some(target_ip.into_pyobject(py)?.into_any().unbind()))
             }
             _ => Ok(None),
         }
     }
 
     fn key_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        use pyo3::IntoPy;
+        use pyo3::IntoPyObject;
         match &self.data {
-            PyEventData::Raw(EventRaw::SetFlag { key, .. }) => Ok(Some(key.as_str().into_py(py))),
+            PyEventData::Raw(EventRaw::SetFlag { key, .. }) => {
+                Ok(Some(key.as_str().into_pyobject(py)?.into_any().unbind()))
+            }
             PyEventData::Compiled(EventCompiled::SetFlag { flag_id, .. }) => {
-                Ok(Some(flag_id.into_py(py)))
+                Ok(Some(flag_id.into_pyobject(py)?.into_any().unbind()))
             }
             _ => Ok(None),
         }
     }
 
     fn options_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        if self.cached_options.borrow().is_some() {
-            return Ok(self.cached_options.borrow().clone());
+        if let Some(cached) = self.cached_options.borrow().as_ref() {
+            return Ok(Some(cached.clone_ref(py)));
         }
-        let list = match &self.data {
+        let list: Option<pyo3::PyObject> = match &self.data {
             PyEventData::Raw(EventRaw::Choice(choice)) => {
                 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
-                let options = PyList::empty_bound(py);
+                let options = PyList::empty(py);
                 for option in &choice.options {
-                    let option_dict = PyDict::new_bound(py);
+                    let option_dict = PyDict::new(py);
                     option_dict.set_item("text", option.text.as_str())?;
                     option_dict.set_item("target", option.target.as_str())?;
                     options.append(option_dict)?;
@@ -237,9 +241,9 @@ impl PyEvent {
             }
             PyEventData::Compiled(EventCompiled::Choice(choice)) => {
                 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
-                let options = PyList::empty_bound(py);
+                let options = PyList::empty(py);
                 for option in &choice.options {
-                    let option_dict = PyDict::new_bound(py);
+                    let option_dict = PyDict::new(py);
                     option_dict.set_item("text", option.text.as_ref())?;
                     option_dict.set_item("target", option.target_ip)?;
                     option_dict.set_item("target_ip", option.target_ip)?;
@@ -249,54 +253,57 @@ impl PyEvent {
             }
             _ => None,
         };
-        if list.is_some() {
-            *self.cached_options.borrow_mut() = list.clone();
+        if let Some(list) = list {
+            *self.cached_options.borrow_mut() = Some(list.clone_ref(py));
             *self.cached_dict.borrow_mut() = None;
+            return Ok(Some(list));
         }
-        Ok(list)
+        Ok(None)
     }
 
     fn characters_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        if self.cached_characters.borrow().is_some() {
-            return Ok(self.cached_characters.borrow().clone());
+        if let Some(cached) = self.cached_characters.borrow().as_ref() {
+            return Ok(Some(cached.clone_ref(py)));
         }
-        let list = match &self.data {
+        let list: Option<pyo3::PyObject> = match &self.data {
             PyEventData::Raw(EventRaw::Scene(scene)) => Some(scene_to_python(py, scene)?),
             PyEventData::Compiled(EventCompiled::Scene(scene)) => {
                 Some(scene_compiled_to_python(py, scene)?)
             }
             _ => None,
         };
-        if list.is_some() {
-            *self.cached_characters.borrow_mut() = list.clone();
+        if let Some(list) = list {
+            *self.cached_characters.borrow_mut() = Some(list.clone_ref(py));
             *self.cached_dict.borrow_mut() = None;
+            return Ok(Some(list));
         }
-        Ok(list)
+        Ok(None)
     }
 
     fn add_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        if self.cached_add.borrow().is_some() {
-            return Ok(self.cached_add.borrow().clone());
+        if let Some(cached) = self.cached_add.borrow().as_ref() {
+            return Ok(Some(cached.clone_ref(py)));
         }
-        let list = match &self.data {
+        let list: Option<pyo3::PyObject> = match &self.data {
             PyEventData::Raw(EventRaw::Patch(patch)) => Some(scene_patch_add_to_python(py, patch)?),
             PyEventData::Compiled(EventCompiled::Patch(patch)) => {
                 Some(scene_patch_add_compiled_to_python(py, patch)?)
             }
             _ => None,
         };
-        if list.is_some() {
-            *self.cached_add.borrow_mut() = list.clone();
+        if let Some(list) = list {
+            *self.cached_add.borrow_mut() = Some(list.clone_ref(py));
             *self.cached_dict.borrow_mut() = None;
+            return Ok(Some(list));
         }
-        Ok(list)
+        Ok(None)
     }
 
     fn update_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        if self.cached_update.borrow().is_some() {
-            return Ok(self.cached_update.borrow().clone());
+        if let Some(cached) = self.cached_update.borrow().as_ref() {
+            return Ok(Some(cached.clone_ref(py)));
         }
-        let list = match &self.data {
+        let list: Option<pyo3::PyObject> = match &self.data {
             PyEventData::Raw(EventRaw::Patch(patch)) => {
                 Some(scene_patch_update_to_python(py, patch)?)
             }
@@ -305,18 +312,19 @@ impl PyEvent {
             }
             _ => None,
         };
-        if list.is_some() {
-            *self.cached_update.borrow_mut() = list.clone();
+        if let Some(list) = list {
+            *self.cached_update.borrow_mut() = Some(list.clone_ref(py));
             *self.cached_dict.borrow_mut() = None;
+            return Ok(Some(list));
         }
-        Ok(list)
+        Ok(None)
     }
 
     fn remove_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
-        if self.cached_remove.borrow().is_some() {
-            return Ok(self.cached_remove.borrow().clone());
+        if let Some(cached) = self.cached_remove.borrow().as_ref() {
+            return Ok(Some(cached.clone_ref(py)));
         }
-        let list = match &self.data {
+        let list: Option<pyo3::PyObject> = match &self.data {
             PyEventData::Raw(EventRaw::Patch(patch)) => {
                 Some(scene_patch_remove_to_python(py, patch)?)
             }
@@ -325,11 +333,12 @@ impl PyEvent {
             }
             _ => None,
         };
-        if list.is_some() {
-            *self.cached_remove.borrow_mut() = list.clone();
+        if let Some(list) = list {
+            *self.cached_remove.borrow_mut() = Some(list.clone_ref(py));
             *self.cached_dict.borrow_mut() = None;
+            return Ok(Some(list));
         }
-        Ok(list)
+        Ok(None)
     }
 }
 
@@ -416,11 +425,11 @@ impl PyEvent {
     }
 
     fn as_dict(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        if let Some(cached) = self.cached_dict.borrow().clone() {
-            return Ok(cached);
+        if let Some(cached) = self.cached_dict.borrow().as_ref() {
+            return Ok(cached.clone_ref(py));
         }
         let dict = self.build_dict(py)?;
-        *self.cached_dict.borrow_mut() = Some(dict.clone());
+        *self.cached_dict.borrow_mut() = Some(dict.clone_ref(py));
         Ok(dict)
     }
 

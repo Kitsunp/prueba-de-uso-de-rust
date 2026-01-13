@@ -26,6 +26,8 @@ SCRIPT_JSON = """
     ]},
     {"type": "dialogue", "speaker": "Ava", "text": "Hola, bienvenido."},
     {"type": "set_flag", "key": "saludo_visto", "value": true},
+    {"type": "set_var", "key": "contador", "value": 0},
+    {"type": "jump_if", "cond": {"kind": "var_cmp", "key": "contador", "op": "gt", "value": 2}, "target": "amable"},
     {"type": "choice", "prompt": "¿Qué respondes?", "options": [
       {"text": "Hola, ¿cómo estás?", "target": "amable"},
       {"text": "No tengo tiempo.", "target": "end"}
@@ -34,7 +36,7 @@ SCRIPT_JSON = """
     {"type": "jump", "target": "end"},
     {"type": "dialogue", "speaker": "Ava", "text": "Entiendo. Hasta luego."}
   ],
-  "labels": {"start": 0, "amable": 4, "end": 6}
+  "labels": {"start": 0, "amable": 6, "end": 8}
 }
 """
 

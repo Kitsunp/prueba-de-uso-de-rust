@@ -79,9 +79,11 @@ fn ui_state_uses_existing_visual_state_for_scene() {
         music: None,
         characters: Vec::new(),
     });
-    let mut visual = VisualState::default();
-    visual.background = Some(shared("bg/forest.png"));
-    visual.music = Some(shared("music/ambient.ogg"));
+    let visual = VisualState {
+        background: Some(shared("bg/forest.png")),
+        music: Some(shared("music/ambient.ogg")),
+        ..VisualState::default()
+    };
     let ui = UiState::from_event(&event, &visual);
     match ui.view {
         UiView::Scene { description } => {

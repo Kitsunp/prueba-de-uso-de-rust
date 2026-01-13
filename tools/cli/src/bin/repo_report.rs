@@ -60,21 +60,21 @@ fn build_report(root: &Path) -> Result<String, Box<dyn Error>> {
     rows.sort_by(|left, right| right.code.cmp(&left.code));
 
     let total = languages.total();
-    let total_files: usize = languages.iter().map(|(_, lang)| lang.reports.len()).sum();
+    let total_files: usize = languages.values().map(|lang| lang.reports.len()).sum();
 
     let table = Table::new(rows).with(Style::markdown()).to_string();
 
     let mut report = String::new();
     writeln!(&mut report, "# Reporte de líneas del repositorio")?;
-    writeln!(&mut report, "")?;
+    writeln!(&mut report)?;
     writeln!(&mut report, "Ruta analizada: `{}`", root.display())?;
-    writeln!(&mut report, "")?;
+    writeln!(&mut report)?;
     writeln!(&mut report, "## Desglose por lenguaje")?;
-    writeln!(&mut report, "")?;
+    writeln!(&mut report)?;
     writeln!(&mut report, "{table}")?;
-    writeln!(&mut report, "")?;
+    writeln!(&mut report)?;
     writeln!(&mut report, "## Totales")?;
-    writeln!(&mut report, "")?;
+    writeln!(&mut report)?;
     writeln!(&mut report, "- Archivos: {total_files}")?;
     writeln!(&mut report, "- Código: {}", total.code)?;
     writeln!(&mut report, "- Comentarios: {}", total.comments)?;

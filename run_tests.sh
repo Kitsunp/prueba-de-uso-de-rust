@@ -3,13 +3,31 @@
 
 set -e
 
-echo "=== Ejecutando tests de Rust ==="
-cargo test -p visual_novel_engine --verbose
-
-
+echo "=== Verificando formato del código ==="
+cargo fmt -- --check || {
+    echo "Error: El código no está formateado correctamente."
+    echo "Ejecuta 'cargo fmt' para arreglarlo."
+    exit 1
+}
 
 echo ""
+echo "=== Ejecutando Clippy ==="
+cargo clippy --workspace --all-targets -- -D warnings
 
+echo ""
+echo "=== Ejecutando auditoría de dependencias ==="
+if ! command -v cargo-audit &> /dev/null; then
+    cargo install cargo-audit --locked
+fi
+cargo audit
+
+echo ""
+echo "=== Ejecutando tests de Rust ==="
+cargo test -p visual_novel_engine --verbose
+cargo test -p vnengine_runtime --verbose
+cargo test -p visual_novel_gui --verbose
+
+echo ""
 echo "=== Ejecutando tests de Rust con feature Python (embed) ==="
 
 # python-embed habilita PyO3 auto-initialize para tests Rust que embeben CPython.
@@ -21,16 +39,10 @@ PYTHON_LIBDIR=$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIB
 export LD_LIBRARY_PATH="${PYTHON_LIBDIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 cargo test -p visual_novel_engine --features python-embed --verbose
-echo "=== Verificando formato del código ==="
-cargo fmt -- --check || {
-    echo "Error: El código no está formateado correctamente."
-    echo "Ejecuta 'cargo fmt' para arreglarlo."
-    exit 1
-}
 
 echo ""
-echo "=== Ejecutando Clippy ==="
-cargo clippy -p visual_novel_engine --all-features -- -D warnings
+echo "=== Ejecutando fuzz smoke ==="
+cargo test -p visual_novel_engine --features arbitrary --test fuzz_tests --verbose
 
 echo ""
 echo "=== Construyendo extensión de Python ==="

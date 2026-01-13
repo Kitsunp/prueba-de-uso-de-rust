@@ -46,6 +46,9 @@ class ExampleUsageTests(unittest.TestCase):
             {"type": "scene", "background": "bg/room.png", "music": "music/theme.ogg", "characters": [
               {"name": "Ava", "expression": "smile", "position": "center"}
             ]},
+            {"type": "patch", "background": "bg/night.png", "add": [], "update": [
+              {"name": "Ava", "expression": "serious", "position": null}
+            ], "remove": []},
             {"type": "dialogue", "speaker": "Ava", "text": "Bienvenido"}
           ],
           "labels": {"start": 0}
@@ -56,6 +59,10 @@ class ExampleUsageTests(unittest.TestCase):
         self.assertEqual(state["background"], "bg/room.png")
         self.assertEqual(state["music"], "music/theme.ogg")
         self.assertEqual(len(state["characters"]), 1)
+        engine.step()
+        patched = engine.visual_state()
+        self.assertEqual(patched["background"], "bg/night.png")
+        self.assertEqual(patched["characters"][0]["expression"], "serious")
 
 
 if __name__ == "__main__":

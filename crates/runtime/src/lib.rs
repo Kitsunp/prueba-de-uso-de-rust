@@ -203,7 +203,7 @@ where
     }
 
     pub fn render_text(&self) -> visual_novel_engine::VnResult<RenderOutput> {
-        let renderer = TextRenderer::default();
+        let renderer = TextRenderer;
         self.engine.render_current(&renderer)
     }
 
@@ -233,37 +233,40 @@ impl Renderer for PixelsRenderer {
             UiView::Dialogue { .. } | UiView::Choice { .. } => {
                 draw_rect(
                     frame,
-                    width,
-                    height,
-                    16,
-                    dialog_y,
-                    width.saturating_sub(32),
-                    dialog_height,
-                    [12, 12, 12, 220],
+                    (width, height),
+                    RectSpec {
+                        x: 16,
+                        y: dialog_y,
+                        width: width.saturating_sub(32),
+                        height: dialog_height,
+                        color: [12, 12, 12, 220],
+                    },
                 );
             }
             UiView::Scene { .. } => {
                 draw_rect(
                     frame,
-                    width,
-                    height,
-                    16,
-                    16,
-                    width.saturating_sub(32),
-                    height.saturating_sub(32),
-                    [20, 20, 20, 180],
+                    (width, height),
+                    RectSpec {
+                        x: 16,
+                        y: 16,
+                        width: width.saturating_sub(32),
+                        height: height.saturating_sub(32),
+                        color: [20, 20, 20, 180],
+                    },
                 );
             }
             UiView::System { .. } => {
                 draw_rect(
                     frame,
-                    width,
-                    height,
-                    16,
-                    16,
-                    width.saturating_sub(32),
-                    48,
-                    [96, 16, 16, 200],
+                    (width, height),
+                    RectSpec {
+                        x: 16,
+                        y: 16,
+                        width: width.saturating_sub(32),
+                        height: 48,
+                        color: [96, 16, 16, 200],
+                    },
                 );
             }
         }
@@ -274,13 +277,14 @@ impl Renderer for PixelsRenderer {
             for _ in options {
                 draw_rect(
                     frame,
-                    width,
-                    height,
-                    32,
-                    y,
-                    width.saturating_sub(64),
-                    option_height,
-                    [40, 120, 120, 220],
+                    (width, height),
+                    RectSpec {
+                        x: 32,
+                        y,
+                        width: width.saturating_sub(64),
+                        height: option_height,
+                        color: [40, 120, 120, 220],
+                    },
                 );
                 y = y.saturating_add(option_height + 8);
             }
@@ -294,23 +298,23 @@ fn clear(frame: &mut [u8], color: [u8; 4]) {
     }
 }
 
-fn draw_rect(
-    frame: &mut [u8],
-    width: u32,
-    height: u32,
+struct RectSpec {
     x: u32,
     y: u32,
-    rect_width: u32,
-    rect_height: u32,
+    width: u32,
+    height: u32,
     color: [u8; 4],
-) {
-    let max_x = (x + rect_width).min(width);
-    let max_y = (y + rect_height).min(height);
-    for row in y..max_y {
-        for col in x..max_x {
+}
+
+fn draw_rect(frame: &mut [u8], size: (u32, u32), rect: RectSpec) {
+    let (width, height) = size;
+    let max_x = (rect.x + rect.width).min(width);
+    let max_y = (rect.y + rect.height).min(height);
+    for row in rect.y..max_y {
+        for col in rect.x..max_x {
             let idx = ((row * width + col) * 4) as usize;
             if idx + 4 <= frame.len() {
-                frame[idx..idx + 4].copy_from_slice(&color);
+                frame[idx..idx + 4].copy_from_slice(&rect.color);
             }
         }
     }

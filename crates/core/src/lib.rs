@@ -95,12 +95,12 @@ impl PyEngine {
     fn visual_state<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
         use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
         let state = self.inner.visual_state();
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("background", state.background.as_deref())?;
         dict.set_item("music", state.music.as_deref())?;
-        let characters = PyList::empty_bound(py);
+        let characters = PyList::empty(py);
         for character in &state.characters {
-            let character_dict = PyDict::new_bound(py);
+            let character_dict = PyDict::new(py);
             character_dict.set_item("name", character.name.as_ref())?;
             character_dict.set_item("expression", character.expression.as_deref())?;
             character_dict.set_item("position", character.position.as_deref())?;
@@ -133,7 +133,7 @@ impl PyEngine {
 #[cfg(any(feature = "python", feature = "python-embed"))]
 fn ui_state_to_python(ui: &UiState, py: Python<'_>) -> PyResult<PyObject> {
     use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
-    let dict = PyDict::new_bound(py);
+    let dict = PyDict::new(py);
     match &ui.view {
         UiView::Dialogue { speaker, text } => {
             dict.set_item("type", "dialogue")?;
@@ -143,7 +143,7 @@ fn ui_state_to_python(ui: &UiState, py: Python<'_>) -> PyResult<PyObject> {
         UiView::Choice { prompt, options } => {
             dict.set_item("type", "choice")?;
             dict.set_item("prompt", prompt)?;
-            let list = PyList::empty_bound(py);
+            let list = PyList::empty(py);
             for option in options {
                 list.append(option)?;
             }

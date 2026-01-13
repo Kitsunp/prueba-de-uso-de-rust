@@ -17,12 +17,14 @@ Complete visual novel engine based on events. It loads a JSON script, advances t
 ## Features
 
 - **Logic Engine**: Dialogue, scene, choice, jump, and flag events.
+- **Branching & variables**: `jump_if` conditions and integer variables via `set_var`.
 - **Visual State**: Maintains accumulated background, music, and characters.
 - **Native GUI**: Full viewer built with `eframe` (egui).
-- **Persistence**: Save/load system with integrity verification (checksum).
+- **Persistence**: Binary saves with `script_id` (SHA-256) and integrity checks.
 - **Dialogue History**: Scrollable backlog of the last 200 messages.
 - **Debug Inspector**: Real-time tool to modify flags and jump to labels.
 - **Python Bindings**: Use the engine from Python via `pyo3`.
+- **AssetStore**: Asset loading with path sanitization, limits, and optional manifest.
 
 ## Installation
 
@@ -152,6 +154,18 @@ Debug window for developers:
 - Jump to any **label** in the script.
 - Monitor **FPS** and history memory usage.
 
+### CLI (`vnengine`)
+
+Primary commands for QA and tooling:
+
+```bash
+vnengine validate script.json
+vnengine compile script.json -o script.vnsc
+vnengine trace script.json --steps 50 -o trace.yaml
+vnengine verify-save save.vns --script script.vnsc
+vnengine manifest assets/ -o manifest.json
+```
+
 ## Python Bindings
 
 ### Installation
@@ -188,3 +202,10 @@ vn.run_visual_novel(script_json, config)
 - `crates/gui/`: Graphical interface with eframe.
 - `crates/py/`: Python bindings.
 - `examples/`: Usage examples in Rust and Python.
+
+## Security modes
+
+The engine supports two modes:
+
+- **Trusted** (default): scripts/assets are trusted.
+- **Untrusted**: validates paths, sizes, and asset hashes (optional manifest).

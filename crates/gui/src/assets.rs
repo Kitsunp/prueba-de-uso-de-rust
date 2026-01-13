@@ -246,12 +246,12 @@ impl AssetManager {
         &mut self,
         ctx: &egui::Context,
         asset_path: &str,
-    ) -> Result<Option<&egui::TextureHandle>, AssetError> {
+    ) -> Result<Option<egui::TextureHandle>, AssetError> {
         self.usage_counter = self.usage_counter.wrapping_add(1);
         if let Some(entry) = self.cache.get_mut(asset_path) {
             entry.last_used = self.usage_counter;
             self.stats.hits += 1;
-            return Ok(Some(&entry.texture));
+            return Ok(Some(entry.texture.clone()));
         }
         let loaded = self.store.load_image(asset_path)?;
         let bytes = loaded.pixels.len();
@@ -281,7 +281,10 @@ impl AssetManager {
                 last_used: self.usage_counter,
             },
         );
-        Ok(self.cache.get(asset_path).map(|entry| &entry.texture))
+        Ok(self
+            .cache
+            .get(asset_path)
+            .map(|entry| entry.texture.clone()))
     }
 
     fn evict_lru(&mut self) -> bool {

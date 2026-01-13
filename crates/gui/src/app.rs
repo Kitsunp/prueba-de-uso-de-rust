@@ -6,8 +6,8 @@ use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use visual_novel_engine::{
-    compute_script_id, Engine, EventCompiled, ResourceLimiter, ScriptId, ScriptRaw, SecurityPolicy,
-    UiState, UiView, VnError,
+    compute_script_id, Engine, ResourceLimiter, ScriptId, ScriptRaw, SecurityPolicy, UiState,
+    UiView, VnError,
 };
 
 use crate::assets::{AssetManager, AssetStore, SecurityMode};
@@ -61,13 +61,11 @@ impl VnConfig {
 
         if let Some(display) = display {
             scale_factor = self.scale_factor.unwrap_or(display.scale_factor.max(1.0));
-            if self.width.is_none() || self.height.is_none() {
-                if display.height < 720.0 {
-                    fullscreen = true;
-                    width = display.width;
-                    height = display.height;
-                    ui_scale = 1.1;
-                }
+            if (self.width.is_none() || self.height.is_none()) && display.height < 720.0 {
+                fullscreen = true;
+                width = display.width;
+                height = display.height;
+                ui_scale = 1.1;
             }
         }
 
@@ -244,7 +242,10 @@ impl VnApp {
                     Ok(Some(texture)) => {
                         let size = ui.available_width();
                         let ratio = texture.size()[1] as f32 / texture.size()[0].max(1) as f32;
-                        ui.image(texture, egui::Vec2::new(size, size * ratio));
+                        ui.add(
+                            egui::Image::from_texture(&texture)
+                                .fit_to_exact_size(egui::Vec2::new(size, size * ratio)),
+                        );
                     }
                     Ok(None) => {}
                     Err(err) => self.last_error = Some(format!("Asset error: {err}")),
