@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 
 use pixels::{Pixels, SurfaceTexture};
-use visual_novel_engine::{Engine, RenderOutput, TextRenderer, UiState, UiView, VisualState};
+use visual_novel_engine::{
+    Engine, EventCompiled, RenderOutput, TextRenderer, UiState, UiView, VisualState,
+};
 use winit::{
     dpi::LogicalSize,
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -132,10 +134,10 @@ where
         audio: A,
         assets: S,
     ) -> visual_novel_engine::VnResult<Self> {
-        let visual = engine.visual_state().clone();
         let event = engine.current_event()?;
+        let visual = Self::derive_visual(&engine, &event);
         let ui = UiState::from_event(&event, &visual);
-        Ok(Self {
+        let mut app = Self {
             engine,
             visual,
             renderer,
@@ -143,7 +145,9 @@ where
             audio,
             assets,
             ui,
-        })
+        };
+        app.update_audio();
+        Ok(app)
     }
 
     pub fn engine(&self) -> &Engine {
@@ -178,15 +182,27 @@ where
     }
 
     fn refresh_state(&mut self) -> visual_novel_engine::VnResult<()> {
-        self.visual = self.engine.visual_state().clone();
         let event = self.engine.current_event()?;
+        self.visual = Self::derive_visual(&self.engine, &event);
         self.ui = UiState::from_event(&event, &self.visual);
+        self.update_audio();
+        Ok(())
+    }
+
+    fn derive_visual(engine: &Engine, event: &EventCompiled) -> VisualState {
+        let mut visual = engine.visual_state().clone();
+        if let EventCompiled::Scene(scene) = event {
+            visual.apply_scene(scene);
+        }
+        visual
+    }
+
+    fn update_audio(&mut self) {
         if let Some(music) = &self.visual.music {
             self.audio.play_music(music.as_ref());
         } else {
             self.audio.stop_music();
         }
-        Ok(())
     }
 
     pub fn render_text(&self) -> visual_novel_engine::VnResult<RenderOutput> {
