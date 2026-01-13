@@ -223,11 +223,14 @@ impl VnApp {
     fn new(
         engine: Engine,
         config: ResolvedConfig,
-        prefs: UserPreferences,
+        mut prefs: UserPreferences,
         prefs_path: PathBuf,
         script_hash: u32,
         cc: &eframe::CreationContext<'_>,
     ) -> Self {
+        if config.fullscreen {
+            prefs.fullscreen = true;
+        }
         let mut app = Self {
             engine,
             config,
