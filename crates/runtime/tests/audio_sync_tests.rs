@@ -92,12 +92,12 @@ fn audio_updates_when_choice_jumps_to_scene() {
 
     let mut app = RuntimeApp::new(
         engine,
-        NullRenderer::default(),
-        NullInput::default(),
+        NullRenderer,
+        NullInput,
         SharedAudio {
             state: audio_state.clone(),
         },
-        NullAssets::default(),
+        NullAssets,
     )
     .unwrap();
 
@@ -135,12 +135,12 @@ fn audio_switches_music_for_scene_jump() {
 
     let mut app = RuntimeApp::new(
         engine,
-        NullRenderer::default(),
-        NullInput::default(),
+        NullRenderer,
+        NullInput,
         SharedAudio {
             state: audio_state.clone(),
         },
-        NullAssets::default(),
+        NullAssets,
     )
     .unwrap();
 

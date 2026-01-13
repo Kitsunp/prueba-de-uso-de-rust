@@ -53,9 +53,7 @@ mod python_bindings {
     #[test]
     fn python_engine_reports_diagnostics() {
         let broken_json = "{\n  \"events\": [\n    {\"type\": \"dialogue\"}\n  ],\n  \"labels\": {\"start\": 0}\n";
-        let err = PyEngine::new_from_json(broken_json)
-            .err()
-            .expect("should fail");
+        let err = PyEngine::new_from_json(broken_json).expect_err("should fail");
         match err {
             VnError::Serialization { message, .. } => {
                 let lowered = message.to_lowercase();
@@ -70,7 +68,7 @@ mod python_bindings {
 
         Python::with_gil(|_py| {
             let result = PyEngine::new(broken_json);
-            let py_err = result.err().expect("should be error");
+            let py_err = result.expect_err("should be error");
             let message = py_err.to_string();
             assert!(message.contains("serialization"));
         });

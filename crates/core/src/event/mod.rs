@@ -161,15 +161,17 @@ fn cond_to_json(cond: &CondCompiled) -> serde_json::Value {
 #[cfg(any(feature = "python", feature = "python-embed"))]
 impl EventRaw {
     pub fn to_python(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        use pyo3::IntoPy;
-        pyo3::Py::new(py, PyEvent::from_raw(self.clone())).map(|event| event.into_py(py))
+        use pyo3::IntoPyObject;
+        let event = pyo3::Py::new(py, PyEvent::from_raw(self.clone()))?;
+        Ok(event.into_pyobject(py)?.into_any().unbind())
     }
 }
 
 #[cfg(any(feature = "python", feature = "python-embed"))]
 impl EventCompiled {
     pub fn to_python(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
-        use pyo3::IntoPy;
-        pyo3::Py::new(py, PyEvent::from_compiled(self.clone())).map(|event| event.into_py(py))
+        use pyo3::IntoPyObject;
+        let event = pyo3::Py::new(py, PyEvent::from_compiled(self.clone()))?;
+        Ok(event.into_pyobject(py)?.into_any().unbind())
     }
 }

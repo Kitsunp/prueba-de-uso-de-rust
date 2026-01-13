@@ -4,7 +4,7 @@
 
 Los tests se ejecutan automáticamente en GitHub Actions.
 
-Ver `.github/workflows/tests.yml` para detalles.
+Ver `.github/workflows/ci.yml` y `.github/workflows/tests.yml` para detalles.
 
 ## Comandos de Test
 
@@ -16,6 +16,9 @@ cargo test -p visual_novel_engine --verbose
 
 # Benchmarks (Criterion)
 cargo bench -p visual_novel_engine --bench core_benches
+
+# Fuzz smoke (determinista en CI)
+cargo test -p visual_novel_engine --features arbitrary --test fuzz_tests --verbose
 ```
 
 ### GUI (Interfaz Gráfica)
@@ -29,10 +32,18 @@ cargo test -p visual_novel_gui --verbose
 
 ```bash
 # Requiere maturin instalado
-maturin develop --features python
+maturin develop --manifest-path crates/py/Cargo.toml
 
-# Ejecutar tests de Python
-python -m pytest tests/python/ -v
+# Ejecutar tests de Python (unittest)
+PYTHONPATH=python python -m unittest tests.python.test_examples tests.python.test_vnengine -v
+```
+
+### Linting y auditoría
+
+```bash
+cargo fmt --check
+cargo clippy --workspace --all-targets -D warnings
+cargo audit
 ```
 
 ## Tests Manuales Recomendados

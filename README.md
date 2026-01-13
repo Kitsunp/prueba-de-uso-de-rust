@@ -17,12 +17,14 @@ Motor completo para novelas visuales basado en eventos. Permite interpretar un g
 ## Características
 
 - **Motor Lógico**: Eventos de diálogo, escena, elecciones, saltos y banderas.
+- **Branching y variables**: Condiciones (`jump_if`) y variables enteras (`set_var`) con comparadores.
 - **Estado Visual**: Mantiene fondo, música y personajes acumulados.
 - **Interfaz Gráfica Nativa**: Visualizador completo con `eframe` (egui).
-- **Persistencia**: Sistema de guardado/carga con verificación de integridad (checksum).
+- **Persistencia**: Guardados binarios con `script_id` (SHA-256) y verificación de integridad.
 - **Historial de Diálogo**: Backlog navegable de los últimos 200 mensajes.
 - **Inspector de Depuración**: Herramienta en tiempo real para modificar banderas y saltar etiquetas.
 - **Bindings Python**: Usa el motor desde Python con `pyo3`.
+- **AssetStore**: Carga de assets con saneamiento de rutas, límites y manifest opcional.
 
 ## Instalación
 
@@ -151,6 +153,18 @@ Ventana de depuración para desarrolladores:
 - Saltar a cualquier **etiqueta** del guion.
 - Monitorear **FPS** y uso de memoria del historial.
 
+### CLI (`vnengine`)
+
+Comandos principales para QA y herramientas internas:
+
+```bash
+vnengine validate script.json
+vnengine compile script.json -o script.vnsc
+vnengine trace script.json --steps 50 -o trace.yaml
+vnengine verify-save save.vns --script script.vnsc
+vnengine manifest assets/ -o manifest.json
+```
+
 ## Bindings de Python
 
 ### Instalación
@@ -187,3 +201,10 @@ vn.run_visual_novel(script_json, config)
 - `crates/gui/`: Interfaz gráfica con eframe.
 - `crates/py/`: Bindings de Python.
 - `examples/`: Ejemplos de uso en Rust y Python.
+
+## Seguridad y modos de ejecución
+
+El motor soporta dos modos:
+
+- **Trusted** (default): scripts/assets confiables.
+- **Untrusted**: valida rutas, tamaños y hashes de assets (manifest opcional).

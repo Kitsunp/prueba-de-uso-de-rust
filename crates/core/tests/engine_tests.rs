@@ -214,7 +214,7 @@ fn scene_updates_visual_state_and_renderer_output() {
     assert_eq!(visual.music.as_deref(), Some("music/theme.ogg"));
     assert_eq!(visual.characters.len(), 1);
 
-    let renderer = TextRenderer::default();
+    let renderer = TextRenderer;
     let output = renderer.render(&scene, visual);
     assert!(output.text.contains("Background: bg/room.png"));
     assert!(output.text.contains("Characters: Ava (smile) @ center"));
@@ -231,7 +231,7 @@ fn renderer_formats_choice_and_dialogue() {
     .unwrap();
     engine.step().unwrap();
     let dialogue = engine.step_event().unwrap();
-    let renderer = TextRenderer::default();
+    let renderer = TextRenderer;
     let output = renderer.render(&dialogue, engine.visual_state());
     assert!(output.text.contains("Ava: Hola"));
 

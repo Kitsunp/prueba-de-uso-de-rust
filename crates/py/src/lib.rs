@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
 use ::visual_novel_engine::{
-    CharacterPatchRaw, CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, CmpOp, CondRaw,
-    DialogueRaw, Engine as CoreEngine, EventCompiled, EventRaw, ResourceLimiter, ScenePatchRaw,
-    SceneUpdateRaw, ScriptRaw, SecurityPolicy, UiState, UiView, VnError, SCRIPT_SCHEMA_VERSION,
+    CharacterPatchCompiled, CharacterPatchRaw, CharacterPlacementCompiled, CharacterPlacementRaw,
+    ChoiceOptionRaw, ChoiceRaw, CmpOp, CondRaw, DialogueRaw, Engine as CoreEngine, EventCompiled,
+    EventRaw, ResourceLimiter, ScenePatchRaw, SceneUpdateRaw, ScriptRaw, SecurityPolicy, SharedStr,
+    UiState, UiView, VnError, SCRIPT_SCHEMA_VERSION,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
@@ -66,12 +67,12 @@ impl PyEngine {
 
     fn visual_state<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
         let state = self.inner.visual_state();
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("background", state.background.as_deref())?;
         dict.set_item("music", state.music.as_deref())?;
-        let characters = PyList::empty_bound(py);
+        let characters = PyList::empty(py);
         for character in &state.characters {
-            let character_dict = PyDict::new_bound(py);
+            let character_dict = PyDict::new(py);
             character_dict.set_item("name", character.name.as_ref())?;
             character_dict.set_item("expression", character.expression.as_deref())?;
             character_dict.set_item("position", character.position.as_deref())?;
@@ -123,6 +124,7 @@ pub struct PyVnConfig {
 impl PyVnConfig {
     #[new]
     #[pyo3(signature = (title=None, width=None, height=None, fullscreen=None, scale_factor=None, assets_root=None, asset_cache_budget_mb=None, security_mode=None, manifest_path=None, require_manifest=None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         title: Option<String>,
         width: Option<f32>,
@@ -360,7 +362,7 @@ impl StableScript {
 }
 
 fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> {
-    let dict = PyDict::new_bound(py);
+    let dict = PyDict::new(py);
     match event {
         EventCompiled::Dialogue(dialogue) => {
             dict.set_item("type", "dialogue")?;
@@ -370,9 +372,9 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
         EventCompiled::Choice(choice) => {
             dict.set_item("type", "choice")?;
             dict.set_item("prompt", choice.prompt.as_ref())?;
-            let options = PyList::empty_bound(py);
+            let options = PyList::empty(py);
             for option in &choice.options {
-                let option_dict = PyDict::new_bound(py);
+                let option_dict = PyDict::new(py);
                 option_dict.set_item("text", option.text.as_ref())?;
                 option_dict.set_item("target", option.target_ip)?;
                 option_dict.set_item("target_ip", option.target_ip)?;
@@ -384,9 +386,9 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
             dict.set_item("type", "scene")?;
             dict.set_item("background", scene.background.as_deref())?;
             dict.set_item("music", scene.music.as_deref())?;
-            let characters = PyList::empty_bound(py);
+            let characters = PyList::empty(py);
             for character in &scene.characters {
-                let character_dict = PyDict::new_bound(py);
+                let character_dict = PyDict::new(py);
                 character_dict.set_item("name", character.name.as_ref())?;
                 character_dict.set_item("expression", character.expression.as_deref())?;
                 character_dict.set_item("position", character.position.as_deref())?;
@@ -442,11 +444,11 @@ fn parse_cmp_op(op: &str) -> PyResult<CmpOp> {
 
 fn characters_to_python(
     py: Python<'_>,
-    characters: &[visual_novel_engine::CharacterPlacementCompiled],
+    characters: &[CharacterPlacementCompiled],
 ) -> PyResult<PyObject> {
-    let list = PyList::empty_bound(py);
+    let list = PyList::empty(py);
     for character in characters {
-        let character_dict = PyDict::new_bound(py);
+        let character_dict = PyDict::new(py);
         character_dict.set_item("name", character.name.as_ref())?;
         character_dict.set_item("expression", character.expression.as_deref())?;
         character_dict.set_item("position", character.position.as_deref())?;
@@ -455,13 +457,10 @@ fn characters_to_python(
     Ok(list.into())
 }
 
-fn patch_update_to_python(
-    py: Python<'_>,
-    update: &[visual_novel_engine::CharacterPatchCompiled],
-) -> PyResult<PyObject> {
-    let list = PyList::empty_bound(py);
+fn patch_update_to_python(py: Python<'_>, update: &[CharacterPatchCompiled]) -> PyResult<PyObject> {
+    let list = PyList::empty(py);
     for character in update {
-        let character_dict = PyDict::new_bound(py);
+        let character_dict = PyDict::new(py);
         character_dict.set_item("name", character.name.as_ref())?;
         character_dict.set_item("expression", character.expression.as_deref())?;
         character_dict.set_item("position", character.position.as_deref())?;
@@ -470,11 +469,8 @@ fn patch_update_to_python(
     Ok(list.into())
 }
 
-fn string_list_to_python(
-    py: Python<'_>,
-    items: &[visual_novel_engine::SharedStr],
-) -> PyResult<PyObject> {
-    let list = PyList::empty_bound(py);
+fn string_list_to_python(py: Python<'_>, items: &[SharedStr]) -> PyResult<PyObject> {
+    let list = PyList::empty(py);
     for item in items {
         list.append(item.as_ref())?;
     }
@@ -482,7 +478,7 @@ fn string_list_to_python(
 }
 
 fn ui_state_to_python(ui: &UiState, py: Python<'_>) -> PyResult<PyObject> {
-    let dict = PyDict::new_bound(py);
+    let dict = PyDict::new(py);
     match &ui.view {
         UiView::Dialogue { speaker, text } => {
             dict.set_item("type", "dialogue")?;
@@ -492,7 +488,7 @@ fn ui_state_to_python(ui: &UiState, py: Python<'_>) -> PyResult<PyObject> {
         UiView::Choice { prompt, options } => {
             dict.set_item("type", "choice")?;
             dict.set_item("prompt", prompt)?;
-            let list = PyList::empty_bound(py);
+            let list = PyList::empty(py);
             for option in options {
                 list.append(option)?;
             }
