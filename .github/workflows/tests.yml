@@ -48,7 +48,7 @@ jobs:
     - name: Build and install Python module
       run: |
         source .venv/bin/activate
-        maturin develop --features python --manifest-path crates/core/Cargo.toml
+        maturin develop --manifest-path crates/py/Cargo.toml
     - name: Run Python tests
       run: |
         source .venv/bin/activate
