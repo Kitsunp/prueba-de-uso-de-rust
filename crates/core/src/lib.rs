@@ -6,6 +6,7 @@ mod resource;
 mod script;
 mod security;
 mod state;
+mod ui;
 mod visual;
 
 pub use engine::Engine;
@@ -20,6 +21,7 @@ pub use resource::ResourceLimiter;
 pub use script::{ScriptCompiled, ScriptRaw};
 pub use security::SecurityPolicy;
 pub use state::EngineState;
+pub use ui::{UiState, UiView};
 pub use visual::VisualState;
 
 pub type Event = EventCompiled;
@@ -100,6 +102,12 @@ impl PyEngine {
         dict.set_item("characters", characters)?;
         Ok(dict.into())
     }
+
+    fn ui_state<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
+        let event = self.inner.current_event().map_err(vn_error_to_py)?;
+        let ui = UiState::from_event(&event, self.inner.visual_state());
+        ui_state_to_python(&ui, py)
+    }
 }
 
 #[cfg(any(feature = "python", feature = "python-embed"))]
@@ -113,4 +121,35 @@ impl PyEngine {
         )?;
         Ok(Self { inner })
     }
+}
+
+#[cfg(any(feature = "python", feature = "python-embed"))]
+fn ui_state_to_python(ui: &UiState, py: Python<'_>) -> PyResult<PyObject> {
+    use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
+    let dict = PyDict::new_bound(py);
+    match &ui.view {
+        UiView::Dialogue { speaker, text } => {
+            dict.set_item("type", "dialogue")?;
+            dict.set_item("speaker", speaker)?;
+            dict.set_item("text", text)?;
+        }
+        UiView::Choice { prompt, options } => {
+            dict.set_item("type", "choice")?;
+            dict.set_item("prompt", prompt)?;
+            let list = PyList::empty_bound(py);
+            for option in options {
+                list.append(option)?;
+            }
+            dict.set_item("options", list)?;
+        }
+        UiView::Scene { description } => {
+            dict.set_item("type", "scene")?;
+            dict.set_item("description", description)?;
+        }
+        UiView::System { message } => {
+            dict.set_item("type", "system")?;
+            dict.set_item("message", message)?;
+        }
+    }
+    Ok(dict.into())
 }

@@ -103,6 +103,39 @@ class EngineWrapperTests(unittest.TestCase):
         self.assertIsInstance(engine.raw, FakeEngine)
         self.assertEqual(captured["payload"], '{"events":[],"labels":{"start":0}}')
 
+    def test_engine_ui_state_calls_native(self):
+        module = types.ModuleType("visual_novel_engine")
+
+        class FakeEngine:
+            def __init__(self, script_json):
+                self.script_json = script_json
+
+            def ui_state(self):
+                return {"type": "choice", "prompt": "Go?", "options": ["Yes", "No"]}
+
+        module.Engine = FakeEngine
+        sys.modules["visual_novel_engine"] = module
+
+        engine = Engine.from_script({"events": [], "labels": {"start": 0}})
+        self.assertEqual(
+            engine.ui_state(),
+            {"type": "choice", "prompt": "Go?", "options": ["Yes", "No"]},
+        )
+
+    def test_engine_ui_state_requires_binding(self):
+        module = types.ModuleType("visual_novel_engine")
+
+        class FakeEngine:
+            def __init__(self, script_json):
+                self.script_json = script_json
+
+        module.Engine = FakeEngine
+        sys.modules["visual_novel_engine"] = module
+
+        engine = Engine.from_script({"events": [], "labels": {"start": 0}})
+        with self.assertRaises(RuntimeError):
+            engine.ui_state()
+
 
 class EngineAppTests(unittest.TestCase):
     def test_engine_app_runs_choices(self):
