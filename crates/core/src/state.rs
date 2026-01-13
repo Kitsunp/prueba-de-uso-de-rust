@@ -9,11 +9,12 @@ use crate::visual::VisualState;
 
 const HISTORY_LIMIT: usize = 200;
 
-/// Runtime state for the engine, including position, flags, and visuals.
+/// Runtime state for the engine, including position, flags, variables, and visuals.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EngineState {
     pub position: u32,
     pub flags: Vec<u64>,
+    pub vars: Vec<i32>,
     pub visual: VisualState,
     pub history: VecDeque<DialogueCompiled>,
 }
@@ -24,6 +25,7 @@ impl EngineState {
         Self {
             position,
             flags: vec![0; bitset_len(flag_count)],
+            vars: Vec::new(),
             visual: VisualState::default(),
             history: VecDeque::with_capacity(HISTORY_LIMIT),
         }
@@ -51,6 +53,20 @@ impl EngineState {
             .unwrap_or(false)
     }
 
+    /// Sets a variable value by id.
+    pub fn set_var(&mut self, id: u32, value: i32) {
+        let idx = id as usize;
+        if idx >= self.vars.len() {
+            self.vars.resize(idx + 1, 0);
+        }
+        self.vars[idx] = value;
+    }
+
+    /// Reads a variable value by id.
+    pub fn get_var(&self, id: u32) -> i32 {
+        self.vars.get(id as usize).copied().unwrap_or(0)
+    }
+
     /// Records a dialogue line into the history buffer.
     pub fn record_dialogue(&mut self, dialogue: &DialogueCompiled) {
         if self.history.len() >= HISTORY_LIMIT {
@@ -62,7 +78,7 @@ impl EngineState {
 
 fn bitset_len(flag_count: u32) -> usize {
     let count = usize::try_from(flag_count).unwrap_or(0);
-    (count + 63) / 64
+    count.div_ceil(64)
 }
 
 fn flag_bit(id: u32) -> (usize, u64) {

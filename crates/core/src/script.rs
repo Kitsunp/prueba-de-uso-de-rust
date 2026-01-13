@@ -7,12 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{VnError, VnResult};
 use crate::event::{
-    CharacterPlacementCompiled, ChoiceCompiled, ChoiceOptionCompiled, DialogueCompiled,
-    EventCompiled, EventRaw, SceneUpdateCompiled, SharedStr,
+    CharacterPlacementCompiled, ChoiceCompiled, ChoiceOptionCompiled, CondCompiled, CondRaw,
+    DialogueCompiled, EventCompiled, EventRaw, ScenePatchCompiled, SceneUpdateCompiled, SharedStr,
 };
+use crate::version::{COMPILED_FORMAT_VERSION, SCRIPT_BINARY_MAGIC};
 
 /// JSON-facing script format with label names and raw string data.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ScriptRaw {
     pub events: Vec<EventRaw>,
     pub labels: HashMap<String, usize>,
@@ -26,9 +28,6 @@ pub struct ScriptCompiled {
     pub start_ip: u32,
     pub flag_count: u32,
 }
-
-const SCRIPT_BINARY_MAGIC: [u8; 4] = *b"VNSC";
-const SCRIPT_BINARY_VERSION: u16 = 1;
 
 impl ScriptRaw {
     /// Creates a raw script from events and labels.
@@ -59,6 +58,7 @@ impl ScriptRaw {
         let mut compiled_events = Vec::with_capacity(self.events.len());
         let mut compiled_labels = HashMap::with_capacity(self.labels.len());
         let mut flag_map: HashMap<String, u32> = HashMap::new();
+        let mut var_map: HashMap<String, u32> = HashMap::new();
 
         for (label, index) in &self.labels {
             if *index >= self.events.len() {
@@ -130,21 +130,46 @@ impl ScriptRaw {
                     EventCompiled::Jump { target_ip }
                 }
                 EventRaw::SetFlag { key, value } => {
-                    let flag_id = match flag_map.get(key) {
-                        Some(id) => *id,
-                        None => {
-                            let next_id = u32::try_from(flag_map.len()).map_err(|_| {
-                                VnError::InvalidScript("too many flags".to_string())
-                            })?;
-                            flag_map.insert(key.clone(), next_id);
-                            next_id
-                        }
-                    };
+                    let flag_id = get_or_insert_id(&mut flag_map, key)?;
                     EventCompiled::SetFlag {
                         flag_id,
                         value: *value,
                     }
                 }
+                EventRaw::SetVar { key, value } => {
+                    let var_id = get_or_insert_id(&mut var_map, key)?;
+                    EventCompiled::SetVar {
+                        var_id,
+                        value: *value,
+                    }
+                }
+                EventRaw::JumpIf { cond, target } => {
+                    let target_ip = compiled_labels.get(target).copied().ok_or_else(|| {
+                        VnError::InvalidScript(format!("jump_if target '{target}' not found"))
+                    })?;
+                    let cond = compile_cond(cond, &mut flag_map, &mut var_map)?;
+                    EventCompiled::JumpIf { cond, target_ip }
+                }
+                EventRaw::Patch(patch) => EventCompiled::Patch(ScenePatchCompiled {
+                    background: patch.background.as_deref().map(|value| pool.intern(value)),
+                    music: patch.music.as_deref().map(|value| pool.intern(value)),
+                    characters: patch.characters.as_ref().map(|chars| {
+                        chars
+                            .iter()
+                            .map(|character| CharacterPlacementCompiled {
+                                name: pool.intern(&character.name),
+                                expression: character
+                                    .expression
+                                    .as_deref()
+                                    .map(|value| pool.intern(value)),
+                                position: character
+                                    .position
+                                    .as_deref()
+                                    .map(|value| pool.intern(value)),
+                            })
+                            .collect()
+                    }),
+                }),
             };
             compiled_events.push(compiled);
         }
@@ -169,7 +194,7 @@ impl ScriptCompiled {
         let mut output =
             Vec::with_capacity(4 + 2 + 4 + 4 + payload.len());
         output.extend_from_slice(&SCRIPT_BINARY_MAGIC);
-        output.extend_from_slice(&SCRIPT_BINARY_VERSION.to_le_bytes());
+        output.extend_from_slice(&COMPILED_FORMAT_VERSION.to_le_bytes());
         output.extend_from_slice(&checksum.to_le_bytes());
         output.extend_from_slice(&payload_len.to_le_bytes());
         output.extend_from_slice(&payload);
@@ -185,7 +210,7 @@ impl ScriptCompiled {
             return Err(binary_format_error("missing script magic bytes"));
         }
         let version = u16::from_le_bytes([input[4], input[5]]);
-        if version != SCRIPT_BINARY_VERSION {
+        if version != COMPILED_FORMAT_VERSION {
             return Err(binary_format_error(format!(
                 "unsupported script version {version}"
             )));
@@ -286,5 +311,39 @@ impl StringPool {
         let shared: SharedStr = Arc::from(value);
         self.cache.insert(value.to_string(), shared.clone());
         shared
+    }
+}
+
+fn get_or_insert_id(map: &mut HashMap<String, u32>, key: &str) -> VnResult<u32> {
+    if let Some(id) = map.get(key) {
+        return Ok(*id);
+    }
+    let next_id =
+        u32::try_from(map.len()).map_err(|_| VnError::InvalidScript("too many ids".to_string()))?;
+    map.insert(key.to_string(), next_id);
+    Ok(next_id)
+}
+
+fn compile_cond(
+    cond: &CondRaw,
+    flag_map: &mut HashMap<String, u32>,
+    var_map: &mut HashMap<String, u32>,
+) -> VnResult<CondCompiled> {
+    match cond {
+        CondRaw::Flag { key, is_set } => {
+            let flag_id = get_or_insert_id(flag_map, key)?;
+            Ok(CondCompiled::Flag {
+                flag_id,
+                is_set: *is_set,
+            })
+        }
+        CondRaw::VarCmp { key, op, value } => {
+            let var_id = get_or_insert_id(var_map, key)?;
+            Ok(CondCompiled::VarCmp {
+                var_id,
+                op: *op,
+                value: *value,
+            })
+        }
     }
 }

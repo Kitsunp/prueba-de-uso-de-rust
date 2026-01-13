@@ -103,6 +103,29 @@ impl SecurityPolicy {
                         }
                     }
                 }
+                EventRaw::Patch(patch) => {
+                    if let Some(bg) = &patch.background {
+                        validate_path(bg, "background image", limits)?;
+                    }
+                    if let Some(music) = &patch.music {
+                        validate_path(music, "music file", limits)?;
+                    }
+                    if let Some(chars) = &patch.characters {
+                        for character in chars {
+                            validate_path(&character.name, "character name", limits)?;
+                            if let Some(expr) = &character.expression {
+                                validate_path(expr, "character expression", limits)?;
+                            }
+                            if let Some(pos) = &character.position {
+                                if pos.len() > limits.max_label_length {
+                                    return Err(VnError::ResourceLimit(
+                                        "character position".to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
                 EventRaw::Jump { target } => {
                     if target.len() > limits.max_label_length {
                         return Err(VnError::ResourceLimit("jump target".to_string()));
@@ -116,6 +139,21 @@ impl SecurityPolicy {
                 EventRaw::SetFlag { key, .. } => {
                     if key.len() > limits.max_label_length {
                         return Err(VnError::ResourceLimit("flag key".to_string()));
+                    }
+                }
+                EventRaw::SetVar { key, .. } => {
+                    if key.len() > limits.max_label_length {
+                        return Err(VnError::ResourceLimit("var key".to_string()));
+                    }
+                }
+                EventRaw::JumpIf { target, .. } => {
+                    if target.len() > limits.max_label_length {
+                        return Err(VnError::ResourceLimit("jump_if target".to_string()));
+                    }
+                    if !script.labels.contains_key(target) {
+                        return Err(VnError::InvalidScript(format!(
+                            "jump_if target '{target}' not found"
+                        )));
                     }
                 }
             }
@@ -172,5 +210,17 @@ impl SecurityPolicy {
     /// Backwards-compatible validation entrypoint for raw scripts.
     pub fn validate(&self, script: &ScriptRaw, limits: ResourceLimiter) -> VnResult<()> {
         self.validate_raw(script, limits)
+    }
+}
+
+fn validate_path(
+    path: &str,
+    name: &str,
+    limits: crate::resource::ResourceLimiter,
+) -> crate::error::VnResult<()> {
+    if path.len() > limits.max_asset_length {
+        Err(crate::error::VnError::ResourceLimit(name.to_string()))
+    } else {
+        Ok(())
     }
 }

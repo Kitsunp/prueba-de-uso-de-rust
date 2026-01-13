@@ -301,6 +301,31 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
             dict.set_item("flag_id", *flag_id)?;
             dict.set_item("value", *value)?;
         }
+        EventCompiled::SetVar { var_id, value } => {
+            dict.set_item("type", "set_var")?;
+            dict.set_item("var_id", *var_id)?;
+            dict.set_item("value", *value)?;
+        }
+        EventCompiled::JumpIf { target_ip, .. } => {
+            dict.set_item("type", "jump_if")?;
+            dict.set_item("target_ip", *target_ip)?;
+        }
+        EventCompiled::Patch(patch) => {
+            dict.set_item("type", "patch")?;
+            dict.set_item("background", patch.background.as_deref())?;
+            dict.set_item("music", patch.music.as_deref())?;
+            if let Some(chars) = &patch.characters {
+                let characters = PyList::empty_bound(py);
+                for character in chars {
+                    let character_dict = PyDict::new_bound(py);
+                    character_dict.set_item("name", character.name.as_ref())?;
+                    character_dict.set_item("expression", character.expression.as_deref())?;
+                    character_dict.set_item("position", character.position.as_deref())?;
+                    characters.append(character_dict)?;
+                }
+                dict.set_item("characters", characters)?;
+            }
+        }
     }
     Ok(dict.into())
 }

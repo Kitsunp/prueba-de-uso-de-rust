@@ -529,6 +529,9 @@ fn event_kind(event: &EventCompiled) -> String {
         EventCompiled::Scene(_) => "Scene".to_string(),
         EventCompiled::Jump { .. } => "Jump".to_string(),
         EventCompiled::SetFlag { .. } => "SetFlag".to_string(),
+        EventCompiled::SetVar { .. } => "SetVar".to_string(),
+        EventCompiled::JumpIf { .. } => "JumpIf".to_string(),
+        EventCompiled::Patch(_) => "Patch".to_string(),
     }
 }
 

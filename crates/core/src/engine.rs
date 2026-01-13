@@ -1,7 +1,7 @@
 //! Runtime engine that executes compiled scripts.
 
 use crate::error::{VnError, VnResult};
-use crate::event::EventCompiled;
+use crate::event::{CmpOp, CondCompiled, EventCompiled};
 use crate::render::{RenderBackend, RenderOutput};
 use crate::resource::ResourceLimiter;
 use crate::script::{ScriptCompiled, ScriptRaw};
@@ -36,6 +36,11 @@ impl Engine {
             state,
             policy,
         })
+    }
+
+    /// Returns a reference to the compiled script.
+    pub fn script(&self) -> &ScriptCompiled {
+        &self.script
     }
 
     /// Returns a reference to the current compiled event.
@@ -98,6 +103,40 @@ impl Engine {
             EventCompiled::Dialogue(dialogue) => {
                 self.state.record_dialogue(dialogue);
                 self.advance_position()
+            }
+            EventCompiled::SetVar { var_id, value } => {
+                self.state.set_var(*var_id, *value);
+                self.advance_position()
+            }
+            EventCompiled::JumpIf { cond, target_ip } => {
+                if self.evaluate_cond(cond) {
+                    self.jump_to_ip(*target_ip)
+                } else {
+                    self.advance_position()
+                }
+            }
+            EventCompiled::Patch(patch) => {
+                self.state.visual.apply_patch(patch);
+                self.advance_position()
+            }
+        }
+    }
+
+    fn evaluate_cond(&self, cond: &CondCompiled) -> bool {
+        match cond {
+            CondCompiled::Flag { flag_id, is_set } => {
+                self.state.get_flag(*flag_id) == *is_set
+            }
+            CondCompiled::VarCmp { var_id, op, value } => {
+                let var_val = self.state.get_var(*var_id);
+                match op {
+                    CmpOp::Eq => var_val == *value,
+                    CmpOp::Ne => var_val != *value,
+                    CmpOp::Lt => var_val < *value,
+                    CmpOp::Le => var_val <= *value,
+                    CmpOp::Gt => var_val > *value,
+                    CmpOp::Ge => var_val >= *value,
+                }
             }
         }
     }

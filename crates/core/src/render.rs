@@ -72,9 +72,16 @@ impl RenderBackend for TextRenderer {
                 text
             }
             EventCompiled::Scene(scene) => self.render_scene(scene, visual),
+            EventCompiled::Patch(_) => "Patch applied".to_string(),
             EventCompiled::Jump { target_ip } => format!("Jump to {target_ip}"),
             EventCompiled::SetFlag { flag_id, value } => {
                 format!("Flag {flag_id} = {value}")
+            }
+            EventCompiled::SetVar { var_id, value } => {
+                format!("Var {var_id} = {value}")
+            }
+            EventCompiled::JumpIf { target_ip, .. } => {
+                format!("JumpIf to {target_ip}")
             }
         };
         RenderOutput { text }

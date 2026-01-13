@@ -26,4 +26,18 @@ impl VisualState {
             self.characters.extend_from_slice(&update.characters);
         }
     }
+
+    /// Applies a partial scene patch to the visual state.
+    pub fn apply_patch(&mut self, patch: &crate::event::ScenePatchCompiled) {
+        if let Some(background) = &patch.background {
+            self.background = Some(background.clone());
+        }
+        if let Some(music) = &patch.music {
+            self.music = Some(music.clone());
+        }
+        if let Some(chars) = &patch.characters {
+            self.characters.clear();
+            self.characters.extend_from_slice(chars);
+        }
+    }
 }

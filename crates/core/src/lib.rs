@@ -6,22 +6,29 @@ mod resource;
 mod script;
 mod security;
 mod state;
+mod storage;
+mod trace;
 mod ui;
+mod version;
 mod visual;
 
 pub use engine::Engine;
 pub use error::{VnError, VnResult};
 pub use event::{
     CharacterPlacementCompiled, CharacterPlacementRaw, ChoiceCompiled, ChoiceOptionCompiled,
-    ChoiceOptionRaw, ChoiceRaw, DialogueCompiled, DialogueRaw, EventCompiled, EventRaw,
-    SceneUpdateCompiled, SceneUpdateRaw, SharedStr,
+    ChoiceOptionRaw, ChoiceRaw, CmpOp, CondCompiled, CondRaw, DialogueCompiled, DialogueRaw,
+    EventCompiled, EventRaw, ScenePatchCompiled, ScenePatchRaw, SceneUpdateCompiled, SceneUpdateRaw,
+    SharedStr,
 };
 pub use render::{RenderBackend, RenderOutput, TextRenderer};
 pub use resource::ResourceLimiter;
 pub use script::{ScriptCompiled, ScriptRaw};
 pub use security::SecurityPolicy;
 pub use state::EngineState;
+pub use storage::{compute_script_id, SaveData, SaveError, ScriptId};
+pub use trace::{StateDigest, UiTrace, UiTraceStep, UiView as TraceUiView, VisualDigest};
 pub use ui::{UiState, UiView};
+pub use version::{COMPILED_FORMAT_VERSION, SAVE_FORMAT_VERSION, SCRIPT_SCHEMA_VERSION};
 pub use visual::VisualState;
 
 pub type Event = EventCompiled;

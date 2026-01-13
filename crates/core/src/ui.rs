@@ -41,11 +41,23 @@ impl UiState {
                     description: summarize_scene(&visual),
                 }
             }
+            EventCompiled::Patch(_) => {
+                // Apply patch happened in engine, visual state is already updated
+                UiView::Scene {
+                    description: summarize_scene(&visual),
+                }
+            }
             EventCompiled::Jump { target_ip } => UiView::System {
                 message: format!("Jump to {target_ip}"),
             },
             EventCompiled::SetFlag { flag_id, value } => UiView::System {
                 message: format!("Flag {flag_id} = {value}"),
+            },
+            EventCompiled::SetVar { var_id, value } => UiView::System {
+                message: format!("Var {var_id} = {value}"),
+            },
+            EventCompiled::JumpIf { target_ip, .. } => UiView::System {
+                message: format!("JumpIf to {target_ip}"),
             },
         };
         Self { view }

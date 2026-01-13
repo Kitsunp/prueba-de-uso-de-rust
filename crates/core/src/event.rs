@@ -12,6 +12,7 @@ pub type SharedStr = Arc<str>;
 
 /// JSON-facing events used in `ScriptRaw`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventRaw {
     Dialogue(DialogueRaw),
@@ -19,6 +20,9 @@ pub enum EventRaw {
     Scene(SceneUpdateRaw),
     Jump { target: String },
     SetFlag { key: String, value: bool },
+    SetVar { key: String, value: i32 },
+    JumpIf { cond: CondRaw, target: String },
+    Patch(ScenePatchRaw),
 }
 
 /// Runtime events with pre-resolved targets and interned strings.
@@ -30,10 +34,44 @@ pub enum EventCompiled {
     Scene(SceneUpdateCompiled),
     Jump { target_ip: u32 },
     SetFlag { flag_id: u32, value: bool },
+    SetVar { var_id: u32, value: i32 },
+    JumpIf { cond: CondCompiled, target_ip: u32 },
+    Patch(ScenePatchCompiled),
+}
+
+/// Condition for conditional jumps (raw form).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CondRaw {
+    Flag { key: String, is_set: bool },
+    VarCmp { key: String, op: CmpOp, value: i32 },
+}
+
+/// Condition for conditional jumps (compiled form).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CondCompiled {
+    Flag { flag_id: u32, is_set: bool },
+    VarCmp { var_id: u32, op: CmpOp, value: i32 },
+}
+
+/// Comparison operators for variable conditions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[serde(rename_all = "snake_case")]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 /// Dialogue line with speaker and text in raw form.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct DialogueRaw {
     pub speaker: String,
     pub text: String,
@@ -48,6 +86,7 @@ pub struct DialogueCompiled {
 
 /// Choice prompt and options in raw form.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ChoiceRaw {
     pub prompt: String,
     pub options: Vec<ChoiceOptionRaw>,
@@ -62,6 +101,7 @@ pub struct ChoiceCompiled {
 
 /// Choice option with label target in raw form.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ChoiceOptionRaw {
     pub text: String,
     pub target: String,
@@ -76,6 +116,7 @@ pub struct ChoiceOptionCompiled {
 
 /// Scene update payload in raw form.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SceneUpdateRaw {
     pub background: Option<String>,
     pub music: Option<String>,
@@ -92,6 +133,7 @@ pub struct SceneUpdateCompiled {
 
 /// Character placement in raw form.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CharacterPlacementRaw {
     pub name: String,
     pub expression: Option<String>,
@@ -104,6 +146,24 @@ pub struct CharacterPlacementCompiled {
     pub name: SharedStr,
     pub expression: Option<SharedStr>,
     pub position: Option<SharedStr>,
+}
+
+/// Scene patch in raw form (handling partial updates).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct ScenePatchRaw {
+    pub background: Option<String>,
+    pub music: Option<String>,
+    pub characters: Option<Vec<CharacterPlacementRaw>>,
+}
+
+/// Scene patch with interned strings.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ScenePatchCompiled {
+    pub background: Option<SharedStr>,
+    pub music: Option<SharedStr>,
+    /// If Some, replaces the entire character list.
+    pub characters: Option<Vec<CharacterPlacementCompiled>>,
 }
 
 impl EventRaw {
@@ -190,6 +250,9 @@ impl PyEvent {
                 EventRaw::Scene(_) => "scene",
                 EventRaw::Jump { .. } => "jump",
                 EventRaw::SetFlag { .. } => "set_flag",
+                EventRaw::SetVar { .. } => "set_var",
+                EventRaw::JumpIf { .. } => "jump_if",
+                EventRaw::Patch(_) => "patch",
             },
             PyEventData::Compiled(event) => match event {
                 EventCompiled::Dialogue(_) => "dialogue",
@@ -197,6 +260,9 @@ impl PyEvent {
                 EventCompiled::Scene(_) => "scene",
                 EventCompiled::Jump { .. } => "jump",
                 EventCompiled::SetFlag { .. } => "set_flag",
+                EventCompiled::SetVar { .. } => "set_var",
+                EventCompiled::JumpIf { .. } => "jump_if",
+                EventCompiled::Patch(_) => "patch",
             },
         }
     }
@@ -274,6 +340,8 @@ impl PyEvent {
         match &self.data {
             PyEventData::Raw(EventRaw::Scene(scene)) => scene.background.as_deref(),
             PyEventData::Compiled(EventCompiled::Scene(scene)) => scene.background.as_deref(),
+            PyEventData::Raw(EventRaw::Patch(patch)) => patch.background.as_deref(),
+            PyEventData::Compiled(EventCompiled::Patch(patch)) => patch.background.as_deref().map(|s| s.as_ref()),
             _ => None,
         }
     }
@@ -282,6 +350,8 @@ impl PyEvent {
         match &self.data {
             PyEventData::Raw(EventRaw::Scene(scene)) => scene.music.as_deref(),
             PyEventData::Compiled(EventCompiled::Scene(scene)) => scene.music.as_deref(),
+            PyEventData::Raw(EventRaw::Patch(patch)) => patch.music.as_deref(),
+            PyEventData::Compiled(EventCompiled::Patch(patch)) => patch.music.as_deref().map(|s| s.as_ref()),
             _ => None,
         }
     }
@@ -395,6 +465,38 @@ impl PyEvent {
                     characters.append(character_dict)?;
                 }
                 Some(characters.into())
+            }
+            PyEventData::Raw(EventRaw::Patch(patch)) => {
+                if let Some(chars) = &patch.characters {
+                    use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
+                    let characters = PyList::empty_bound(py);
+                    for character in chars {
+                        let character_dict = PyDict::new_bound(py);
+                        character_dict.set_item("name", character.name.as_str())?;
+                        character_dict.set_item("expression", character.expression.as_deref())?;
+                        character_dict.set_item("position", character.position.as_deref())?;
+                        characters.append(character_dict)?;
+                    }
+                    Some(characters.into())
+                } else {
+                    None
+                }
+            }
+            PyEventData::Compiled(EventCompiled::Patch(patch)) => {
+                if let Some(chars) = &patch.characters {
+                    use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
+                    let characters = PyList::empty_bound(py);
+                    for character in chars {
+                        let character_dict = PyDict::new_bound(py);
+                        character_dict.set_item("name", character.name.as_ref())?;
+                        character_dict.set_item("expression", character.expression.as_deref())?;
+                        character_dict.set_item("position", character.position.as_deref())?;
+                        characters.append(character_dict)?;
+                    }
+                    Some(characters.into())
+                } else {
+                    None
+                }
             }
             _ => None,
         };
