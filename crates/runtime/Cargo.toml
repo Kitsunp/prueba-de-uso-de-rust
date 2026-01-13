@@ -6,3 +6,5 @@ license = "MIT"
 
 [dependencies]
 visual_novel_engine = { path = "../core" }
+pixels = "0.13"
+winit = "0.28"

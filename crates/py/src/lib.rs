@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use ::visual_novel_engine::{
     CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, DialogueRaw, Engine as CoreEngine,
-    EventCompiled, EventRaw, ResourceLimiter, SceneUpdateRaw, ScriptRaw, SecurityPolicy, VnError,
+    EventCompiled, EventRaw, ResourceLimiter, SceneUpdateRaw, ScriptRaw, SecurityPolicy, UiState,
+    UiView, VnError,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
@@ -75,6 +76,12 @@ impl PyEngine {
         }
         dict.set_item("characters", characters)?;
         Ok(dict.into())
+    }
+
+    fn ui_state<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
+        let event = self.inner.current_event().map_err(vn_error_to_py)?;
+        let ui = UiState::from_event(&event, self.inner.visual_state());
+        ui_state_to_python(&ui, py)
     }
 }
 
@@ -223,6 +230,35 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
             dict.set_item("key", *flag_id)?;
             dict.set_item("flag_id", *flag_id)?;
             dict.set_item("value", *value)?;
+        }
+    }
+    Ok(dict.into())
+}
+
+fn ui_state_to_python(ui: &UiState, py: Python<'_>) -> PyResult<PyObject> {
+    let dict = PyDict::new_bound(py);
+    match &ui.view {
+        UiView::Dialogue { speaker, text } => {
+            dict.set_item("type", "dialogue")?;
+            dict.set_item("speaker", speaker)?;
+            dict.set_item("text", text)?;
+        }
+        UiView::Choice { prompt, options } => {
+            dict.set_item("type", "choice")?;
+            dict.set_item("prompt", prompt)?;
+            let list = PyList::empty_bound(py);
+            for option in options {
+                list.append(option)?;
+            }
+            dict.set_item("options", list)?;
+        }
+        UiView::Scene { description } => {
+            dict.set_item("type", "scene")?;
+            dict.set_item("description", description)?;
+        }
+        UiView::System { message } => {
+            dict.set_item("type", "system")?;
+            dict.set_item("message", message)?;
         }
     }
     Ok(dict.into())

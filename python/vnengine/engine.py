@@ -53,6 +53,13 @@ class Engine:
 
         return self._engine.visual_state()
 
+    def ui_state(self) -> Dict[str, Any]:
+        """Return the current UI state as a Python dict."""
+
+        if not hasattr(self._engine, "ui_state"):
+            raise RuntimeError("Native engine module does not provide ui_state")
+        return self._engine.ui_state()
+
     @property
     def raw(self) -> Any:
         """Return the underlying native engine instance."""
