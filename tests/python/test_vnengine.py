@@ -177,5 +177,20 @@ class EngineAppTests(unittest.TestCase):
             app.run()
 
 
+class GuiBindingTests(unittest.TestCase):
+    def test_run_visual_novel_rejects_invalid_json(self):
+        import visual_novel_engine as vn
+
+        with self.assertRaises(ValueError):
+            vn.run_visual_novel("{invalid", None)
+
+    def test_gui_bindings_exist(self):
+        import visual_novel_engine as vn
+
+        config = vn.VnConfig(width=800.0, height=600.0, fullscreen=False)
+        self.assertIsNotNone(config)
+        self.assertTrue(callable(vn.run_visual_novel))
+
+
 if __name__ == "__main__":
     unittest.main()

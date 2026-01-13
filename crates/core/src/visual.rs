@@ -1,9 +1,11 @@
 //! Visual state handling for scenes.
 
+use serde::{Deserialize, Serialize};
+
 use crate::event::{CharacterPlacementCompiled, SceneUpdateCompiled, SharedStr};
 
 /// Current visual state for rendering.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct VisualState {
     pub background: Option<SharedStr>,
     pub music: Option<SharedStr>,
