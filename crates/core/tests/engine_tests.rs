@@ -82,6 +82,39 @@ fn engine_steps_through_dialogue() {
 }
 
 #[test]
+fn engine_records_dialogue_history() {
+    let script = sample_script();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
+    engine.step().unwrap();
+    engine.step().unwrap();
+    let history = &engine.state().history;
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].text.as_ref(), "Hola");
+}
+
+#[test]
+fn engine_state_round_trip() {
+    let script = sample_script();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
+    engine.step().unwrap();
+    engine.step().unwrap();
+    let serialized = serde_json::to_string(engine.state()).unwrap();
+    let parsed = serde_json::from_str::<visual_novel_engine::EngineState>(&serialized).unwrap();
+    assert_eq!(parsed.position, engine.state().position);
+    assert_eq!(parsed.history.len(), engine.state().history.len());
+}
+
+#[test]
 fn engine_choice_jumps() {
     let script = sample_script();
     let mut engine = Engine::new(

@@ -1,13 +1,21 @@
 //! Engine state storage for execution.
 
+use std::collections::VecDeque;
+
+use serde::{Deserialize, Serialize};
+
+use crate::event::DialogueCompiled;
 use crate::visual::VisualState;
 
+const HISTORY_LIMIT: usize = 200;
+
 /// Runtime state for the engine, including position, flags, and visuals.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EngineState {
     pub position: u32,
     pub flags: Vec<u64>,
     pub visual: VisualState,
+    pub history: VecDeque<DialogueCompiled>,
 }
 
 impl EngineState {
@@ -17,6 +25,7 @@ impl EngineState {
             position,
             flags: vec![0; bitset_len(flag_count)],
             visual: VisualState::default(),
+            history: VecDeque::with_capacity(HISTORY_LIMIT),
         }
     }
 
@@ -40,6 +49,14 @@ impl EngineState {
             .get(word)
             .map(|bits| bits & mask != 0)
             .unwrap_or(false)
+    }
+
+    /// Records a dialogue line into the history buffer.
+    pub fn record_dialogue(&mut self, dialogue: &DialogueCompiled) {
+        if self.history.len() >= HISTORY_LIMIT {
+            self.history.pop_front();
+        }
+        self.history.push_back(dialogue.clone());
     }
 }
 

@@ -8,6 +8,7 @@ use ::visual_novel_engine::{
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
 use serde::Serialize;
+use visual_novel_gui::{run_app as run_gui, GuiError, VnConfig as GuiConfig};
 
 fn vn_error_to_py(err: VnError) -> PyErr {
     let report = miette::Report::new(err);
@@ -18,6 +19,8 @@ fn vn_error_to_py(err: VnError) -> PyErr {
 fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     m.add_class::<PyScriptBuilder>()?;
+    m.add_class::<PyVnConfig>()?;
+    m.add_function(wrap_pyfunction!(run_visual_novel, m)?)?;
     m.add("PyEngine", m.getattr("Engine")?)?;
     Ok(())
 }
@@ -89,6 +92,73 @@ impl PyEngine {
 pub struct PyScriptBuilder {
     events: Vec<EventRaw>,
     labels: HashMap<String, usize>,
+}
+
+#[pyclass(name = "VnConfig")]
+#[derive(Clone, Debug)]
+pub struct PyVnConfig {
+    #[pyo3(get, set)]
+    pub title: Option<String>,
+    #[pyo3(get, set)]
+    pub width: Option<f32>,
+    #[pyo3(get, set)]
+    pub height: Option<f32>,
+    #[pyo3(get, set)]
+    pub fullscreen: Option<bool>,
+    #[pyo3(get, set)]
+    pub scale_factor: Option<f32>,
+}
+
+#[pymethods]
+impl PyVnConfig {
+    #[new]
+    #[pyo3(signature = (title=None, width=None, height=None, fullscreen=None, scale_factor=None))]
+    fn new(
+        title: Option<String>,
+        width: Option<f32>,
+        height: Option<f32>,
+        fullscreen: Option<bool>,
+        scale_factor: Option<f32>,
+    ) -> Self {
+        Self {
+            title,
+            width,
+            height,
+            fullscreen,
+            scale_factor,
+        }
+    }
+}
+
+impl From<PyVnConfig> for GuiConfig {
+    fn from(config: PyVnConfig) -> Self {
+        let mut base = GuiConfig::default();
+        if let Some(title) = config.title {
+            base.title = title;
+        }
+        if let Some(width) = config.width {
+            base.width = Some(width);
+        }
+        if let Some(height) = config.height {
+            base.height = Some(height);
+        }
+        if let Some(fullscreen) = config.fullscreen {
+            base.fullscreen = fullscreen;
+        }
+        if let Some(scale_factor) = config.scale_factor {
+            base.scale_factor = Some(scale_factor);
+        }
+        base
+    }
+}
+
+#[pyfunction]
+fn run_visual_novel(script_json: String, config: Option<PyVnConfig>) -> PyResult<()> {
+    let gui_config = config.map(Into::into);
+    run_gui(script_json, gui_config).map_err(|err| match err {
+        GuiError::Script(script) => pyo3::exceptions::PyValueError::new_err(script.to_string()),
+        _ => pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to run GUI: {err}")),
+    })
 }
 
 #[pymethods]

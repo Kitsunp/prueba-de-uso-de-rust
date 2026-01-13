@@ -95,7 +95,10 @@ impl Engine {
                 self.advance_position()
             }
             EventCompiled::Choice(_) => Ok(()),
-            EventCompiled::Dialogue(_) => self.advance_position(),
+            EventCompiled::Dialogue(dialogue) => {
+                self.state.record_dialogue(dialogue);
+                self.advance_position()
+            }
         }
     }
 
@@ -132,6 +135,44 @@ impl Engine {
     /// Returns the current visual state.
     pub fn visual_state(&self) -> &crate::visual::VisualState {
         &self.state.visual
+    }
+
+    /// Returns the configured flag count.
+    pub fn flag_count(&self) -> u32 {
+        self.script.flag_count
+    }
+
+    /// Returns compiled script labels.
+    pub fn labels(&self) -> &std::collections::HashMap<String, u32> {
+        &self.script.labels
+    }
+
+    /// Sets a flag value by id.
+    pub fn set_flag(&mut self, id: u32, value: bool) {
+        self.state.set_flag(id, value);
+    }
+
+    /// Jumps to a label by name.
+    pub fn jump_to_label(&mut self, label: &str) -> VnResult<()> {
+        let target_ip = self
+            .script
+            .labels
+            .get(label)
+            .copied()
+            .ok_or_else(|| VnError::InvalidScript(format!("label '{label}' not found")))?;
+        self.jump_to_ip(target_ip)
+    }
+
+    /// Restores the engine state from a saved snapshot.
+    pub fn set_state(&mut self, state: EngineState) -> VnResult<()> {
+        if state.position as usize > self.script.events.len() {
+            return Err(VnError::InvalidScript(format!(
+                "state position '{}' outside script",
+                state.position
+            )));
+        }
+        self.state = state;
+        Ok(())
     }
 
     /// Renders the current event using the provided renderer.
