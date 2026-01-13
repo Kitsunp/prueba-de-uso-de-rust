@@ -36,13 +36,13 @@ fn vn_error_to_py(err: VnError) -> pyo3::PyErr {
     pyo3::exceptions::PyValueError::new_err(report.to_string())
 }
 
-#[cfg(any(feature = "python", feature = "python-embed"))]
-#[pymodule]
-fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyEngine>()?;
-    m.add_class::<crate::event::PyEvent>()?;
-    Ok(())
-}
+// #[cfg(any(feature = "python", feature = "python-embed"))]
+// #[pymodule]
+// fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
+//     m.add_class::<PyEngine>()?;
+//     m.add_class::<crate::event::PyEvent>()?;
+//     Ok(())
+// }
 
 #[cfg(any(feature = "python", feature = "python-embed"))]
 #[pyclass]

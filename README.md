@@ -33,6 +33,23 @@ Motor completo para novelas visuales basado en eventos. Permite interpretar un g
 visual_novel_engine = { path = "crates/core" }
 ```
 
+### Instalación Automática (Windows)
+
+Ejecuta el script incluido para compilar Rust e instalar los bindings de Python:
+
+```powershell
+.\install.ps1
+```
+
+### Compilación Manual
+
+1. **Rust (Core + GUI)**: `cargo build --release`
+2. **Python Bindings**:
+   ```bash
+   pip install maturin
+   maturin build --manifest-path crates/py/Cargo.toml --release
+   pip install target/wheels/*.whl --force-reinstall
+   ```
 ### Con interfaz gráfica
 
 ```toml
@@ -134,8 +151,10 @@ Ventana de depuración para desarrolladores:
 ### Instalación
 
 ```bash
-maturin develop --features python
+pip install visual_novel_engine --find-links=target/wheels
 ```
+
+> Nota: Asegúrate de haber ejecutado `install.ps1` o construido con `maturin` primero.
 
 ### Uso básico (solo lógica)
 

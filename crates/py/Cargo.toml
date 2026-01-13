@@ -9,7 +9,7 @@ name = "visual_novel_engine"
 crate-type = ["cdylib"]
 
 [dependencies]
-visual_novel_engine = { path = "../core" }
+visual_novel_engine = { path = "../core", features = ["python"] }
 visual_novel_gui = { path = "../gui" }
 miette = { version = "7.2.0", features = ["fancy"] }
 pyo3 = { version = "0.21", features = ["extension-module", "abi3-py38"] }

@@ -33,6 +33,24 @@ Complete visual novel engine based on events. It loads a JSON script, advances t
 visual_novel_engine = { path = "crates/core" }
 ```
 
+### Automatic Install (Windows)
+
+Run the included script to build Rust and install Python bindings:
+
+```powershell
+.\install.ps1
+```
+
+### Manual Build
+
+1. **Rust (Core + GUI)**: `cargo build --release`
+2. **Python Bindings**:
+   ```bash
+   pip install maturin
+   maturin build --manifest-path crates/py/Cargo.toml --release
+   pip install target/wheels/*.whl --force-reinstall
+   ```
+
 ### With graphical interface
 
 ```toml
@@ -134,8 +152,10 @@ Debug window for developers:
 ### Installation
 
 ```bash
-maturin develop --features python
+pip install visual_novel_engine --find-links=target/wheels
 ```
+
+> Note: Ensure you ran `install.ps1` or built manually with `maturin` first.
 
 ### Basic usage (logic only)
 
