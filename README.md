@@ -66,6 +66,7 @@ use visual_novel_engine::{Engine, Script, SecurityPolicy, ResourceLimiter};
 
 let script_json = r#"
 {
+  "script_schema_version": "1.0",
   "events": [
     {"type": "dialogue", "speaker": "Ava", "text": "Hola"},
     {"type": "choice", "prompt": "¿Ir?", "options": [
@@ -117,6 +118,7 @@ La GUI proporciona una experiencia completa de novela visual:
 
 Un guion es un JSON con:
 
+- `script_schema_version`: versión del esquema JSON del guion.
 - `events`: lista de eventos.
 - `labels`: mapa de etiquetas a índices (`start` es obligatorio).
 
@@ -126,15 +128,18 @@ Un guion es un JSON con:
 {"type": "scene", "background": "bg/room.png", "music": "music/theme.ogg", "characters": [{"name": "Ava", "expression": "smile", "position": "center"}]}
 {"type": "jump", "target": "intro"}
 {"type": "set_flag", "key": "visited", "value": true}
+{"type": "set_var", "key": "counter", "value": 3}
+{"type": "jump_if", "cond": {"kind": "var_cmp", "key": "counter", "op": "gt", "value": 1}, "target": "high"}
+{"type": "patch", "background": "bg/night.png", "add": [{"name": "Ava", "expression": "smile", "position": "left"}], "update": [], "remove": []}
 ```
 
 ## Sistema de Guardado
 
 El motor incluye persistencia segura:
 
-- **Checksum de Script**: Cada save guarda un hash del guion original.
+- **Identidad de Script**: Cada save guarda el `script_id` (SHA-256 del binario compilado).
 - **Validación al Cargar**: Si el guion cambió, el save se rechaza para evitar corrupción.
-- **Formato JSON**: Los saves son legibles y depurables.
+- **Formato binario**: Los saves usan un formato binario canónico con versión y checksum.
 
 ## Herramientas de Desarrollo
 

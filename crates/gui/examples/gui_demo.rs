@@ -8,6 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Guion de ejemplo con múltiples eventos
     let script_json = r#"
     {
+      "script_schema_version": "1.0",
       "events": [
         {"type": "scene", "background": "assets/bg_intro.png", "music": "assets/theme.ogg", "characters": []},
         {"type": "dialogue", "speaker": "Sistema", "text": "Bienvenido a la demo del motor de novelas visuales."},
@@ -34,15 +35,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         height: Some(720.0),
         fullscreen: false,
         scale_factor: None, // Auto-detectar
+        ..Default::default()
     };
 
     println!("Iniciando demo...");
     println!("Controles:");
     println!("  ESC  - Menú de configuración (guardar/cargar)");
     println!("  F12  - Inspector de depuración");
-    
+
     run_app(script_json.to_string(), Some(config))?;
-    
+
     println!("Demo finalizada.");
     Ok(())
 }

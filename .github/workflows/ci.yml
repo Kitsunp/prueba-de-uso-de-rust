@@ -7,32 +7,67 @@ on:
     branches: [ main, develop ]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -D warnings
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - run: cargo audit
+
   test:
     runs-on: ubuntu-latest
+    needs: lint
     steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - run: cargo test -p visual_novel_engine --verbose
-    - run: cargo test -p vnengine_runtime --verbose
-    - run: cargo test -p visual_novel_gui --verbose
-    - run: cargo bench -p visual_novel_engine --bench core_benches -- --warm-up-time 0.1 --measurement-time 0.1 --sample-size 10
-  
-  test-python-feature:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p visual_novel_engine --verbose
+      - run: cargo test -p vnengine_runtime --verbose
+      - run: cargo test -p visual_novel_gui --verbose
+      - run: cargo build -p visual_novel_py --profile python --verbose
+      - run: cargo bench -p visual_novel_engine --bench core_benches -- --warm-up-time 0.1 --measurement-time 0.1 --sample-size 10
+
+  fuzz-smoke:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    needs: lint
     steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    - name: Verify Python build artifacts
-      run: |
-        python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR")); print(sysconfig.get_config_var("LDLIBRARY"))'
-        python3 -c 'import sysconfig, pathlib; libdir=sysconfig.get_config_var("LIBDIR"); lib=sysconfig.get_config_var("LDLIBRARY"); path=pathlib.Path(libdir)/lib; print(path); assert path.exists(), f"missing {path}"'
-    - name: Set Python environment for PyO3
-      run: |
-        echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
-        libdir=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
-        echo "LD_LIBRARY_PATH=${libdir}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
-    - run: cargo test -p visual_novel_engine --features python-embed --verbose
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p visual_novel_engine --features arbitrary --test fuzz_tests --verbose
+
+  python-tests:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify Python build artifacts
+        run: |
+          python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR")); print(sysconfig.get_config_var("LDLIBRARY"))'
+          python3 -c 'import sysconfig, pathlib; libdir=sysconfig.get_config_var("LIBDIR"); lib=sysconfig.get_config_var("LDLIBRARY"); path=pathlib.Path(libdir)/lib; print(path); assert path.exists(), f"missing {path}"'
+      - name: Set Python environment for PyO3
+        run: |
+          echo "PYO3_PYTHON=$(which python3)" >> $GITHUB_ENV
+          libdir=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
+          echo "LD_LIBRARY_PATH=${libdir}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> $GITHUB_ENV
+      - name: Create virtualenv
+        run: python -m venv .venv
+      - name: Install maturin in venv
+        run: |
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install maturin
+      - name: Build and install Python module
+        run: |
+          source .venv/bin/activate
+          maturin develop --manifest-path crates/py/Cargo.toml
+      - name: Run Python tests
+        run: |
+          source .venv/bin/activate
+          PYTHONPATH=python python -m unittest tests.python.test_examples tests.python.test_vnengine -v

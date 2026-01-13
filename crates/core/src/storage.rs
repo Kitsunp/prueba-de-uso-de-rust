@@ -35,10 +35,10 @@ impl SaveData {
 
     /// Serializes save data to binary format with magic bytes and version.
     pub fn to_binary(&self) -> Result<Vec<u8>, SaveError> {
-        let payload = bincode::serialize(self).map_err(|e| SaveError::Serialization(e.to_string()))?;
+        let payload =
+            bincode::serialize(self).map_err(|e| SaveError::Serialization(e.to_string()))?;
         let checksum = crc32fast::hash(&payload);
-        let payload_len = u32::try_from(payload.len())
-            .map_err(|_| SaveError::TooLarge)?;
+        let payload_len = u32::try_from(payload.len()).map_err(|_| SaveError::TooLarge)?;
 
         let mut output = Vec::with_capacity(4 + 2 + 4 + 4 + payload.len());
         output.extend_from_slice(&SAVE_BINARY_MAGIC);
@@ -59,7 +59,10 @@ impl SaveData {
         }
         let version = u16::from_le_bytes([input[4], input[5]]);
         if version != SAVE_FORMAT_VERSION {
-            return Err(SaveError::IncompatibleVersion { found: version, expected: SAVE_FORMAT_VERSION });
+            return Err(SaveError::IncompatibleVersion {
+                found: version,
+                expected: SAVE_FORMAT_VERSION,
+            });
         }
         let checksum = u32::from_le_bytes([input[6], input[7], input[8], input[9]]);
         let payload_len = u32::from_le_bytes([input[10], input[11], input[12], input[13]]) as usize;
@@ -103,7 +106,10 @@ impl std::fmt::Display for SaveError {
             Self::TooLarge => write!(f, "save data too large"),
             Self::InvalidMagic => write!(f, "invalid save file magic bytes"),
             Self::IncompatibleVersion { found, expected } => {
-                write!(f, "incompatible save version: found {found}, expected {expected}")
+                write!(
+                    f,
+                    "incompatible save version: found {found}, expected {expected}"
+                )
             }
             Self::ChecksumMismatch => write!(f, "save file checksum mismatch"),
             Self::LengthMismatch => write!(f, "save file length mismatch"),

@@ -12,7 +12,8 @@ import visual_novel_engine as vn
 # Guion de ejemplo con múltiples eventos
 script_json = """
 {
-  "events": [
+    "script_schema_version": "1.0",
+    "events": [
     {"type": "scene", "background": "assets/bg_intro.png", "music": "assets/theme.ogg", "characters": []},
     {"type": "dialogue", "speaker": "Sistema", "text": "Bienvenido a la demo del motor de novelas visuales."},
     {"type": "dialogue", "speaker": "Sistema", "text": "Puedes usar ESC para abrir el menú de configuración."},

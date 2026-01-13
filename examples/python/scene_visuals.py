@@ -6,6 +6,7 @@ from visual_novel_engine import PyEngine
 
 SCRIPT_JSON = """
 {
+  "script_schema_version": "1.0",
   "events": [
     {"type": "scene", "background": "bg/room.png", "music": "music/theme.ogg", "characters": [
       {"name": "Ava", "expression": "smile", "position": "center"}

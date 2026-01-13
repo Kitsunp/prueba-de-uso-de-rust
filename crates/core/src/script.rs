@@ -1,43 +1,65 @@
 //! Raw and compiled script representations.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{VnError, VnResult};
 use crate::event::{
-    CharacterPlacementCompiled, ChoiceCompiled, ChoiceOptionCompiled, CondCompiled, CondRaw,
-    DialogueCompiled, EventCompiled, EventRaw, ScenePatchCompiled, SceneUpdateCompiled, SharedStr,
+    CharacterPatchCompiled, CharacterPlacementCompiled, ChoiceCompiled, ChoiceOptionCompiled,
+    CondCompiled, CondRaw, DialogueCompiled, EventCompiled, EventRaw, ScenePatchCompiled,
+    SceneUpdateCompiled, SharedStr,
 };
-use crate::version::{COMPILED_FORMAT_VERSION, SCRIPT_BINARY_MAGIC};
+use crate::version::{COMPILED_FORMAT_VERSION, SCRIPT_BINARY_MAGIC, SCRIPT_SCHEMA_VERSION};
+
+#[derive(Clone, Debug, Deserialize)]
+struct ScriptEnvelope {
+    #[serde(default)]
+    script_schema_version: Option<String>,
+    events: Vec<EventRaw>,
+    labels: BTreeMap<String, usize>,
+}
 
 /// JSON-facing script format with label names and raw string data.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ScriptRaw {
     pub events: Vec<EventRaw>,
-    pub labels: HashMap<String, usize>,
+    pub labels: BTreeMap<String, usize>,
 }
 
 /// Runtime-ready script that resolves labels and interns strings.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScriptCompiled {
     pub events: Vec<EventCompiled>,
-    pub labels: HashMap<String, u32>,
+    pub labels: BTreeMap<String, u32>,
     pub start_ip: u32,
     pub flag_count: u32,
 }
 
 impl ScriptRaw {
     /// Creates a raw script from events and labels.
-    pub fn new(events: Vec<EventRaw>, labels: HashMap<String, usize>) -> Self {
+    pub fn new(events: Vec<EventRaw>, labels: BTreeMap<String, usize>) -> Self {
         Self { events, labels }
     }
 
     /// Parses a JSON script into a raw script structure.
     pub fn from_json(input: &str) -> VnResult<Self> {
-        serde_json::from_str(input).map_err(|err| json_deserialize_error(input, &err))
+        let envelope: ScriptEnvelope =
+            serde_json::from_str(input).map_err(|err| json_deserialize_error(input, &err))?;
+        match envelope.script_schema_version.as_deref() {
+            Some(version) if version == SCRIPT_SCHEMA_VERSION => Ok(Self {
+                events: envelope.events,
+                labels: envelope.labels,
+            }),
+            Some(version) => Err(VnError::InvalidScript(format!(
+                "schema incompatible: found {version}, expected {SCRIPT_SCHEMA_VERSION}"
+            ))),
+            None => Err(VnError::InvalidScript(
+                "schema incompatible: missing script_schema_version".to_string(),
+            )),
+        }
     }
 
     /// Returns the index of the `start` label.
@@ -56,7 +78,7 @@ impl ScriptRaw {
             .map_err(|_| VnError::InvalidScript("event count exceeds u32::MAX".to_string()))?;
         let mut pool = StringPool::default();
         let mut compiled_events = Vec::with_capacity(self.events.len());
-        let mut compiled_labels = HashMap::with_capacity(self.labels.len());
+        let mut compiled_labels = BTreeMap::new();
         let mut flag_map: HashMap<String, u32> = HashMap::new();
         let mut var_map: HashMap<String, u32> = HashMap::new();
 
@@ -153,22 +175,37 @@ impl ScriptRaw {
                 EventRaw::Patch(patch) => EventCompiled::Patch(ScenePatchCompiled {
                     background: patch.background.as_deref().map(|value| pool.intern(value)),
                     music: patch.music.as_deref().map(|value| pool.intern(value)),
-                    characters: patch.characters.as_ref().map(|chars| {
-                        chars
-                            .iter()
-                            .map(|character| CharacterPlacementCompiled {
-                                name: pool.intern(&character.name),
-                                expression: character
-                                    .expression
-                                    .as_deref()
-                                    .map(|value| pool.intern(value)),
-                                position: character
-                                    .position
-                                    .as_deref()
-                                    .map(|value| pool.intern(value)),
-                            })
-                            .collect()
-                    }),
+                    add: patch
+                        .add
+                        .iter()
+                        .map(|character| CharacterPlacementCompiled {
+                            name: pool.intern(&character.name),
+                            expression: character
+                                .expression
+                                .as_deref()
+                                .map(|value| pool.intern(value)),
+                            position: character
+                                .position
+                                .as_deref()
+                                .map(|value| pool.intern(value)),
+                        })
+                        .collect(),
+                    update: patch
+                        .update
+                        .iter()
+                        .map(|character| CharacterPatchCompiled {
+                            name: pool.intern(&character.name),
+                            expression: character
+                                .expression
+                                .as_deref()
+                                .map(|value| pool.intern(value)),
+                            position: character
+                                .position
+                                .as_deref()
+                                .map(|value| pool.intern(value)),
+                        })
+                        .collect(),
+                    remove: patch.remove.iter().map(|name| pool.intern(name)).collect(),
                 }),
             };
             compiled_events.push(compiled);
@@ -191,8 +228,7 @@ impl ScriptCompiled {
         let payload_len = u32::try_from(payload.len()).map_err(|_| {
             VnError::BinaryFormat("compiled script too large for binary format".to_string())
         })?;
-        let mut output =
-            Vec::with_capacity(4 + 2 + 4 + 4 + payload.len());
+        let mut output = Vec::with_capacity(4 + 2 + 4 + 4 + payload.len());
         output.extend_from_slice(&SCRIPT_BINARY_MAGIC);
         output.extend_from_slice(&COMPILED_FORMAT_VERSION.to_le_bytes());
         output.extend_from_slice(&checksum.to_le_bytes());
@@ -217,7 +253,9 @@ impl ScriptCompiled {
         }
         let checksum = u32::from_le_bytes([input[6], input[7], input[8], input[9]]);
         let payload_len = u32::from_le_bytes([input[10], input[11], input[12], input[13]]) as usize;
-        let payload = input.get(14..).ok_or_else(|| binary_format_error("missing payload"))?;
+        let payload = input
+            .get(14..)
+            .ok_or_else(|| binary_format_error("missing payload"))?;
         if payload.len() != payload_len {
             return Err(binary_format_error("payload length mismatch"));
         }

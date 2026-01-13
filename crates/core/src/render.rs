@@ -61,8 +61,7 @@ impl RenderBackend for TextRenderer {
                 format!("{}: {}", dialogue.speaker, dialogue.text)
             }
             EventCompiled::Choice(choice) => {
-                let mut options =
-                    String::with_capacity(choice.options.len().saturating_mul(12));
+                let mut options = String::with_capacity(choice.options.len().saturating_mul(12));
                 for (idx, option) in choice.options.iter().enumerate() {
                     let _ = writeln!(options, "{}. {}", idx + 1, option.text);
                 }

@@ -13,9 +13,12 @@ from vnengine.types import (
     ChoiceOption,
     Dialogue,
     Jump,
+    JumpIf,
     Scene,
     Script,
+    SCRIPT_SCHEMA_VERSION,
     SetFlag,
+    SetVar,
     event_from_dict,
 )
 
@@ -27,10 +30,14 @@ class TypesTests(unittest.TestCase):
             labels={"b": 1, "a": 0},
         )
         expected = (
-            '{"events":[{"speaker":"Ava","text":"Hola","type":"dialogue"}],'
-            '"labels":{"a":0,"b":1}}'
+            f'{{"events":[{{"speaker":"Ava","text":"Hola","type":"dialogue"}}],'
+            f'"labels":{{"a":0,"b":1}},"script_schema_version":"{SCRIPT_SCHEMA_VERSION}"}}'
         )
         self.assertEqual(script.to_json(), expected)
+
+    def test_script_requires_schema_version(self):
+        with self.assertRaises(ValueError):
+            Script.from_json('{"events": [], "labels": {"start": 0}}')
 
     def test_event_from_dict_rejects_unknown_type(self):
         with self.assertRaises(ValueError):
@@ -47,6 +54,14 @@ class TypesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SetFlag.from_dict({"key": "flag", "value": "false"})
 
+    def test_set_var_from_dict_requires_int(self):
+        with self.assertRaises(ValueError):
+            SetVar.from_dict({"key": "counter", "value": "5"})
+
+    def test_jump_if_requires_cond(self):
+        with self.assertRaises(ValueError):
+            JumpIf.from_dict({"type": "jump_if", "cond": {"kind": "unknown"}, "target": "end"})
+
 
 class BuilderTests(unittest.TestCase):
     def test_builder_json_is_stable_across_threads(self):
@@ -56,6 +71,9 @@ class BuilderTests(unittest.TestCase):
         builder.choice("Go?", [("Yes", "end"), ("No", "start")])
         builder.label("end")
         builder.set_flag("done", True)
+        builder.set_var("counter", 3)
+        builder.jump_if_var("counter", "gt", 1, target="end")
+        builder.patch(add=[("Ava", "happy", "left")], update=[("Ava", None, "center")], remove=[])
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(lambda _: builder.to_json(), range(8)))
@@ -63,6 +81,10 @@ class BuilderTests(unittest.TestCase):
         self.assertTrue(all(result == results[0] for result in results))
         payload = json.loads(results[0])
         self.assertEqual(payload["labels"], {"end": 2, "start": 0})
+        self.assertEqual(payload["script_schema_version"], SCRIPT_SCHEMA_VERSION)
+        patch_events = [event for event in payload["events"] if event["type"] == "patch"]
+        self.assertEqual(len(patch_events), 1)
+        self.assertEqual(patch_events[0]["add"][0]["name"], "Ava")
 
 
 class EngineWrapperTests(unittest.TestCase):
@@ -99,9 +121,14 @@ class EngineWrapperTests(unittest.TestCase):
         module.Engine = FakeEngine
         sys.modules["visual_novel_engine"] = module
 
-        engine = Engine.from_script({"events": [], "labels": {"start": 0}})
+        engine = Engine.from_script(
+            {"script_schema_version": SCRIPT_SCHEMA_VERSION, "events": [], "labels": {"start": 0}}
+        )
         self.assertIsInstance(engine.raw, FakeEngine)
-        self.assertEqual(captured["payload"], '{"events":[],"labels":{"start":0}}')
+        self.assertEqual(
+            captured["payload"],
+            f'{{"events":[],"labels":{{"start":0}},"script_schema_version":"{SCRIPT_SCHEMA_VERSION}"}}',
+        )
 
     def test_engine_ui_state_calls_native(self):
         module = types.ModuleType("visual_novel_engine")
@@ -116,7 +143,9 @@ class EngineWrapperTests(unittest.TestCase):
         module.Engine = FakeEngine
         sys.modules["visual_novel_engine"] = module
 
-        engine = Engine.from_script({"events": [], "labels": {"start": 0}})
+        engine = Engine.from_script(
+            {"script_schema_version": SCRIPT_SCHEMA_VERSION, "events": [], "labels": {"start": 0}}
+        )
         self.assertEqual(
             engine.ui_state(),
             {"type": "choice", "prompt": "Go?", "options": ["Yes", "No"]},
@@ -132,7 +161,9 @@ class EngineWrapperTests(unittest.TestCase):
         module.Engine = FakeEngine
         sys.modules["visual_novel_engine"] = module
 
-        engine = Engine.from_script({"events": [], "labels": {"start": 0}})
+        engine = Engine.from_script(
+            {"script_schema_version": SCRIPT_SCHEMA_VERSION, "events": [], "labels": {"start": 0}}
+        )
         with self.assertRaises(RuntimeError):
             engine.ui_state()
 

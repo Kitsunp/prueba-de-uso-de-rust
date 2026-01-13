@@ -19,7 +19,8 @@ from visual_novel_engine import PyEngine
 
 SCRIPT_JSON = """
 {
-  "events": [
+    "script_schema_version": "1.0",
+    "events": [
     {"type": "scene", "background": "bg/sala.png", "music": null, "characters": [
       {"name": "Ava", "expression": "neutral", "position": "center"}
     ]},

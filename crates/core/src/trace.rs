@@ -62,16 +62,18 @@ impl UiView {
             },
             EventCompiled::Patch(p) => UiView::Scene {
                 description: format!(
-                    "Patch bg={:?} music={:?} chars={:?}",
+                    "Patch bg={:?} music={:?} add={} update={} remove={}",
                     p.background,
                     p.music,
-                    p.characters.as_ref().map(|c| c.len())
+                    p.add.len(),
+                    p.update.len(),
+                    p.remove.len()
                 ),
             },
             EventCompiled::SetFlag { flag_id, value } => UiView::System {
                 message: format!("SetFlag: {} = {}", flag_id, value),
             },
-             EventCompiled::SetVar { var_id, value } => UiView::System {
+            EventCompiled::SetVar { var_id, value } => UiView::System {
                 message: format!("SetVar: {} = {}", var_id, value),
             },
             EventCompiled::Jump { .. } => UiView::System {
@@ -88,8 +90,6 @@ impl UiView {
 /// Uses only contractual data, no internal handles or pointers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StateDigest {
-    /// active scene description
-    pub current_scene: Option<String>,
     /// Current instruction pointer.
     pub position: u32,
     /// Active flags as a sorted map (flag_id -> value).
@@ -98,6 +98,8 @@ pub struct StateDigest {
     pub vars: BTreeMap<u32, i32>,
     /// Number of dialogue entries in history.
     pub history_len: usize,
+    /// Digest of the visual scene.
+    pub visual: VisualDigest,
 }
 
 impl StateDigest {
@@ -113,7 +115,7 @@ impl StateDigest {
                 }
             }
         }
-        
+
         let mut vars = BTreeMap::new();
         for (i, &val) in state.vars.iter().enumerate() {
             if val != 0 {
@@ -122,11 +124,11 @@ impl StateDigest {
         }
 
         Self {
-            current_scene: None, // Simplified
             position: state.position,
             flags,
             vars,
             history_len: state.history.len(),
+            visual: VisualDigest::from_visual(&state.visual),
         }
     }
 }
@@ -149,5 +151,35 @@ impl UiTrace {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VisualDigest {
-    // Add fields if needed
+    pub background: Option<String>,
+    pub music: Option<String>,
+    pub characters: Vec<CharacterDigest>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CharacterDigest {
+    pub name: String,
+    pub expression: Option<String>,
+    pub position: Option<String>,
+}
+
+impl VisualDigest {
+    pub fn from_visual(state: &crate::visual::VisualState) -> Self {
+        Self {
+            background: state.background.as_deref().map(|value| value.to_string()),
+            music: state.music.as_deref().map(|value| value.to_string()),
+            characters: state
+                .characters
+                .iter()
+                .map(|character| CharacterDigest {
+                    name: character.name.to_string(),
+                    expression: character
+                        .expression
+                        .as_deref()
+                        .map(|value| value.to_string()),
+                    position: character.position.as_deref().map(|value| value.to_string()),
+                })
+                .collect(),
+        }
+    }
 }

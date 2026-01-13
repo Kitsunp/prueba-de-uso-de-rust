@@ -5,21 +5,29 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 from .types import (
+    CharacterPatch,
     CharacterPlacement,
     Choice,
     ChoiceOption,
+    CondFlag,
+    CondVarCmp,
     Dialogue,
     Event,
     Jump,
+    JumpIf,
+    Patch,
     Scene,
     Script,
     SetFlag,
+    SetVar,
+    normalize_character_patches,
     normalize_characters,
     normalize_choice_options,
 )
 
 ChoiceOptionInput = Union[ChoiceOption, Tuple[str, str]]
 CharacterInput = Union[Tuple[str, Optional[str], Optional[str]], CharacterPlacement]
+CharacterPatchInput = Union[Tuple[str, Optional[str], Optional[str]], CharacterPatch]
 
 
 class ScriptBuilder:
@@ -88,6 +96,45 @@ class ScriptBuilder:
         """Append a set-flag event."""
 
         self._events.append(SetFlag(key=key, value=value))
+
+    def set_var(self, key: str, value: int) -> None:
+        """Append a set-var event."""
+
+        self._events.append(SetVar(key=key, value=value))
+
+    def jump_if_flag(self, key: str, is_set: bool, target: str) -> None:
+        """Append a conditional jump on a flag."""
+
+        self._events.append(JumpIf(cond=CondFlag(key=key, is_set=is_set), target=target))
+
+    def jump_if_var(self, key: str, op: str, value: int, target: str) -> None:
+        """Append a conditional jump on a variable comparison."""
+
+        self._events.append(
+            JumpIf(cond=CondVarCmp(key=key, op=op, value=value), target=target)
+        )
+
+    def patch(
+        self,
+        background: Optional[str] = None,
+        music: Optional[str] = None,
+        add: Iterable[CharacterInput] = (),
+        update: Iterable[CharacterPatchInput] = (),
+        remove: Iterable[str] = (),
+    ) -> None:
+        """Append a scene patch event."""
+
+        normalized_add = normalize_characters(add)
+        normalized_update = normalize_character_patches(update)
+        self._events.append(
+            Patch(
+                background=background,
+                music=music,
+                add=normalized_add,
+                update=normalized_update,
+                remove=list(remove),
+            )
+        )
 
     def build(self) -> Script:
         """Finalize and return a Script object."""

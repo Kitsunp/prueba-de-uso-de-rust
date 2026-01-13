@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
+SCRIPT_SCHEMA_VERSION = "1.0"
+
 
 @dataclass(frozen=True)
 class Dialogue:
@@ -85,7 +87,7 @@ class CharacterPlacement:
             name=str(data["name"]),
             expression=str(expression) if expression is not None else None,
             position=str(position) if position is not None else None,
-        )
+        ) 
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,66 @@ class Scene:
             background=data.get("background"),
             music=data.get("music"),
             characters=characters,
+        )
+
+
+@dataclass(frozen=True)
+class CharacterPatch:
+    """Character patch entry."""
+
+    name: str
+    expression: Optional[str] = None
+    position: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "expression": self.expression,
+            "position": self.position,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CharacterPatch":
+        expression = data.get("expression")
+        position = data.get("position")
+        return cls(
+            name=str(data["name"]),
+            expression=str(expression) if expression is not None else None,
+            position=str(position) if position is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class Patch:
+    """Scene patch event with add/update/remove operations."""
+
+    background: Optional[str] = None
+    music: Optional[str] = None
+    add: List[CharacterPlacement] = field(default_factory=list)
+    update: List[CharacterPatch] = field(default_factory=list)
+    remove: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": "patch",
+            "background": self.background,
+            "music": self.music,
+            "add": [character.to_dict() for character in self.add],
+            "update": [character.to_dict() for character in self.update],
+            "remove": list(self.remove),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "Patch":
+        add = [CharacterPlacement.from_dict(item) for item in data.get("add", [])]
+        update = [CharacterPatch.from_dict(item) for item in data.get("update", [])]
+        remove = [str(item) for item in data.get("remove", [])]
+        return cls(
+            background=data.get("background"),
+            music=data.get("music"),
+            add=add,
+            update=update,
+            remove=remove,
         )
 
 
@@ -150,8 +212,86 @@ class SetFlag:
             )
         return cls(key=str(data["key"]), value=value)
 
+@dataclass(frozen=True)
+class SetVar:
+    """Set-var event."""
 
-Event = Union[Dialogue, Choice, Scene, Jump, SetFlag]
+    key: str
+    value: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "set_var", "key": self.key, "value": self.value}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "SetVar":
+        value = data["value"]
+        if not isinstance(value, int):
+            raise ValueError(
+                "SetVar 'value' must be int, got "
+                f"{type(value).__name__}"
+            )
+        return cls(key=str(data["key"]), value=value)
+
+
+@dataclass(frozen=True)
+class CondFlag:
+    key: str
+    is_set: bool
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"kind": "flag", "key": self.key, "is_set": self.is_set}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CondFlag":
+        value = data["is_set"]
+        if not isinstance(value, bool):
+            raise ValueError(
+                "CondFlag 'is_set' must be bool, got "
+                f"{type(value).__name__}"
+            )
+        return cls(key=str(data["key"]), is_set=value)
+
+
+@dataclass(frozen=True)
+class CondVarCmp:
+    key: str
+    op: str
+    value: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"kind": "var_cmp", "key": self.key, "op": self.op, "value": self.value}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "CondVarCmp":
+        value = data["value"]
+        if not isinstance(value, int):
+            raise ValueError(
+                "CondVarCmp 'value' must be int, got "
+                f"{type(value).__name__}"
+            )
+        return cls(key=str(data["key"]), op=str(data["op"]), value=value)
+
+
+Cond = Union[CondFlag, CondVarCmp]
+
+
+@dataclass(frozen=True)
+class JumpIf:
+    """Conditional jump event."""
+
+    cond: Cond
+    target: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "jump_if", "cond": self.cond.to_dict(), "target": self.target}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "JumpIf":
+        cond = cond_from_dict(data.get("cond", {}))
+        return cls(cond=cond, target=str(data["target"]))
+
+
+Event = Union[Dialogue, Choice, Scene, Jump, SetFlag, SetVar, JumpIf, Patch]
 
 
 @dataclass(frozen=True)
@@ -166,9 +306,12 @@ class Script:
     events: List[Event] = field(default_factory=list)
     labels: Dict[str, int] = field(default_factory=dict)
 
+    script_schema_version: str = SCRIPT_SCHEMA_VERSION
+
     def to_dict(self) -> Dict[str, Any]:
         ordered_labels = {key: self.labels[key] for key in sorted(self.labels)}
         return {
+            "script_schema_version": self.script_schema_version,
             "events": [event.to_dict() for event in self.events],
             "labels": ordered_labels,
         }
@@ -178,9 +321,17 @@ class Script:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "Script":
+        found_version = data.get("script_schema_version")
+        if found_version is None:
+            raise ValueError("schema incompatible: missing script_schema_version")
+        if str(found_version) != SCRIPT_SCHEMA_VERSION:
+            raise ValueError(
+                "schema incompatible: found "
+                f"{found_version}, expected {SCRIPT_SCHEMA_VERSION}"
+            )
         events = [event_from_dict(item) for item in data.get("events", [])]
         labels = {str(key): int(value) for key, value in data.get("labels", {}).items()}
-        return cls(events=events, labels=labels)
+        return cls(events=events, labels=labels, script_schema_version=str(found_version))
 
     @classmethod
     def from_json(cls, raw: str) -> "Script":
@@ -199,7 +350,22 @@ def event_from_dict(data: Mapping[str, Any]) -> Event:
         return Jump.from_dict(data)
     if event_type == "set_flag":
         return SetFlag.from_dict(data)
+    if event_type == "set_var":
+        return SetVar.from_dict(data)
+    if event_type == "jump_if":
+        return JumpIf.from_dict(data)
+    if event_type == "patch":
+        return Patch.from_dict(data)
     raise ValueError(f"Unknown event type: {event_type}")
+
+
+def cond_from_dict(data: Mapping[str, Any]) -> Cond:
+    kind = data.get("kind")
+    if kind == "flag":
+        return CondFlag.from_dict(data)
+    if kind == "var_cmp":
+        return CondVarCmp.from_dict(data)
+    raise ValueError(f"Unknown condition kind: {kind}")
 
 
 def normalize_choice_options(
@@ -226,6 +392,23 @@ def normalize_characters(
             name, expression, position = character
             normalized.append(
                 CharacterPlacement(
+                    name=name, expression=expression, position=position
+                )
+            )
+    return normalized
+
+
+def normalize_character_patches(
+    characters: Iterable[Union[CharacterPatch, Tuple[str, Optional[str], Optional[str]]]],
+) -> List[CharacterPatch]:
+    normalized: List[CharacterPatch] = []
+    for character in characters:
+        if isinstance(character, CharacterPatch):
+            normalized.append(character)
+        else:
+            name, expression, position = character
+            normalized.append(
+                CharacterPatch(
                     name=name, expression=expression, position=position
                 )
             )

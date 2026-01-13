@@ -1,10 +1,8 @@
 use std::fs;
 
 use tempfile::tempdir;
-use visual_novel_engine::EngineState;
-use visual_novel_gui::{
-    load_state_from, save_state_to, DisplayInfo, SaveData, UserPreferences, VnConfig,
-};
+use visual_novel_engine::{EngineState, SaveData};
+use visual_novel_gui::{load_state_from, save_state_to, DisplayInfo, UserPreferences, VnConfig};
 
 #[test]
 fn resolves_defaults_for_small_display() {
@@ -48,17 +46,17 @@ fn saves_and_loads_preferences() {
 #[test]
 fn saves_and_loads_state() {
     let dir = tempdir().expect("tempdir");
-    let path = dir.path().join("state.json");
+    let path = dir.path().join("state.vns");
     let mut state = EngineState::new(1, 1);
     state.position = 2;
     let data = SaveData {
-        script_hash: 1234,
+        script_id: [7u8; 32],
         state,
     };
 
     save_state_to(&path, &data).expect("save state");
     let loaded = load_state_from(&path).expect("load state");
 
-    assert_eq!(loaded.script_hash, 1234);
+    assert_eq!(loaded.script_id, [7u8; 32]);
     assert_eq!(loaded.state.position, 2);
 }
