@@ -110,20 +110,34 @@ impl SecurityPolicy {
                     if let Some(music) = &patch.music {
                         validate_path(music, "music file", limits)?;
                     }
-                    if let Some(chars) = &patch.characters {
-                        for character in chars {
-                            validate_path(&character.name, "character name", limits)?;
-                            if let Some(expr) = &character.expression {
-                                validate_path(expr, "character expression", limits)?;
-                            }
-                            if let Some(pos) = &character.position {
-                                if pos.len() > limits.max_label_length {
-                                    return Err(VnError::ResourceLimit(
-                                        "character position".to_string(),
-                                    ));
-                                }
+                    for character in &patch.add {
+                        validate_path(&character.name, "character name", limits)?;
+                        if let Some(expr) = &character.expression {
+                            validate_path(expr, "character expression", limits)?;
+                        }
+                        if let Some(pos) = &character.position {
+                            if pos.len() > limits.max_label_length {
+                                return Err(VnError::ResourceLimit(
+                                    "character position".to_string(),
+                                ));
                             }
                         }
+                    }
+                    for character in &patch.update {
+                        validate_path(&character.name, "character name", limits)?;
+                        if let Some(expr) = &character.expression {
+                            validate_path(expr, "character expression", limits)?;
+                        }
+                        if let Some(pos) = &character.position {
+                            if pos.len() > limits.max_label_length {
+                                return Err(VnError::ResourceLimit(
+                                    "character position".to_string(),
+                                ));
+                            }
+                        }
+                    }
+                    for name in &patch.remove {
+                        validate_path(name, "character name", limits)?;
                     }
                 }
                 EventRaw::Jump { target } => {

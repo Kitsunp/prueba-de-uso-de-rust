@@ -38,6 +38,25 @@ impl Engine {
         })
     }
 
+    /// Builds an engine directly from a compiled script.
+    pub fn from_compiled(
+        script: ScriptCompiled,
+        policy: SecurityPolicy,
+        limits: ResourceLimiter,
+    ) -> VnResult<Self> {
+        policy.validate_compiled(&script, limits)?;
+        let position = script.start_ip;
+        let mut state = EngineState::new(position, script.flag_count);
+        if let Some(EventCompiled::Scene(scene)) = script.events.get(position as usize) {
+            state.visual.apply_scene(scene);
+        }
+        Ok(Self {
+            script,
+            state,
+            policy,
+        })
+    }
+
     /// Returns a reference to the compiled script.
     pub fn script(&self) -> &ScriptCompiled {
         &self.script
@@ -124,9 +143,7 @@ impl Engine {
 
     fn evaluate_cond(&self, cond: &CondCompiled) -> bool {
         match cond {
-            CondCompiled::Flag { flag_id, is_set } => {
-                self.state.get_flag(*flag_id) == *is_set
-            }
+            CondCompiled::Flag { flag_id, is_set } => self.state.get_flag(*flag_id) == *is_set,
             CondCompiled::VarCmp { var_id, op, value } => {
                 let var_val = self.state.get_var(*var_id);
                 match op {
@@ -182,7 +199,7 @@ impl Engine {
     }
 
     /// Returns compiled script labels.
-    pub fn labels(&self) -> &std::collections::HashMap<String, u32> {
+    pub fn labels(&self) -> &std::collections::BTreeMap<String, u32> {
         &self.script.labels
     }
 

@@ -16,6 +16,7 @@ class ExampleUsageTests(unittest.TestCase):
             self.skipTest(f"py_engine not available: {err}")
         script_json = """
         {
+          "script_schema_version": "1.0",
           "events": [
             {"type": "dialogue", "speaker": "Ava", "text": "Hola"},
             {"type": "choice", "prompt": "Ir?", "options": [
@@ -40,6 +41,7 @@ class ExampleUsageTests(unittest.TestCase):
             self.skipTest(f"py_engine not available: {err}")
         script_json = """
         {
+          "script_schema_version": "1.0",
           "events": [
             {"type": "scene", "background": "bg/room.png", "music": "music/theme.ogg", "characters": [
               {"name": "Ava", "expression": "smile", "position": "center"}

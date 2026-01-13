@@ -12,10 +12,20 @@ pub struct UiState {
 /// Distinct UI views for runtimes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UiView {
-    Dialogue { speaker: String, text: String },
-    Choice { prompt: String, options: Vec<String> },
-    Scene { description: String },
-    System { message: String },
+    Dialogue {
+        speaker: String,
+        text: String,
+    },
+    Choice {
+        prompt: String,
+        options: Vec<String>,
+    },
+    Scene {
+        description: String,
+    },
+    System {
+        message: String,
+    },
 }
 
 impl UiState {
@@ -44,7 +54,7 @@ impl UiState {
             EventCompiled::Patch(_) => {
                 // Apply patch happened in engine, visual state is already updated
                 UiView::Scene {
-                    description: summarize_scene(&visual),
+                    description: summarize_scene(visual),
                 }
             }
             EventCompiled::Jump { target_ip } => UiView::System {

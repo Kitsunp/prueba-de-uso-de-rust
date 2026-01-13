@@ -15,10 +15,10 @@ mod visual;
 pub use engine::Engine;
 pub use error::{VnError, VnResult};
 pub use event::{
-    CharacterPlacementCompiled, CharacterPlacementRaw, ChoiceCompiled, ChoiceOptionCompiled,
-    ChoiceOptionRaw, ChoiceRaw, CmpOp, CondCompiled, CondRaw, DialogueCompiled, DialogueRaw,
-    EventCompiled, EventRaw, ScenePatchCompiled, ScenePatchRaw, SceneUpdateCompiled, SceneUpdateRaw,
-    SharedStr,
+    CharacterPatchCompiled, CharacterPatchRaw, CharacterPlacementCompiled, CharacterPlacementRaw,
+    ChoiceCompiled, ChoiceOptionCompiled, ChoiceOptionRaw, ChoiceRaw, CmpOp, CondCompiled, CondRaw,
+    DialogueCompiled, DialogueRaw, EventCompiled, EventRaw, ScenePatchCompiled, ScenePatchRaw,
+    SceneUpdateCompiled, SceneUpdateRaw, SharedStr,
 };
 pub use render::{RenderBackend, RenderOutput, TextRenderer};
 pub use resource::ResourceLimiter;

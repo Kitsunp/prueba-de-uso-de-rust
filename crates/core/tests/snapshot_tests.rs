@@ -3,10 +3,6 @@
 //! These tests execute complex "golden scripts" and verify the entire
 //! execution trace remains deterministic and unchanged.
 
-use visual_novel_engine::{
-    StateDigest, TraceUiView,
-};
-
 mod common;
 use common::run_headless;
 
@@ -14,6 +10,7 @@ use common::run_headless;
 fn golden_script_branching_v1() {
     let script_json = r#"
     {
+        "script_schema_version": "1.0",
         "events": [
             {"type": "dialogue", "speaker": "Narrator", "text": "Testing branching"},
             {"type": "set_var", "key": "counter", "value": 0},
@@ -44,6 +41,7 @@ fn golden_script_branching_v1() {
 fn golden_script_loop_with_condition() {
     let script_json = r#"
     {
+        "script_schema_version": "1.0",
         "events": [
             {"type": "set_var", "key": "i", "value": 0},
             {"type": "dialogue", "speaker": "Loop", "text": "Iteration"},
@@ -66,6 +64,7 @@ fn golden_script_loop_with_condition() {
 fn golden_script_comparison_operators() {
     let script_json = r#"
     {
+        "script_schema_version": "1.0",
         "events": [
             {"type": "set_var", "key": "x", "value": 10},
             {"type": "jump_if", "cond": {"kind": "var_cmp", "key": "x", "op": "eq", "value": 10}, "target": "eq_ok"},

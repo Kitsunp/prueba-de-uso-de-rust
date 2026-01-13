@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use visual_novel_engine::{
     CharacterPlacementRaw, Engine, EventCompiled, EventRaw, RenderBackend, ResourceLimiter,
@@ -38,7 +38,7 @@ fn sample_script() -> ScriptRaw {
             text: "Fin".to_string(),
         }),
     ];
-    let mut labels = HashMap::new();
+    let mut labels = BTreeMap::new();
     labels.insert("start".to_string(), 0);
     labels.insert("end".to_string(), 3);
     ScriptRaw::new(events, labels)
@@ -49,7 +49,7 @@ fn script_without_start_label() -> ScriptRaw {
         speaker: "Ava".to_string(),
         text: "Hola".to_string(),
     })];
-    let labels = HashMap::new();
+    let labels = BTreeMap::new();
     ScriptRaw::new(events, labels)
 }
 
@@ -61,7 +61,7 @@ fn script_with_invalid_choice_target() -> ScriptRaw {
             target: "missing".to_string(),
         }],
     })];
-    let mut labels = HashMap::new();
+    let mut labels = BTreeMap::new();
     labels.insert("start".to_string(), 0);
     ScriptRaw::new(events, labels)
 }
@@ -138,7 +138,12 @@ fn engine_choice_jumps() {
 #[test]
 fn json_round_trip() {
     let script = sample_script();
-    let serialized = serde_json::to_string(&script).unwrap();
+    let serialized = serde_json::json!({
+        "script_schema_version": visual_novel_engine::SCRIPT_SCHEMA_VERSION,
+        "events": script.events,
+        "labels": script.labels,
+    })
+    .to_string();
     let parsed = ScriptRaw::from_json(&serialized).unwrap();
     assert_eq!(parsed.events.len(), 4);
 }

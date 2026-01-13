@@ -1,14 +1,14 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use ::visual_novel_engine::{
-    CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, DialogueRaw, Engine as CoreEngine,
-    EventCompiled, EventRaw, ResourceLimiter, SceneUpdateRaw, ScriptRaw, SecurityPolicy, UiState,
-    UiView, VnError,
+    CharacterPatchRaw, CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, CmpOp, CondRaw,
+    DialogueRaw, Engine as CoreEngine, EventCompiled, EventRaw, ResourceLimiter, ScenePatchRaw,
+    SceneUpdateRaw, ScriptRaw, SecurityPolicy, UiState, UiView, VnError, SCRIPT_SCHEMA_VERSION,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
 use serde::Serialize;
-use visual_novel_gui::{run_app as run_gui, GuiError, VnConfig as GuiConfig};
+use visual_novel_gui::{run_app as run_gui, GuiError, SecurityMode, VnConfig as GuiConfig};
 
 fn vn_error_to_py(err: VnError) -> PyErr {
     let report = miette::Report::new(err);
@@ -91,7 +91,7 @@ impl PyEngine {
 #[pyclass(name = "ScriptBuilder")]
 pub struct PyScriptBuilder {
     events: Vec<EventRaw>,
-    labels: HashMap<String, usize>,
+    labels: BTreeMap<String, usize>,
 }
 
 #[pyclass(name = "VnConfig")]
@@ -107,18 +107,33 @@ pub struct PyVnConfig {
     pub fullscreen: Option<bool>,
     #[pyo3(get, set)]
     pub scale_factor: Option<f32>,
+    #[pyo3(get, set)]
+    pub assets_root: Option<String>,
+    #[pyo3(get, set)]
+    pub asset_cache_budget_mb: Option<u64>,
+    #[pyo3(get, set)]
+    pub security_mode: Option<String>,
+    #[pyo3(get, set)]
+    pub manifest_path: Option<String>,
+    #[pyo3(get, set)]
+    pub require_manifest: Option<bool>,
 }
 
 #[pymethods]
 impl PyVnConfig {
     #[new]
-    #[pyo3(signature = (title=None, width=None, height=None, fullscreen=None, scale_factor=None))]
+    #[pyo3(signature = (title=None, width=None, height=None, fullscreen=None, scale_factor=None, assets_root=None, asset_cache_budget_mb=None, security_mode=None, manifest_path=None, require_manifest=None))]
     fn new(
         title: Option<String>,
         width: Option<f32>,
         height: Option<f32>,
         fullscreen: Option<bool>,
         scale_factor: Option<f32>,
+        assets_root: Option<String>,
+        asset_cache_budget_mb: Option<u64>,
+        security_mode: Option<String>,
+        manifest_path: Option<String>,
+        require_manifest: Option<bool>,
     ) -> Self {
         Self {
             title,
@@ -126,6 +141,11 @@ impl PyVnConfig {
             height,
             fullscreen,
             scale_factor,
+            assets_root,
+            asset_cache_budget_mb,
+            security_mode,
+            manifest_path,
+            require_manifest,
         }
     }
 }
@@ -148,6 +168,21 @@ impl From<PyVnConfig> for GuiConfig {
         if let Some(scale_factor) = config.scale_factor {
             base.scale_factor = Some(scale_factor);
         }
+        if let Some(assets_root) = config.assets_root {
+            base.assets_root = Some(assets_root.into());
+        }
+        if let Some(budget) = config.asset_cache_budget_mb {
+            base.asset_cache_budget_mb = Some(budget);
+        }
+        if let Some(security_mode) = config.security_mode {
+            base.security_mode = parse_security_mode(&security_mode);
+        }
+        if let Some(manifest_path) = config.manifest_path {
+            base.manifest_path = Some(manifest_path.into());
+        }
+        if let Some(require_manifest) = config.require_manifest {
+            base.require_manifest = Some(require_manifest);
+        }
         base
     }
 }
@@ -161,13 +196,20 @@ fn run_visual_novel(script_json: String, config: Option<PyVnConfig>) -> PyResult
     })
 }
 
+fn parse_security_mode(mode: &str) -> SecurityMode {
+    match mode {
+        "untrusted" => SecurityMode::Untrusted,
+        _ => SecurityMode::Trusted,
+    }
+}
+
 #[pymethods]
 impl PyScriptBuilder {
     #[new]
     fn new() -> Self {
         Self {
             events: Vec::new(),
-            labels: HashMap::new(),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -228,6 +270,70 @@ impl PyScriptBuilder {
         });
     }
 
+    fn set_var(&mut self, key: &str, value: i32) {
+        self.events.push(EventRaw::SetVar {
+            key: key.to_string(),
+            value,
+        });
+    }
+
+    fn jump_if_flag(&mut self, key: &str, is_set: bool, target: &str) {
+        self.events.push(EventRaw::JumpIf {
+            cond: CondRaw::Flag {
+                key: key.to_string(),
+                is_set,
+            },
+            target: target.to_string(),
+        });
+    }
+
+    fn jump_if_var(&mut self, key: &str, op: &str, value: i32, target: &str) -> PyResult<()> {
+        let op = parse_cmp_op(op)?;
+        self.events.push(EventRaw::JumpIf {
+            cond: CondRaw::VarCmp {
+                key: key.to_string(),
+                op,
+                value,
+            },
+            target: target.to_string(),
+        });
+        Ok(())
+    }
+
+    #[pyo3(signature = (background=None, music=None, add=Vec::new(), update=Vec::new(), remove=Vec::new()))]
+    fn patch(
+        &mut self,
+        background: Option<String>,
+        music: Option<String>,
+        add: Vec<(String, Option<String>, Option<String>)>,
+        update: Vec<(String, Option<String>, Option<String>)>,
+        remove: Vec<String>,
+    ) {
+        let add = add
+            .into_iter()
+            .map(|(name, expression, position)| CharacterPlacementRaw {
+                name,
+                expression,
+                position,
+            })
+            .collect();
+        let update = update
+            .into_iter()
+            .map(|(name, expression, position)| CharacterPatchRaw {
+                name,
+                expression,
+                position,
+            })
+            .collect();
+        self.events.push(EventRaw::Patch(ScenePatchRaw {
+            background,
+            music,
+            add,
+            update,
+            remove,
+        }));
+    }
+
     fn build_json(&self) -> PyResult<String> {
         let script = StableScript::from_parts(&self.events, &self.labels);
         serde_json::to_string(&script).map_err(|err| {
@@ -238,19 +344,17 @@ impl PyScriptBuilder {
 
 #[derive(Serialize)]
 struct StableScript {
+    script_schema_version: String,
     events: Vec<EventRaw>,
     labels: BTreeMap<String, usize>,
 }
 
 impl StableScript {
-    fn from_parts(events: &[EventRaw], labels: &HashMap<String, usize>) -> Self {
-        let mut ordered_labels = BTreeMap::new();
-        for (key, value) in labels {
-            ordered_labels.insert(key.clone(), *value);
-        }
+    fn from_parts(events: &[EventRaw], labels: &BTreeMap<String, usize>) -> Self {
         Self {
+            script_schema_version: SCRIPT_SCHEMA_VERSION.to_string(),
             events: events.to_vec(),
-            labels: ordered_labels,
+            labels: labels.clone(),
         }
     }
 }
@@ -314,20 +418,67 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
             dict.set_item("type", "patch")?;
             dict.set_item("background", patch.background.as_deref())?;
             dict.set_item("music", patch.music.as_deref())?;
-            if let Some(chars) = &patch.characters {
-                let characters = PyList::empty_bound(py);
-                for character in chars {
-                    let character_dict = PyDict::new_bound(py);
-                    character_dict.set_item("name", character.name.as_ref())?;
-                    character_dict.set_item("expression", character.expression.as_deref())?;
-                    character_dict.set_item("position", character.position.as_deref())?;
-                    characters.append(character_dict)?;
-                }
-                dict.set_item("characters", characters)?;
-            }
+            dict.set_item("add", characters_to_python(py, &patch.add)?)?;
+            dict.set_item("update", patch_update_to_python(py, &patch.update)?)?;
+            dict.set_item("remove", string_list_to_python(py, &patch.remove)?)?;
         }
     }
     Ok(dict.into())
+}
+
+fn parse_cmp_op(op: &str) -> PyResult<CmpOp> {
+    match op {
+        "eq" => Ok(CmpOp::Eq),
+        "ne" => Ok(CmpOp::Ne),
+        "lt" => Ok(CmpOp::Lt),
+        "le" => Ok(CmpOp::Le),
+        "gt" => Ok(CmpOp::Gt),
+        "ge" => Ok(CmpOp::Ge),
+        _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "Unknown comparison op '{op}'"
+        ))),
+    }
+}
+
+fn characters_to_python(
+    py: Python<'_>,
+    characters: &[visual_novel_engine::CharacterPlacementCompiled],
+) -> PyResult<PyObject> {
+    let list = PyList::empty_bound(py);
+    for character in characters {
+        let character_dict = PyDict::new_bound(py);
+        character_dict.set_item("name", character.name.as_ref())?;
+        character_dict.set_item("expression", character.expression.as_deref())?;
+        character_dict.set_item("position", character.position.as_deref())?;
+        list.append(character_dict)?;
+    }
+    Ok(list.into())
+}
+
+fn patch_update_to_python(
+    py: Python<'_>,
+    update: &[visual_novel_engine::CharacterPatchCompiled],
+) -> PyResult<PyObject> {
+    let list = PyList::empty_bound(py);
+    for character in update {
+        let character_dict = PyDict::new_bound(py);
+        character_dict.set_item("name", character.name.as_ref())?;
+        character_dict.set_item("expression", character.expression.as_deref())?;
+        character_dict.set_item("position", character.position.as_deref())?;
+        list.append(character_dict)?;
+    }
+    Ok(list.into())
+}
+
+fn string_list_to_python(
+    py: Python<'_>,
+    items: &[visual_novel_engine::SharedStr],
+) -> PyResult<PyObject> {
+    let list = PyList::empty_bound(py);
+    for item in items {
+        list.append(item.as_ref())?;
+    }
+    Ok(list.into())
 }
 
 fn ui_state_to_python(ui: &UiState, py: Python<'_>) -> PyResult<PyObject> {

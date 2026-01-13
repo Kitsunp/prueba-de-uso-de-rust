@@ -162,10 +162,7 @@ where
         self.renderer.render(frame, size, &self.ui);
     }
 
-    pub fn handle_action(
-        &mut self,
-        action: InputAction,
-    ) -> visual_novel_engine::VnResult<bool> {
+    pub fn handle_action(&mut self, action: InputAction) -> visual_novel_engine::VnResult<bool> {
         match action {
             InputAction::None => {}
             InputAction::Quit => return Ok(false),
@@ -337,41 +334,39 @@ where
 
     let size = window.inner_size();
     let surface = SurfaceTexture::new(size.width, size.height, &window);
-    let mut pixels = Pixels::new(size.width, size.height, surface)
-        .expect("failed to create pixel surface");
+    let mut pixels =
+        Pixels::new(size.width, size.height, surface).expect("failed to create pixel surface");
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
-            Event::WindowEvent { event, .. } => {
-                match event {
-                    WindowEvent::CloseRequested => {
-                        *control_flow = ControlFlow::Exit;
-                    }
-                    WindowEvent::Resized(size) => {
-                        let _ = pixels.resize_surface(size.width, size.height);
-                        let _ = pixels.resize_buffer(size.width, size.height);
-                    }
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        let _ = pixels.resize_surface(new_inner_size.width, new_inner_size.height);
-                        let _ = pixels.resize_buffer(new_inner_size.width, new_inner_size.height);
-                    }
-                    _ => {
-                        let action = app.input.handle_window_event(&event);
-                        match app.handle_action(action) {
-                            Ok(true) => {
-                                window.request_redraw();
-                            }
-                            Ok(false) => {
-                                *control_flow = ControlFlow::Exit;
-                            }
-                            Err(_) => {
-                                *control_flow = ControlFlow::Exit;
-                            }
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => {
+                    *control_flow = ControlFlow::Exit;
+                }
+                WindowEvent::Resized(size) => {
+                    let _ = pixels.resize_surface(size.width, size.height);
+                    let _ = pixels.resize_buffer(size.width, size.height);
+                }
+                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                    let _ = pixels.resize_surface(new_inner_size.width, new_inner_size.height);
+                    let _ = pixels.resize_buffer(new_inner_size.width, new_inner_size.height);
+                }
+                _ => {
+                    let action = app.input.handle_window_event(&event);
+                    match app.handle_action(action) {
+                        Ok(true) => {
+                            window.request_redraw();
+                        }
+                        Ok(false) => {
+                            *control_flow = ControlFlow::Exit;
+                        }
+                        Err(_) => {
+                            *control_flow = ControlFlow::Exit;
                         }
                     }
                 }
-            }
+            },
             Event::RedrawRequested(_) => {
                 let extent = pixels.context().texture_extent;
                 let frame = pixels.frame_mut();

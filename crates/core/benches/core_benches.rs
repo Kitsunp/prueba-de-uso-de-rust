@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
@@ -37,7 +37,7 @@ fn sample_raw_script() -> ScriptRaw {
             text: "After choice".to_string(),
         }),
     ];
-    let mut labels = HashMap::new();
+    let mut labels = BTreeMap::new();
     labels.insert("start".to_string(), 0);
     labels.insert("next".to_string(), 2);
     ScriptRaw { events, labels }
@@ -52,7 +52,7 @@ fn loop_script(event_count: usize) -> ScriptRaw {
             })
         })
         .collect();
-    let mut labels = HashMap::new();
+    let mut labels = BTreeMap::new();
     labels.insert("start".to_string(), 0);
     ScriptRaw { events, labels }
 }
@@ -77,7 +77,7 @@ fn choice_script() -> ScriptRaw {
             text: "Done".to_string(),
         }),
     ];
-    let mut labels = HashMap::new();
+    let mut labels = BTreeMap::new();
     labels.insert("start".to_string(), 0);
     labels.insert("next".to_string(), 1);
     ScriptRaw { events, labels }

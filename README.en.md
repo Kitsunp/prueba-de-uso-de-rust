@@ -67,6 +67,7 @@ use visual_novel_engine::{Engine, Script, SecurityPolicy, ResourceLimiter};
 
 let script_json = r#"
 {
+  "script_schema_version": "1.0",
   "events": [
     {"type": "dialogue", "speaker": "Ava", "text": "Hello"},
     {"type": "choice", "prompt": "Go?", "options": [
@@ -118,6 +119,7 @@ The GUI provides a complete visual novel experience:
 
 A script is JSON with:
 
+- `script_schema_version`: JSON schema version for the script.
 - `events`: list of events.
 - `labels`: map of labels to indices (`start` is required).
 
@@ -127,15 +129,18 @@ A script is JSON with:
 {"type": "scene", "background": "bg/room.png", "music": "music/theme.ogg", "characters": [{"name": "Ava", "expression": "smile", "position": "center"}]}
 {"type": "jump", "target": "intro"}
 {"type": "set_flag", "key": "visited", "value": true}
+{"type": "set_var", "key": "counter", "value": 3}
+{"type": "jump_if", "cond": {"kind": "var_cmp", "key": "counter", "op": "gt", "value": 1}, "target": "high"}
+{"type": "patch", "background": "bg/night.png", "add": [{"name": "Ava", "expression": "smile", "position": "left"}], "update": [], "remove": []}
 ```
 
 ## Save System
 
 The engine includes secure persistence:
 
-- **Script Checksum**: Each save stores a hash of the original script.
+- **Script identity**: Each save stores the `script_id` (SHA-256 of the compiled binary).
 - **Validation on Load**: If the script changed, the save is rejected to prevent corruption.
-- **JSON Format**: Saves are human-readable and debuggable.
+- **Binary format**: Saves use a canonical binary format with versioning and checksum.
 
 ## Development Tools
 

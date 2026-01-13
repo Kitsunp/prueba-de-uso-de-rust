@@ -7,6 +7,7 @@ mod python_bindings {
 
     fn sample_script() -> String {
         r#"{
+            "script_schema_version": "1.0",
             "events": [
                 {"type": "scene", "background": "bg/room.png", "music": "music/theme.ogg", "characters": [
                     {"name": "Ava", "expression": "smile", "position": "center"}
@@ -79,6 +80,7 @@ mod python_bindings {
     fn python_events_include_legacy_keys() {
         Python::with_gil(|py| {
             let choice_script = r#"{
+                "script_schema_version": "1.0",
                 "events": [
                     {"type": "choice", "prompt": "Go?", "options": [
                         {"text": "Yes", "target": "end"}
@@ -99,6 +101,7 @@ mod python_bindings {
             assert!(first_option.get_item("target_ip").unwrap().is_some());
 
             let jump_script = r#"{
+                "script_schema_version": "1.0",
                 "events": [
                     {"type": "jump", "target": "next"},
                     {"type": "dialogue", "speaker": "Ava", "text": "Next"}
@@ -113,6 +116,7 @@ mod python_bindings {
             assert!(dict.get_item("target_ip").unwrap().is_some());
 
             let flag_script = r#"{
+                "script_schema_version": "1.0",
                 "events": [
                     {"type": "set_flag", "key": "seen", "value": true}
                 ],

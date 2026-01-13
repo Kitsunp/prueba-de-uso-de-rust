@@ -5,6 +5,7 @@ use common::run_headless;
 fn golden_script_incremental_patch() {
     let script_json = r#"
     {
+        "script_schema_version": "1.0",
         "events": [
             {
                 "type": "scene",
@@ -17,21 +18,29 @@ fn golden_script_incremental_patch() {
             {"type": "dialogue", "speaker": "Alice", "text": "Hello!"},
             {
                 "type": "patch",
-                "characters": [
-                    {"name": "Alice", "expression": "surprised", "position": "left"},
+                "add": [
                     {"name": "Bob", "expression": "neutral", "position": "right"}
-                ]
+                ],
+                "update": [
+                    {"name": "Alice", "expression": "surprised", "position": "left"}
+                ],
+                "remove": []
             },
             {"type": "dialogue", "speaker": "Bob", "text": "Hi Alice."},
             {
                 "type": "patch",
-                "background": "bg_night"
+                "background": "bg_night",
+                "add": [],
+                "update": [],
+                "remove": []
             },
             {"type": "dialogue", "speaker": "Alice", "text": "It got dark."},
             {
                 "type": "patch",
                 "music": "music_night",
-                "characters": []
+                "add": [],
+                "update": [],
+                "remove": ["Alice", "Bob"]
             },
             {"type": "dialogue", "speaker": "Narrator", "text": "They left."}
         ],

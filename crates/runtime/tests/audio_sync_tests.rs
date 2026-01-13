@@ -1,12 +1,12 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use vnengine_runtime::{AssetStore, Audio, Input, InputAction, Renderer, RuntimeApp};
 use visual_novel_engine::{
     ChoiceOptionRaw, ChoiceRaw, Engine, EventRaw, ResourceLimiter, SceneUpdateRaw, ScriptRaw,
     SecurityPolicy,
 };
+use vnengine_runtime::{AssetStore, Audio, Input, InputAction, Renderer, RuntimeApp};
 
 #[derive(Default)]
 struct NullRenderer;
@@ -60,9 +60,14 @@ impl Audio for SharedAudio {
     }
 }
 
-fn build_engine(events: Vec<EventRaw>, labels: HashMap<String, usize>) -> Engine {
+fn build_engine(events: Vec<EventRaw>, labels: BTreeMap<String, usize>) -> Engine {
     let script = ScriptRaw::new(events, labels);
-    Engine::new(script, SecurityPolicy::default(), ResourceLimiter::default()).unwrap()
+    Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -81,7 +86,7 @@ fn audio_updates_when_choice_jumps_to_scene() {
             characters: Vec::new(),
         }),
     ];
-    let labels = HashMap::from([("start".to_string(), 0), ("scene".to_string(), 1)]);
+    let labels = BTreeMap::from([("start".to_string(), 0), ("scene".to_string(), 1)]);
     let engine = build_engine(events, labels);
     let audio_state = Rc::new(RefCell::new(AudioState::default()));
 
@@ -124,10 +129,7 @@ fn audio_switches_music_for_scene_jump() {
             characters: Vec::new(),
         }),
     ];
-    let labels = HashMap::from([
-        ("start".to_string(), 0),
-        ("next_scene".to_string(), 2),
-    ]);
+    let labels = BTreeMap::from([("start".to_string(), 0), ("next_scene".to_string(), 2)]);
     let engine = build_engine(events, labels);
     let audio_state = Rc::new(RefCell::new(AudioState::default()));
 
