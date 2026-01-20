@@ -1,3 +1,4 @@
+#![allow(unused_assignments)]
 use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;
 
@@ -23,7 +24,6 @@ pub enum VnError {
     #[error("serialization error: {message}")]
     #[diagnostic(code("vn.serialization"))]
     #[allow(dead_code)]
-    #[allow(unused_assignments)]
     Serialization {
         message: String,
         #[source_code]
