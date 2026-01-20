@@ -11,6 +11,7 @@ use crate::event::{
     CondCompiled, CondRaw, DialogueCompiled, EventCompiled, EventRaw, ScenePatchCompiled,
     SceneUpdateCompiled, SharedStr,
 };
+use crate::resource::ResourceLimiter;
 use crate::version::{COMPILED_FORMAT_VERSION, SCRIPT_BINARY_MAGIC, SCRIPT_SCHEMA_VERSION};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -46,13 +47,22 @@ impl ScriptRaw {
 
     /// Parses a JSON script into a raw script structure.
     pub fn from_json(input: &str) -> VnResult<Self> {
+        Self::from_json_with_limits(input, ResourceLimiter::default())
+    }
+
+    /// Parses a JSON script into a raw script structure with resource limits.
+    pub fn from_json_with_limits(input: &str, limits: ResourceLimiter) -> VnResult<Self> {
         let envelope: ScriptEnvelope =
             serde_json::from_str(input).map_err(|err| json_deserialize_error(input, &err))?;
         match envelope.script_schema_version.as_deref() {
-            Some(version) if version == SCRIPT_SCHEMA_VERSION => Ok(Self {
-                events: envelope.events,
-                labels: envelope.labels,
-            }),
+            Some(version) if version == SCRIPT_SCHEMA_VERSION => {
+                let script = Self {
+                    events: envelope.events,
+                    labels: envelope.labels,
+                };
+                script.ensure_string_budget(limits.max_script_bytes)?;
+                Ok(script)
+            }
             Some(version) => Err(VnError::InvalidScript(format!(
                 "schema incompatible: found {version}, expected {SCRIPT_SCHEMA_VERSION}"
             ))),
@@ -60,6 +70,97 @@ impl ScriptRaw {
                 "schema incompatible: missing script_schema_version".to_string(),
             )),
         }
+    }
+
+    fn ensure_string_budget(&self, max_bytes: usize) -> VnResult<()> {
+        let mut total = 0usize;
+        for (label, _) in &self.labels {
+            total = total.saturating_add(label.len());
+        }
+        for event in &self.events {
+            match event {
+                EventRaw::Dialogue(dialogue) => {
+                    total = total.saturating_add(dialogue.speaker.len());
+                    total = total.saturating_add(dialogue.text.len());
+                }
+                EventRaw::Choice(choice) => {
+                    total = total.saturating_add(choice.prompt.len());
+                    for option in &choice.options {
+                        total = total.saturating_add(option.text.len());
+                        total = total.saturating_add(option.target.len());
+                    }
+                }
+                EventRaw::Scene(scene) => {
+                    if let Some(background) = &scene.background {
+                        total = total.saturating_add(background.len());
+                    }
+                    if let Some(music) = &scene.music {
+                        total = total.saturating_add(music.len());
+                    }
+                    for character in &scene.characters {
+                        total = total.saturating_add(character.name.len());
+                        if let Some(expression) = &character.expression {
+                            total = total.saturating_add(expression.len());
+                        }
+                        if let Some(position) = &character.position {
+                            total = total.saturating_add(position.len());
+                        }
+                    }
+                }
+                EventRaw::Jump { target } => {
+                    total = total.saturating_add(target.len());
+                }
+                EventRaw::SetFlag { key, .. } => {
+                    total = total.saturating_add(key.len());
+                }
+                EventRaw::SetVar { key, .. } => {
+                    total = total.saturating_add(key.len());
+                }
+                EventRaw::JumpIf { cond, target } => {
+                    total = total.saturating_add(target.len());
+                    total = total.saturating_add(cond_string_bytes(cond));
+                }
+                EventRaw::Patch(patch) => {
+                    if let Some(background) = &patch.background {
+                        total = total.saturating_add(background.len());
+                    }
+                    if let Some(music) = &patch.music {
+                        total = total.saturating_add(music.len());
+                    }
+                    for character in &patch.add {
+                        total = total.saturating_add(character.name.len());
+                        if let Some(expression) = &character.expression {
+                            total = total.saturating_add(expression.len());
+                        }
+                        if let Some(position) = &character.position {
+                            total = total.saturating_add(position.len());
+                        }
+                    }
+                    for character in &patch.update {
+                        total = total.saturating_add(character.name.len());
+                        if let Some(expression) = &character.expression {
+                            total = total.saturating_add(expression.len());
+                        }
+                        if let Some(position) = &character.position {
+                            total = total.saturating_add(position.len());
+                        }
+                    }
+                    for name in &patch.remove {
+                        total = total.saturating_add(name.len());
+                    }
+                }
+                EventRaw::ExtCall { command, args } => {
+                    total = total.saturating_add(command.len());
+                    for arg in args {
+                        total = total.saturating_add(arg.len());
+                    }
+                }
+            }
+            if total > max_bytes {
+                return Err(VnError::ResourceLimit("script string budget".to_string()));
+            }
+        }
+        Ok(())
     }
 
     /// Returns the index of the `start` label.
@@ -207,6 +308,10 @@ impl ScriptRaw {
                         .collect(),
                     remove: patch.remove.iter().map(|name| pool.intern(name)).collect(),
                 }),
+                EventRaw::ExtCall { command, args } => EventCompiled::ExtCall {
+                    command: command.clone(),
+                    args: args.clone(),
+                },
             };
             compiled_events.push(compiled);
         }
@@ -383,5 +488,12 @@ fn compile_cond(
                 value: *value,
             })
         }
+    }
+}
+
+fn cond_string_bytes(cond: &CondRaw) -> usize {
+    match cond {
+        CondRaw::Flag { key, .. } => key.len(),
+        CondRaw::VarCmp { key, .. } => key.len(),
     }
 }

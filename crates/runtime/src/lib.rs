@@ -1,10 +1,14 @@
 //! Runtime layer for driving the engine with a winit + pixels loop.
 
+mod loader;
+
+pub use loader::{AsyncLoader, LoadRequest, LoadResult};
+
 use std::collections::HashMap;
 
 use pixels::{Pixels, SurfaceTexture};
 use visual_novel_engine::{
-    Engine, EventCompiled, RenderOutput, TextRenderer, UiState, UiView, VisualState,
+    AudioCommand, Engine, EventCompiled, RenderOutput, TextRenderer, UiState, UiView, VisualState,
 };
 use winit::{
     dpi::LogicalSize,
@@ -146,7 +150,8 @@ where
             assets,
             ui,
         };
-        app.update_audio();
+        let audio_commands = app.engine.take_audio_commands();
+        app.apply_audio_commands(&audio_commands);
         Ok(app)
     }
 
@@ -167,8 +172,9 @@ where
             InputAction::None => {}
             InputAction::Quit => return Ok(false),
             InputAction::Advance => {
-                self.engine.step()?;
+                let (audio_commands, _) = self.engine.step()?;
                 self.refresh_state()?;
+                self.apply_audio_commands(&audio_commands);
             }
             InputAction::Choose(index) => {
                 let _ = self.engine.choose(index)?;
@@ -182,7 +188,6 @@ where
         let event = self.engine.current_event()?;
         self.visual = Self::derive_visual(&self.engine, &event);
         self.ui = UiState::from_event(&event, &self.visual);
-        self.update_audio();
         Ok(())
     }
 
@@ -194,11 +199,17 @@ where
         visual
     }
 
-    fn update_audio(&mut self) {
-        if let Some(music) = &self.visual.music {
-            self.audio.play_music(music.as_ref());
-        } else {
-            self.audio.stop_music();
+    fn apply_audio_commands(&mut self, commands: &[AudioCommand]) {
+        for command in commands {
+            match command {
+                AudioCommand::PlayBgm { resource, .. } => {
+                    self.audio.play_music(&resource.0.to_string());
+                }
+                AudioCommand::StopBgm { .. } => {
+                    self.audio.stop_music();
+                }
+                AudioCommand::PlaySfx { .. } => {}
+            }
         }
     }
 

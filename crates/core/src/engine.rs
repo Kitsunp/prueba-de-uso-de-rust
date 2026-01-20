@@ -1,5 +1,9 @@
 //! Runtime engine that executes compiled scripts.
 
+use std::time::Duration;
+
+use crate::assets::AssetId;
+use crate::audio::AudioCommand;
 use crate::error::{VnError, VnResult};
 use crate::event::{CmpOp, CondCompiled, EventCompiled};
 use crate::render::{RenderBackend, RenderOutput};
@@ -14,6 +18,7 @@ pub struct Engine {
     script: ScriptCompiled,
     state: EngineState,
     policy: SecurityPolicy,
+    queued_audio: Vec<AudioCommand>,
 }
 
 impl Engine {
@@ -31,10 +36,12 @@ impl Engine {
         if let Some(EventCompiled::Scene(scene)) = script.events.get(position as usize) {
             state.visual.apply_scene(scene);
         }
+        let queued_audio = initial_audio_commands(&state);
         Ok(Self {
             script,
             state,
             policy,
+            queued_audio,
         })
     }
 
@@ -50,10 +57,12 @@ impl Engine {
         if let Some(EventCompiled::Scene(scene)) = script.events.get(position as usize) {
             state.visual.apply_scene(scene);
         }
+        let queued_audio = initial_audio_commands(&state);
         Ok(Self {
             script,
             state,
             policy,
+            queued_audio,
         })
     }
 
@@ -79,16 +88,21 @@ impl Engine {
     }
 
     /// Advances the engine by applying the current event.
-    pub fn step(&mut self) -> VnResult<()> {
+    pub fn step(&mut self) -> VnResult<(Vec<AudioCommand>, StateChange)> {
         let event = self.current_event()?;
-        self.advance_from(&event)
+        let mut audio_commands = self.take_audio_commands();
+        self.advance_from(&event, &mut audio_commands)?;
+        let change = StateChange {
+            event,
+            visual: self.state.visual.clone(),
+        };
+        Ok((audio_commands, change))
     }
 
     /// Returns the current event and advances the engine.
     pub fn step_event(&mut self) -> VnResult<EventCompiled> {
-        let event = self.current_event()?;
-        self.advance_from(&event)?;
-        Ok(event)
+        let (_audio, change) = self.step()?;
+        Ok(change.event)
     }
 
     /// Applies a choice selection on the current choice event.
@@ -107,7 +121,11 @@ impl Engine {
         Ok(event)
     }
 
-    fn advance_from(&mut self, event: &EventCompiled) -> VnResult<()> {
+    fn advance_from(
+        &mut self,
+        event: &EventCompiled,
+        audio_commands: &mut Vec<AudioCommand>,
+    ) -> VnResult<()> {
         match event {
             EventCompiled::Jump { target_ip } => self.jump_to_ip(*target_ip),
             EventCompiled::SetFlag { flag_id, value } => {
@@ -115,7 +133,9 @@ impl Engine {
                 self.advance_position()
             }
             EventCompiled::Scene(scene) => {
+                let before_music = self.state.visual.music.clone();
                 self.state.visual.apply_scene(scene);
+                append_music_delta(before_music, &self.state.visual.music, audio_commands);
                 self.advance_position()
             }
             EventCompiled::Choice(_) => Ok(()),
@@ -135,9 +155,12 @@ impl Engine {
                 }
             }
             EventCompiled::Patch(patch) => {
+                let before_music = self.state.visual.music.clone();
                 self.state.visual.apply_patch(patch);
+                append_music_delta(before_music, &self.state.visual.music, audio_commands);
                 self.advance_position()
             }
+            EventCompiled::ExtCall { .. } => Ok(()),
         }
     }
 
@@ -198,6 +221,68 @@ impl Engine {
         self.script.flag_count
     }
 
+    pub fn take_audio_commands(&mut self) -> Vec<AudioCommand> {
+        std::mem::take(&mut self.queued_audio)
+    }
+
+    pub fn queue_audio_command(&mut self, command: AudioCommand) {
+        self.queued_audio.push(command);
+    }
+
+    pub fn resume(&mut self) -> VnResult<()> {
+        let event = self.current_event()?;
+        match event {
+            EventCompiled::ExtCall { .. } => self.advance_position(),
+            _ => Ok(()),
+        }
+    }
+
+    pub fn peek_next_assets(&self, depth: usize) -> Vec<AssetId> {
+        let mut assets = Vec::new();
+        let start = self.state.position as usize;
+        let end = (start + depth).min(self.script.events.len());
+        for event in &self.script.events[start..end] {
+            match event {
+                EventCompiled::Scene(scene) => {
+                    if let Some(background) = &scene.background {
+                        assets.push(AssetId::from_path(background.as_ref()));
+                    }
+                    if let Some(music) = &scene.music {
+                        assets.push(AssetId::from_path(music.as_ref()));
+                    }
+                    for character in &scene.characters {
+                        assets.push(AssetId::from_path(character.name.as_ref()));
+                        if let Some(expression) = &character.expression {
+                            assets.push(AssetId::from_path(expression.as_ref()));
+                        }
+                    }
+                }
+                EventCompiled::Patch(patch) => {
+                    if let Some(background) = &patch.background {
+                        assets.push(AssetId::from_path(background.as_ref()));
+                    }
+                    if let Some(music) = &patch.music {
+                        assets.push(AssetId::from_path(music.as_ref()));
+                    }
+                    for character in &patch.add {
+                        assets.push(AssetId::from_path(character.name.as_ref()));
+                        if let Some(expression) = &character.expression {
+                            assets.push(AssetId::from_path(expression.as_ref()));
+                        }
+                    }
+                    for character in &patch.update {
+                        assets.push(AssetId::from_path(character.name.as_ref()));
+                        if let Some(expression) = &character.expression {
+                            assets.push(AssetId::from_path(expression.as_ref()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        assets
+    }
+
     /// Returns compiled script labels.
     pub fn labels(&self) -> &std::collections::BTreeMap<String, u32> {
         &self.script.labels
@@ -241,5 +326,43 @@ impl Engine {
     pub fn current_event_json(&self) -> VnResult<String> {
         let event = self.current_event()?;
         Ok(event.to_json_string())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct StateChange {
+    pub event: EventCompiled,
+    pub visual: crate::visual::VisualState,
+}
+
+fn initial_audio_commands(state: &EngineState) -> Vec<AudioCommand> {
+    let mut commands = Vec::new();
+    if let Some(music) = &state.visual.music {
+        commands.push(AudioCommand::PlayBgm {
+            resource: AssetId::from_path(music.as_ref()),
+            r#loop: true,
+            fade_in: Duration::from_secs(0),
+        });
+    }
+    commands
+}
+
+fn append_music_delta(
+    before: Option<crate::event::SharedStr>,
+    after: &Option<crate::event::SharedStr>,
+    audio_commands: &mut Vec<AudioCommand>,
+) {
+    if before.as_deref() == after.as_deref() {
+        return;
+    }
+    match after {
+        Some(music) => audio_commands.push(AudioCommand::PlayBgm {
+            resource: AssetId::from_path(music.as_ref()),
+            r#loop: true,
+            fade_in: Duration::from_secs(0),
+        }),
+        None => audio_commands.push(AudioCommand::StopBgm {
+            fade_out: Duration::from_secs(0),
+        }),
     }
 }

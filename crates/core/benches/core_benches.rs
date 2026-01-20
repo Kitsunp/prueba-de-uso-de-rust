@@ -114,7 +114,7 @@ fn bench_step_loop(c: &mut Criterion) {
             || Engine::new(raw.clone(), policy.clone(), limits).expect("engine"),
             |mut engine| {
                 for _ in 0..200 {
-                    engine.step().expect("step");
+                    let _ = engine.step().expect("step");
                 }
             },
             BatchSize::SmallInput,

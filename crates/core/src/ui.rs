@@ -69,6 +69,9 @@ impl UiState {
             EventCompiled::JumpIf { target_ip, .. } => UiView::System {
                 message: format!("JumpIf to {target_ip}"),
             },
+            EventCompiled::ExtCall { command, args } => UiView::System {
+                message: format!("ExtCall {command}({})", args.join(", ")),
+            },
         };
         Self { view }
     }

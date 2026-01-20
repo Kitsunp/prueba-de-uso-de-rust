@@ -41,6 +41,7 @@ pub enum EventRaw {
     SetVar { key: String, value: i32 },
     JumpIf { cond: CondRaw, target: String },
     Patch(ScenePatchRaw),
+    ExtCall { command: String, args: Vec<String> },
 }
 
 /// Runtime events with pre-resolved targets and interned strings.
@@ -54,6 +55,7 @@ pub enum EventCompiled {
     SetVar { var_id: u32, value: i32 },
     JumpIf { cond: CondCompiled, target_ip: u32 },
     Patch(ScenePatchCompiled),
+    ExtCall { command: String, args: Vec<String> },
 }
 
 impl EventRaw {
@@ -132,6 +134,11 @@ impl EventCompiled {
                     "position": character.position.as_deref(),
                 })).collect::<Vec<_>>(),
                 "remove": patch.remove.iter().map(|name| name.as_ref()).collect::<Vec<_>>(),
+            }),
+            EventCompiled::ExtCall { command, args } => serde_json::json!({
+                "type": "ext_call",
+                "command": command,
+                "args": args,
             }),
         }
     }
