@@ -89,7 +89,7 @@ fn bench_parse_json(c: &mut Criterion) {
     if let Some(obj) = value.as_object_mut() {
         obj.insert(
             "script_schema_version".to_string(),
-            serde_json::Value::String("1.0".to_string()),
+            serde_json::Value::String(visual_novel_engine::SCRIPT_SCHEMA_VERSION.to_string()),
         );
     }
     let json = serde_json::to_string(&value).expect("json");

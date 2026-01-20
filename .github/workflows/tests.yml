@@ -32,7 +32,7 @@ jobs:
       - run: cargo test -p visual_novel_engine --verbose
       - run: cargo test -p vnengine_runtime --verbose
       - run: cargo test -p visual_novel_gui --verbose
-      - run: cargo build -p visual_novel_py --profile python --verbose
+      - run: cargo build -p vnengine_py --profile python --verbose
       - run: cargo bench -p visual_novel_engine --bench core_benches -- --warm-up-time 0.1 --measurement-time 0.1 --sample-size 10
 
   fuzz-smoke:
