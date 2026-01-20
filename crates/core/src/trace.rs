@@ -82,6 +82,9 @@ impl UiView {
             EventCompiled::JumpIf { .. } => UiView::System {
                 message: "JumpIf".to_string(),
             },
+            EventCompiled::ExtCall { command, args } => UiView::System {
+                message: format!("ExtCall {command}({})", args.join(", ")),
+            },
         }
     }
 }

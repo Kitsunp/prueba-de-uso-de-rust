@@ -61,6 +61,7 @@ impl PyEvent {
                 EventRaw::SetVar { .. } => "set_var",
                 EventRaw::JumpIf { .. } => "jump_if",
                 EventRaw::Patch(_) => "patch",
+                EventRaw::ExtCall { .. } => "ext_call",
             },
             PyEventData::Compiled(event) => match event {
                 EventCompiled::Dialogue(_) => "dialogue",
@@ -71,6 +72,7 @@ impl PyEvent {
                 EventCompiled::SetVar { .. } => "set_var",
                 EventCompiled::JumpIf { .. } => "jump_if",
                 EventCompiled::Patch(_) => "patch",
+                EventCompiled::ExtCall { .. } => "ext_call",
             },
         }
     }
@@ -123,6 +125,12 @@ impl PyEvent {
         }
         if let Some(value) = self.value_flag() {
             dict.set_item("value", value)?;
+        }
+        if let Some(value) = self.command_value() {
+            dict.set_item("command", value)?;
+        }
+        if let Some(value) = self.args_value(py)? {
+            dict.set_item("args", value)?;
         }
         Ok(dict.into())
     }
@@ -194,6 +202,35 @@ impl PyEvent {
             PyEventData::Raw(EventRaw::SetFlag { value, .. }) => Some(*value),
             PyEventData::Compiled(EventCompiled::SetFlag { value, .. }) => Some(*value),
             _ => None,
+        }
+    }
+
+    fn command_value(&self) -> Option<&str> {
+        match &self.data {
+            PyEventData::Raw(EventRaw::ExtCall { command, .. }) => Some(command.as_str()),
+            PyEventData::Compiled(EventCompiled::ExtCall { command, .. }) => Some(command.as_str()),
+            _ => None,
+        }
+    }
+
+    fn args_value(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Option<pyo3::PyObject>> {
+        use pyo3::types::{PyList, PyListMethods};
+        match &self.data {
+            PyEventData::Raw(EventRaw::ExtCall { args, .. }) => {
+                let list = PyList::empty(py);
+                for arg in args {
+                    list.append(arg)?;
+                }
+                Ok(Some(list.into()))
+            }
+            PyEventData::Compiled(EventCompiled::ExtCall { args, .. }) => {
+                let list = PyList::empty(py);
+                for arg in args {
+                    list.append(arg)?;
+                }
+                Ok(Some(list.into()))
+            }
+            _ => Ok(None),
         }
     }
 

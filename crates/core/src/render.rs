@@ -82,6 +82,9 @@ impl RenderBackend for TextRenderer {
             EventCompiled::JumpIf { target_ip, .. } => {
                 format!("JumpIf to {target_ip}")
             }
+            EventCompiled::ExtCall { command, args } => {
+                format!("ExtCall {command}({})", args.join(", "))
+            }
         };
         RenderOutput { text }
     }

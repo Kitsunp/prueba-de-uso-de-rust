@@ -391,7 +391,7 @@ impl VnApp {
 
     fn advance(&mut self) {
         match self.engine.step() {
-            Ok(()) => {}
+            Ok((_audio, _change)) => {}
             Err(VnError::EndOfScript) => {}
             Err(err) => self.last_error = Some(err.to_string()),
         }

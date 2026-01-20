@@ -19,5 +19,6 @@ pub fn event_kind(event: &EventCompiled) -> String {
         EventCompiled::SetVar { .. } => "SetVar".to_string(),
         EventCompiled::JumpIf { .. } => "JumpIf".to_string(),
         EventCompiled::Patch(_) => "Patch".to_string(),
+        EventCompiled::ExtCall { .. } => "ExtCall".to_string(),
     }
 }

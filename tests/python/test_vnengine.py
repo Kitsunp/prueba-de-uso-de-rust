@@ -198,6 +198,66 @@ class EngineAppTests(unittest.TestCase):
         self.assertEqual(collected[0]["type"], "choice")
         self.assertEqual(collected[1]["type"], "dialogue")
 
+
+class NativeBindingsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import visual_novel_engine as native
+        except ImportError:
+            cls.native = None
+        else:
+            cls.native = native
+
+    def setUp(self):
+        if self.native is None:
+            self.skipTest("visual_novel_engine native module not available")
+
+    def _sample_script_json(self):
+        payload = {
+            "script_schema_version": SCRIPT_SCHEMA_VERSION,
+            "events": [
+                {"type": "ext_call", "command": "minigame_start", "args": ["poker"]},
+                {"type": "dialogue", "speaker": "Ava", "text": "Hola"},
+            ],
+            "labels": {"start": 0},
+        }
+        return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+    def test_resource_config_and_memory_usage(self):
+        engine = self.native.Engine(self._sample_script_json())
+        config = self.native.ResourceConfig(max_texture_memory=123, max_script_bytes=456)
+        engine.set_resources(config)
+        usage = engine.get_memory_usage()
+        self.assertEqual(usage["max_texture_memory"], 123)
+        self.assertEqual(usage["max_script_bytes"], 456)
+
+    def test_ext_call_handler_and_resume(self):
+        engine = self.native.Engine(self._sample_script_json())
+        calls = []
+
+        def handler(command, args):
+            calls.append((command, args))
+
+        engine.register_handler(handler)
+        event = engine.step()
+        self.assertEqual(event["type"], "ext_call")
+        self.assertEqual(calls, [("minigame_start", ["poker"])])
+
+        engine.resume()
+        next_event = engine.step()
+        self.assertEqual(next_event["type"], "dialogue")
+
+    def test_audio_controller_and_prefetch_api(self):
+        engine = self.native.Engine(self._sample_script_json())
+        engine.set_prefetch_depth(3)
+        self.assertIsInstance(engine.is_loading(), bool)
+
+        audio = engine.audio()
+        audio.play_bgm("theme_song", loop=True, fade_in=0.5)
+        audio.stop_all(fade_out=0.1)
+        audio.play_sfx("click")
+
     def test_engine_app_propagates_unexpected_errors(self):
         class BrokenEngine:
             def current_event(self):

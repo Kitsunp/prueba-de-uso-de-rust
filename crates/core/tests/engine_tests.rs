@@ -90,8 +90,8 @@ fn engine_records_dialogue_history() {
         ResourceLimiter::default(),
     )
     .unwrap();
-    engine.step().unwrap();
-    engine.step().unwrap();
+    let _ = engine.step().unwrap();
+    let _ = engine.step().unwrap();
     let history = &engine.state().history;
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].text.as_ref(), "Hola");
@@ -106,8 +106,8 @@ fn engine_state_round_trip() {
         ResourceLimiter::default(),
     )
     .unwrap();
-    engine.step().unwrap();
-    engine.step().unwrap();
+    let _ = engine.step().unwrap();
+    let _ = engine.step().unwrap();
     let serialized = serde_json::to_string(engine.state()).unwrap();
     let parsed = serde_json::from_str::<visual_novel_engine::EngineState>(&serialized).unwrap();
     assert_eq!(parsed.position, engine.state().position);
@@ -123,8 +123,8 @@ fn engine_choice_jumps() {
         ResourceLimiter::default(),
     )
     .unwrap();
-    engine.step().unwrap();
-    engine.step().unwrap();
+    let _ = engine.step().unwrap();
+    let _ = engine.step().unwrap();
     let choice = engine.choose(0).unwrap();
     assert!(matches!(choice, EventCompiled::Choice(_)));
     let next = engine.step_event().unwrap();
@@ -187,10 +187,10 @@ fn engine_signals_end_of_script() {
         ResourceLimiter::default(),
     )
     .unwrap();
-    engine.step().unwrap();
-    engine.step().unwrap();
+    let _ = engine.step().unwrap();
+    let _ = engine.step().unwrap();
     engine.choose(0).unwrap();
-    engine.step().unwrap();
+    let _ = engine.step().unwrap();
     let result = engine.step();
     assert!(matches!(
         result,
@@ -221,6 +221,23 @@ fn scene_updates_visual_state_and_renderer_output() {
 }
 
 #[test]
+fn engine_emits_audio_command_on_scene_start() {
+    let script = sample_script();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
+    let (audio_commands, change) = engine.step().unwrap();
+    assert!(matches!(change.event, EventCompiled::Scene(_)));
+    assert!(audio_commands.iter().any(|command| matches!(
+        command,
+        visual_novel_engine::AudioCommand::PlayBgm { .. }
+    )));
+}
+
+#[test]
 fn renderer_formats_choice_and_dialogue() {
     let script = sample_script();
     let mut engine = Engine::new(
@@ -229,7 +246,7 @@ fn renderer_formats_choice_and_dialogue() {
         ResourceLimiter::default(),
     )
     .unwrap();
-    engine.step().unwrap();
+    let _ = engine.step().unwrap();
     let dialogue = engine.step_event().unwrap();
     let renderer = TextRenderer;
     let output = renderer.render(&dialogue, engine.visual_state());
@@ -298,7 +315,9 @@ fn collect_compiled_sequence(script: &ScriptRaw, choices: &[usize]) -> Vec<Strin
                 let choice = choice_iter.next().unwrap_or(0);
                 engine.choose(choice).unwrap();
             }
-            _ => engine.step().unwrap(),
+            _ => {
+                let _ = engine.step().unwrap();
+            }
         }
     }
     sequence
@@ -324,7 +343,8 @@ fn collect_raw_sequence(script: &ScriptRaw, choices: &[usize]) -> Vec<String> {
             | EventRaw::Dialogue(_)
             | EventRaw::Scene(_)
             | EventRaw::SetVar { .. }
-            | EventRaw::Patch(_) => {
+            | EventRaw::Patch(_)
+            | EventRaw::ExtCall { .. } => {
                 position += 1;
             }
             EventRaw::JumpIf { .. } => {
@@ -359,6 +379,7 @@ fn event_signature(event: &EventCompiled) -> String {
         EventCompiled::SetVar { var_id, value } => format!("var:{var_id}:{value}"),
         EventCompiled::JumpIf { cond: _, target_ip } => format!("jump_if:{target_ip}"),
         EventCompiled::Patch(_) => "patch".to_string(),
+        EventCompiled::ExtCall { command, .. } => format!("ext_call:{command}"),
     }
 }
 
@@ -374,5 +395,6 @@ fn event_signature_raw(event: &EventRaw) -> String {
         EventRaw::SetVar { key, value } => format!("var:{key}:{value}"),
         EventRaw::JumpIf { .. } => "jump_if".to_string(),
         EventRaw::Patch(_) => "patch".to_string(),
+        EventRaw::ExtCall { command, .. } => format!("ext_call:{command}"),
     }
 }

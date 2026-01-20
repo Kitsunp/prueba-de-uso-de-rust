@@ -35,3 +35,25 @@ pub enum VnError {
     #[diagnostic(code("vn.binary_format"))]
     BinaryFormat(String),
 }
+
+impl VnError {
+    #[cold]
+    pub fn invalid_script(message: impl Into<String>) -> Self {
+        VnError::InvalidScript(message.into())
+    }
+
+    #[cold]
+    pub fn resource_limit(message: impl Into<String>) -> Self {
+        VnError::ResourceLimit(message.into())
+    }
+
+    #[cold]
+    pub fn security_policy(message: impl Into<String>) -> Self {
+        VnError::SecurityPolicy(message.into())
+    }
+
+    #[cold]
+    pub fn binary_format(message: impl Into<String>) -> Self {
+        VnError::BinaryFormat(message.into())
+    }
+}

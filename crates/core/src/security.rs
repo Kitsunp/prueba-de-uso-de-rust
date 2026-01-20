@@ -170,6 +170,16 @@ impl SecurityPolicy {
                         )));
                     }
                 }
+                EventRaw::ExtCall { command, args } => {
+                    if command.len() > limits.max_label_length {
+                        return Err(VnError::ResourceLimit("ext command".to_string()));
+                    }
+                    for arg in args {
+                        if arg.len() > limits.max_text_length {
+                            return Err(VnError::ResourceLimit("ext arg".to_string()));
+                        }
+                    }
+                }
             }
         }
         Ok(())

@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 
 use ::visual_novel_engine::{
-    CharacterPatchCompiled, CharacterPatchRaw, CharacterPlacementCompiled, CharacterPlacementRaw,
-    ChoiceOptionRaw, ChoiceRaw, CmpOp, CondRaw, DialogueRaw, Engine as CoreEngine, EventCompiled,
-    EventRaw, ResourceLimiter, ScenePatchRaw, SceneUpdateRaw, ScriptRaw, SecurityPolicy, SharedStr,
-    UiState, UiView, VnError, SCRIPT_SCHEMA_VERSION,
+    AssetId, AudioCommand, CharacterPatchCompiled, CharacterPatchRaw, CharacterPlacementCompiled,
+    CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, CmpOp, CondRaw, DialogueRaw,
+    Engine as CoreEngine, EventCompiled, EventRaw, ResourceLimiter, ScenePatchRaw,
+    SceneUpdateRaw, ScriptRaw, SecurityPolicy, SharedStr, UiState, UiView, VnError,
+    SCRIPT_SCHEMA_VERSION,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
 use serde::Serialize;
 use visual_novel_gui::{run_app as run_gui, GuiError, SecurityMode, VnConfig as GuiConfig};
+use std::time::Duration;
 
 fn vn_error_to_py(err: VnError) -> PyErr {
     let report = miette::Report::new(err);
@@ -19,6 +21,8 @@ fn vn_error_to_py(err: VnError) -> PyErr {
 #[pymodule]
 fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
+    m.add_class::<PyAudio>()?;
+    m.add_class::<PyResourceConfig>()?;
     m.add_class::<PyScriptBuilder>()?;
     m.add_class::<PyVnConfig>()?;
     m.add_function(wrap_pyfunction!(run_visual_novel, m)?)?;
@@ -26,24 +30,57 @@ fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+#[pyclass(name = "ResourceConfig")]
+#[derive(Clone, Debug)]
+pub struct PyResourceConfig {
+    #[pyo3(get, set)]
+    pub max_texture_memory: usize,
+    #[pyo3(get, set)]
+    pub max_script_bytes: usize,
+}
+
+#[pymethods]
+impl PyResourceConfig {
+    #[new]
+    #[pyo3(signature = (max_texture_memory=None, max_script_bytes=None))]
+    fn new(max_texture_memory: Option<usize>, max_script_bytes: Option<usize>) -> Self {
+        Self {
+            max_texture_memory: max_texture_memory.unwrap_or(512 * 1024 * 1024),
+            max_script_bytes: max_script_bytes.unwrap_or(ResourceLimiter::default().max_script_bytes),
+        }
+    }
+}
+
 #[pyclass(name = "Engine")]
 #[derive(Debug)]
 pub struct PyEngine {
     inner: CoreEngine,
+    resource_limits: ResourceLimiter,
+    max_texture_memory: usize,
+    prefetch_depth: usize,
+    handler: Option<Py<PyAny>>,
 }
 
 #[pymethods]
 impl PyEngine {
     #[new]
     pub fn new(script_json: &str) -> PyResult<Self> {
-        let script = ScriptRaw::from_json(script_json).map_err(vn_error_to_py)?;
+        let resource_limits = ResourceLimiter::default();
+        let script =
+            ScriptRaw::from_json_with_limits(script_json, resource_limits).map_err(vn_error_to_py)?;
         let inner = CoreEngine::new(
             script,
             SecurityPolicy::default(),
-            ResourceLimiter::default(),
+            resource_limits,
         )
         .map_err(vn_error_to_py)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            resource_limits,
+            max_texture_memory: 512 * 1024 * 1024,
+            prefetch_depth: 0,
+            handler: None,
+        })
     }
 
     fn current_event<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
@@ -52,7 +89,14 @@ impl PyEngine {
     }
 
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<PyObject> {
-        let event = self.inner.step_event().map_err(vn_error_to_py)?;
+        let (_audio, change) = self.inner.step().map_err(vn_error_to_py)?;
+        let event = change.event;
+        if let EventCompiled::ExtCall { command, args } = &event {
+            if let Some(handler) = &self.handler {
+                let handler = handler.clone_ref(py);
+                handler.call1(py, (command.as_str(), args.clone()))?;
+            }
+        }
         event_to_python(&event, py)
     }
 
@@ -86,6 +130,85 @@ impl PyEngine {
         let event = self.inner.current_event().map_err(vn_error_to_py)?;
         let ui = UiState::from_event(&event, self.inner.visual_state());
         ui_state_to_python(&ui, py)
+    }
+
+    fn set_resources(&mut self, config: PyResourceConfig) {
+        self.max_texture_memory = config.max_texture_memory;
+        self.resource_limits.max_script_bytes = config.max_script_bytes;
+    }
+
+    fn get_memory_usage<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
+        let dict = PyDict::new(py);
+        dict.set_item("current_texture_bytes", 0usize)?;
+        dict.set_item("max_texture_memory", self.max_texture_memory)?;
+        dict.set_item("max_script_bytes", self.resource_limits.max_script_bytes)?;
+        Ok(dict.into())
+    }
+
+    fn set_prefetch_depth(&mut self, depth: usize) {
+        self.prefetch_depth = depth;
+    }
+
+    fn is_loading(&self) -> bool {
+        false
+    }
+
+    fn register_handler(&mut self, callback: Py<PyAny>) {
+        self.handler = Some(callback);
+    }
+
+    fn resume(&mut self) -> PyResult<()> {
+        self.inner.resume().map_err(vn_error_to_py)?;
+        Ok(())
+    }
+
+    fn audio(slf: PyRef<'_, Self>) -> PyResult<Py<PyAudio>> {
+        let py = slf.py();
+        Py::new(py, PyAudio::new(py, slf)?)
+    }
+}
+
+#[pyclass(name = "AudioController")]
+pub struct PyAudio {
+    engine: Py<PyAny>,
+}
+
+impl PyAudio {
+    fn new(py: Python<'_>, engine: PyRef<'_, PyEngine>) -> PyResult<Self> {
+        Ok(Self {
+            engine: engine.into_py(py),
+        })
+    }
+}
+
+#[pymethods]
+impl PyAudio {
+    #[pyo3(signature = (resource, r#loop=true, fade_in=0.0))]
+    fn play_bgm(&self, py: Python<'_>, resource: &str, r#loop: bool, fade_in: f64) -> PyResult<()> {
+        let mut engine: PyRefMut<'_, PyEngine> = self.engine.bind(py).extract()?;
+        engine.inner.queue_audio_command(AudioCommand::PlayBgm {
+            resource: AssetId::from_path(resource),
+            r#loop,
+            fade_in: Duration::from_secs_f64(fade_in.max(0.0)),
+        });
+        Ok(())
+    }
+
+    #[pyo3(signature = (fade_out=0.0))]
+    fn stop_all(&self, py: Python<'_>, fade_out: f64) -> PyResult<()> {
+        let mut engine: PyRefMut<'_, PyEngine> = self.engine.bind(py).extract()?;
+        engine.inner.queue_audio_command(AudioCommand::StopBgm {
+            fade_out: Duration::from_secs_f64(fade_out.max(0.0)),
+        });
+        Ok(())
+    }
+
+    fn play_sfx(&self, py: Python<'_>, resource: &str) -> PyResult<()> {
+        let mut engine: PyRefMut<'_, PyEngine> = self.engine.bind(py).extract()?;
+        engine.inner.queue_audio_command(AudioCommand::PlaySfx {
+            resource: AssetId::from_path(resource),
+        });
+        Ok(())
     }
 }
 
@@ -336,6 +459,13 @@ impl PyScriptBuilder {
         }));
     }
 
+    fn ext_call(&mut self, command: &str, args: Vec<String>) {
+        self.events.push(EventRaw::ExtCall {
+            command: command.to_string(),
+            args,
+        });
+    }
+
     fn build_json(&self) -> PyResult<String> {
         let script = StableScript::from_parts(&self.events, &self.labels);
         serde_json::to_string(&script).map_err(|err| {
@@ -423,6 +553,15 @@ fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> 
             dict.set_item("add", characters_to_python(py, &patch.add)?)?;
             dict.set_item("update", patch_update_to_python(py, &patch.update)?)?;
             dict.set_item("remove", string_list_to_python(py, &patch.remove)?)?;
+        }
+        EventCompiled::ExtCall { command, args } => {
+            dict.set_item("type", "ext_call")?;
+            dict.set_item("command", command)?;
+            let list = PyList::empty(py);
+            for arg in args {
+                list.append(arg)?;
+            }
+            dict.set_item("args", list)?;
         }
     }
     Ok(dict.into())
