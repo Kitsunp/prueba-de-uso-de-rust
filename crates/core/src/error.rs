@@ -22,6 +22,7 @@ pub enum VnError {
     SecurityPolicy(String),
     #[error("serialization error: {message}")]
     #[diagnostic(code("vn.serialization"))]
+    #[allow(dead_code)]
     Serialization {
         message: String,
         #[source_code]
