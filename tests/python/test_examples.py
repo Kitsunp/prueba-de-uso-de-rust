@@ -60,6 +60,9 @@ class ExampleUsageTests(unittest.TestCase):
         self.assertEqual(state["music"], "music/theme.ogg")
         self.assertEqual(len(state["characters"]), 1)
         engine.step()
+        # Patch event is also blocking/steppable, so we need to step through it to see effects
+        if engine.current_event()["type"] == "patch":
+            engine.step()
         patched = engine.visual_state()
         self.assertEqual(patched["background"], "bg/night.png")
         self.assertEqual(patched["characters"][0]["expression"], "serious")

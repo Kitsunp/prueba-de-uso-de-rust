@@ -85,7 +85,14 @@ fn choice_script() -> ScriptRaw {
 
 fn bench_parse_json(c: &mut Criterion) {
     let raw = sample_raw_script();
-    let json = serde_json::to_string(&raw).expect("json");
+    let mut value = serde_json::to_value(&raw).expect("value");
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "script_schema_version".to_string(),
+            serde_json::Value::String("1.0".to_string()),
+        );
+    }
+    let json = serde_json::to_string(&value).expect("json");
     c.bench_function("parse_json_to_raw", |b| {
         b.iter(|| ScriptRaw::from_json(&json).expect("parse"))
     });
