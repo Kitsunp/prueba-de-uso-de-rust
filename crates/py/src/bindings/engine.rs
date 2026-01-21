@@ -100,11 +100,13 @@ impl PyEngine {
             match cmd {
                 AudioCommand::PlayBgm {
                     resource,
+                    path,
                     r#loop,
                     fade_in,
                 } => {
                     dict.set_item("type", "play_bgm")?;
-                    dict.set_item("resource", resource.0.to_string())?; // ID as string for now
+                    dict.set_item("resource", resource.as_u64().to_string())?;
+                    dict.set_item("path", path.as_ref())?;
                     dict.set_item("loop", r#loop)?;
                     dict.set_item("fade_in", fade_in.as_secs_f64())?;
                 }
@@ -112,9 +114,10 @@ impl PyEngine {
                     dict.set_item("type", "stop_bgm")?;
                     dict.set_item("fade_out", fade_out.as_secs_f64())?;
                 }
-                AudioCommand::PlaySfx { resource } => {
+                AudioCommand::PlaySfx { resource, path } => {
                     dict.set_item("type", "play_sfx")?;
-                    dict.set_item("resource", resource.0.to_string())?;
+                    dict.set_item("resource", resource.as_u64().to_string())?;
+                    dict.set_item("path", path.as_ref())?;
                 }
             }
             list.append(dict)?;

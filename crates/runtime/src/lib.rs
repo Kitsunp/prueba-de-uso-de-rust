@@ -195,11 +195,9 @@ where
 
     /// Applies audio when the current event is a Scene (used after jump without step)
     fn apply_audio_for_current_scene(&mut self) {
-        if let Ok(event) = self.engine.current_event() {
-            if let EventCompiled::Scene(scene) = &event {
-                if let Some(music) = &scene.music {
-                    self.audio.play_music(&music.to_string());
-                }
+        if let Ok(EventCompiled::Scene(scene)) = self.engine.current_event() {
+            if let Some(music) = &scene.music {
+                self.audio.play_music(music);
             }
         }
     }
@@ -215,16 +213,16 @@ where
     fn apply_audio_commands(&mut self, commands: &[AudioCommand]) {
         for command in commands {
             match command {
-                AudioCommand::PlayBgm { .. } => {
-                    // Use the actual music path from visual state for consistency
-                    if let Some(music) = &self.visual.music {
-                        self.audio.play_music(music.as_ref());
-                    }
+                AudioCommand::PlayBgm { path, .. } => {
+                    // Use path directly from the command (no workaround needed)
+                    self.audio.play_music(path.as_ref());
                 }
                 AudioCommand::StopBgm { .. } => {
                     self.audio.stop_music();
                 }
-                AudioCommand::PlaySfx { .. } => {}
+                AudioCommand::PlaySfx { .. } => {
+                    // TODO: implement SFX playback
+                }
             }
         }
     }

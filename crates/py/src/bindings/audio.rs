@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use std::sync::Arc;
 use std::time::Duration;
 use visual_novel_engine::{AssetId, AudioCommand};
 
@@ -22,6 +23,7 @@ impl PyAudio {
         let mut engine = self.engine.borrow_mut(py);
         engine.inner.queue_audio_command(AudioCommand::PlayBgm {
             resource: AssetId::from_path(resource),
+            path: Arc::from(resource),
             r#loop,
             fade_in: Duration::from_secs_f64(fade_in.max(0.0)),
         });
@@ -41,6 +43,7 @@ impl PyAudio {
         let mut engine = self.engine.borrow_mut(py);
         engine.inner.queue_audio_command(AudioCommand::PlaySfx {
             resource: AssetId::from_path(resource),
+            path: Arc::from(resource),
         });
         Ok(())
     }

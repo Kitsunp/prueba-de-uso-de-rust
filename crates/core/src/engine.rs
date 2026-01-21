@@ -372,6 +372,7 @@ fn initial_audio_commands(state: &EngineState) -> Vec<AudioCommand> {
     if let Some(music) = &state.visual.music {
         commands.push(AudioCommand::PlayBgm {
             resource: AssetId::from_path(music.as_ref()),
+            path: music.clone(),
             r#loop: true,
             fade_in: Duration::from_millis(500),
         });
@@ -390,6 +391,7 @@ fn append_music_delta(
     match after {
         Some(music) => audio_commands.push(AudioCommand::PlayBgm {
             resource: AssetId::from_path(music.as_ref()),
+            path: music.clone(),
             r#loop: true,
             fade_in: Duration::from_millis(500),
         }),
@@ -441,7 +443,7 @@ mod tests {
         assert_eq!(audio_step0.len(), 1, "Init queued PlayBgm for bgm_intro");
         assert!(matches!(
             &audio_step0[0],
-            AudioCommand::PlayBgm { resource, .. } if resource.0 == AssetId::from_path("bgm_intro.ogg").0
+            AudioCommand::PlayBgm { resource, .. } if resource.as_u64() == AssetId::from_path("bgm_intro.ogg").as_u64()
         ));
 
         // === STEP 1 (Dialogue) ===
@@ -455,7 +457,7 @@ mod tests {
         assert_eq!(audio_step2.len(), 1, "Music change -> PlayBgm");
         assert!(matches!(
             &audio_step2[0],
-            AudioCommand::PlayBgm { resource, .. } if resource.0 == AssetId::from_path("bgm_battle.ogg").0
+            AudioCommand::PlayBgm { resource, .. } if resource.as_u64() == AssetId::from_path("bgm_battle.ogg").as_u64()
         ));
 
         // === Determinism: Run same script again, must get identical results ===

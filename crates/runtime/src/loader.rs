@@ -25,6 +25,12 @@ pub struct AsyncLoader {
     _thread_handle: Option<thread::JoinHandle<()>>,
 }
 
+impl Default for AsyncLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AsyncLoader {
     pub fn new() -> Self {
         let (sender, request_rx) = mpsc::channel::<LoadRequest>();
@@ -36,10 +42,10 @@ impl AsyncLoader {
             while let Ok(request) = request_rx.recv() {
                 let data = std::fs::read(&request.path).unwrap_or_default();
                 inflight_thread.fetch_sub(1, Ordering::Release);
-                let _ = result_tx.send(LoadResult {
+                drop(result_tx.send(LoadResult {
                     id: request.id,
                     bytes: data,
-                });
+                }));
             }
         });
 
@@ -53,7 +59,7 @@ impl AsyncLoader {
 
     pub fn enqueue(&self, id: AssetId, path: PathBuf) {
         self.inflight.fetch_add(1, Ordering::Release);
-        let _ = self.sender.send(LoadRequest { id, path });
+        drop(self.sender.send(LoadRequest { id, path }));
     }
 
     pub fn try_recv(&self) -> Option<LoadResult> {
