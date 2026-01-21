@@ -1,9 +1,10 @@
 use pollster::FutureExt;
 use visual_novel_engine::UiState;
 use wgpu::{
-    Backends, Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance, Limits,
-    LoadOp, Operations, PowerPreference, Queue, RenderPassColorAttachment, RenderPassDescriptor,
-    RequestAdapterOptions, Surface, SurfaceConfiguration, TextureUsages, TextureViewDescriptor,
+    Backends, Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
+    Limits, LoadOp, Operations, PowerPreference, Queue, RenderPassColorAttachment,
+    RenderPassDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration, TextureUsages,
+    TextureViewDescriptor,
 };
 use winit::window::Window;
 
@@ -79,7 +80,10 @@ impl RenderBackend for WgpuBackend {
     }
 
     fn render(&mut self, _ui: &UiState) -> Result<(), String> {
-        let output = self.surface.get_current_texture().map_err(|e| e.to_string())?;
+        let output = self
+            .surface
+            .get_current_texture()
+            .map_err(|e| e.to_string())?;
         let view = output
             .texture
             .create_view(&TextureViewDescriptor::default());

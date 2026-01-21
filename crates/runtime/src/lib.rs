@@ -19,9 +19,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-use self::render::{
-    BuiltinSoftwareDrawer, RenderBackend, SoftwareBackend, WgpuBackend,
-};
+use self::render::{BuiltinSoftwareDrawer, RenderBackend, SoftwareBackend, WgpuBackend};
 
 /// Input trait that maps window events into engine actions.
 pub trait Input {
@@ -252,23 +250,27 @@ where
         .expect("failed to build runtime window");
 
     let size = window.inner_size();
-    
+
     // Initialize Backend with Fallback
-    let mut backend: Box<dyn RenderBackend> = match WgpuBackend::new(&window, size.width, size.height) {
-        Ok(backend) => {
-            eprintln!("Using WGPU Hardware Backend");
-            Box::new(backend)
-        }
-        Err(err) => {
-            eprintln!("WGPU Backend initialization failed: {}. Falling back to Software Backend.", err);
-            Box::new(SoftwareBackend::new(
-                &window, 
-                size.width, 
-                size.height,
-                Box::new(BuiltinSoftwareDrawer)
-            ))
-        }
-    };
+    let mut backend: Box<dyn RenderBackend> =
+        match WgpuBackend::new(&window, size.width, size.height) {
+            Ok(backend) => {
+                eprintln!("Using WGPU Hardware Backend");
+                Box::new(backend)
+            }
+            Err(err) => {
+                eprintln!(
+                    "WGPU Backend initialization failed: {}. Falling back to Software Backend.",
+                    err
+                );
+                Box::new(SoftwareBackend::new(
+                    &window,
+                    size.width,
+                    size.height,
+                    Box::new(BuiltinSoftwareDrawer),
+                ))
+            }
+        };
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -300,12 +302,12 @@ where
             },
             Event::RedrawRequested(_) => {
                 if let Err(e) = backend.render(app.ui()) {
-                   eprintln!("Render error: {}", e);
-                   *control_flow = ControlFlow::Exit; 
+                    eprintln!("Render error: {}", e);
+                    *control_flow = ControlFlow::Exit;
                 }
             }
             Event::MainEventsCleared => {
-                // window.request_redraw(); 
+                // window.request_redraw();
             }
             _ => {}
         }

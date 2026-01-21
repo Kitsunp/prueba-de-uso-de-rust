@@ -16,7 +16,12 @@ pub struct SoftwareBackend {
 }
 
 impl SoftwareBackend {
-    pub fn new(window: &Window, width: u32, height: u32, strategy: Box<dyn SoftwareDrawStrategy>) -> Self {
+    pub fn new(
+        window: &Window,
+        width: u32,
+        height: u32,
+        strategy: Box<dyn SoftwareDrawStrategy>,
+    ) -> Self {
         let surface = SurfaceTexture::new(width, height, window);
         let pixels = Pixels::new(width, height, surface).expect("failed to create pixel surface");
         Self { pixels, strategy }
@@ -33,7 +38,7 @@ impl RenderBackend for SoftwareBackend {
         let extent = self.pixels.context().texture_extent;
         let frame = self.pixels.frame_mut();
         self.strategy.draw(frame, (extent.width, extent.height), ui);
-        
+
         self.pixels.render().map_err(|e| e.to_string())
     }
 }
