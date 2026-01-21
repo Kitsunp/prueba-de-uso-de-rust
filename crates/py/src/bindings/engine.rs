@@ -1,11 +1,12 @@
+use super::audio::PyAudio;
+use super::conversion::{event_to_python, ui_state_to_python};
+use super::types::{vn_error_to_py, PyResourceConfig};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
 use visual_novel_engine::{
-    AudioCommand, Engine as CoreEngine, EventCompiled, ResourceLimiter, ScriptRaw, SecurityPolicy, UiState
+    AudioCommand, Engine as CoreEngine, EventCompiled, ResourceLimiter, ScriptRaw, SecurityPolicy,
+    UiState,
 };
-use super::types::{PyResourceConfig, vn_error_to_py};
-use super::conversion::{event_to_python, ui_state_to_python};
-use super::audio::PyAudio;
 
 #[pyclass(name = "Engine")]
 #[derive(Debug)]
@@ -23,14 +24,10 @@ impl PyEngine {
     #[new]
     pub fn new(script_json: &str) -> PyResult<Self> {
         let resource_limits = ResourceLimiter::default();
-        let script =
-            ScriptRaw::from_json_with_limits(script_json, resource_limits).map_err(vn_error_to_py)?;
-        let inner = CoreEngine::new(
-            script,
-            SecurityPolicy::default(),
-            resource_limits,
-        )
-        .map_err(vn_error_to_py)?;
+        let script = ScriptRaw::from_json_with_limits(script_json, resource_limits)
+            .map_err(vn_error_to_py)?;
+        let inner = CoreEngine::new(script, SecurityPolicy::default(), resource_limits)
+            .map_err(vn_error_to_py)?;
         Ok(Self {
             inner,
             resource_limits,
@@ -101,7 +98,11 @@ impl PyEngine {
         for cmd in &self.last_audio_commands {
             let dict = PyDict::new(py);
             match cmd {
-                AudioCommand::PlayBgm { resource, r#loop, fade_in } => {
+                AudioCommand::PlayBgm {
+                    resource,
+                    r#loop,
+                    fade_in,
+                } => {
                     dict.set_item("type", "play_bgm")?;
                     dict.set_item("resource", resource.0.to_string())?; // ID as string for now
                     dict.set_item("loop", r#loop)?;

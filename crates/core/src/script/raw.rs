@@ -67,7 +67,9 @@ impl ScriptRaw {
             total = total.saturating_add(label.len());
         }
         if total > max_bytes {
-             return Err(VnError::ResourceLimit("script string budget (labels)".to_string()));
+            return Err(VnError::ResourceLimit(
+                "script string budget (labels)".to_string(),
+            ));
         }
 
         for event in &self.events {

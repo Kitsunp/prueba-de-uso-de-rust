@@ -32,7 +32,10 @@ fn ext_call_requires_resume_to_advance() {
         visual_novel_engine::EventCompiled::ExtCall { .. }
     ));
     let event = engine.current_event().unwrap();
-    assert!(matches!(event, visual_novel_engine::EventCompiled::ExtCall { .. }));
+    assert!(matches!(
+        event,
+        visual_novel_engine::EventCompiled::ExtCall { .. }
+    ));
 
     engine.resume().unwrap();
     let event = engine.current_event().unwrap();

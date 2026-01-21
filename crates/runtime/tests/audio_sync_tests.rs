@@ -154,10 +154,7 @@ fn audio_switches_music_for_scene_jump() {
     // Note: Advance on same scene does NOT re-emit since music hasn't changed
     assert_eq!(
         state.play_calls,
-        vec![
-            "music/old.ogg".to_string(),
-            "music/new.ogg".to_string(),
-        ]
+        vec!["music/old.ogg".to_string(), "music/new.ogg".to_string(),]
     );
     assert_eq!(state.last_music.as_deref(), Some("music/new.ogg"));
 }

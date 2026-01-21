@@ -285,28 +285,28 @@ impl Engine {
                     }
                     // ... (simplified loop for patch additions/updates similar to scene)
                     for character in &patch.add {
-                         let id = AssetId::from_path(character.name.as_ref());
-                         if seen.insert(id) {
-                             assets.push(id);
-                         }
-                         if let Some(expression) = &character.expression {
-                             let id = AssetId::from_path(expression.as_ref());
-                             if seen.insert(id) {
-                                 assets.push(id);
-                             }
-                         }
+                        let id = AssetId::from_path(character.name.as_ref());
+                        if seen.insert(id) {
+                            assets.push(id);
+                        }
+                        if let Some(expression) = &character.expression {
+                            let id = AssetId::from_path(expression.as_ref());
+                            if seen.insert(id) {
+                                assets.push(id);
+                            }
+                        }
                     }
                     for character in &patch.update {
-                         let id = AssetId::from_path(character.name.as_ref());
-                         if seen.insert(id) {
-                             assets.push(id);
-                         }
-                         if let Some(expression) = &character.expression {
-                             let id = AssetId::from_path(expression.as_ref());
-                             if seen.insert(id) {
-                                 assets.push(id);
-                             }
-                         }
+                        let id = AssetId::from_path(character.name.as_ref());
+                        if seen.insert(id) {
+                            assets.push(id);
+                        }
+                        if let Some(expression) = &character.expression {
+                            let id = AssetId::from_path(expression.as_ref());
+                            if seen.insert(id) {
+                                assets.push(id);
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -402,12 +402,12 @@ fn append_music_delta(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::script::ScriptRaw;
     use crate::resource::ResourceLimiter;
+    use crate::script::ScriptRaw;
     use crate::security::SecurityPolicy;
 
     /// Engineer Manifesto: Criterion A (Air Gapped) & B (Paranoiac Integrity).
-    /// 
+    ///
     /// This test verifies deterministic audio command generation:
     /// 1. Engine::new queues initial PlayBgm if start Scene has music
     /// 2. step() returns queued audio + any delta from current event
@@ -430,7 +430,8 @@ mod tests {
             script,
             SecurityPolicy::default(),
             ResourceLimiter::default(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // === STEP 0 (Scene at position 0) ===
         // Engine::new already applied scene[0] and queued initial_audio_commands.
@@ -438,8 +439,10 @@ mod tests {
         // So append_music_delta adds nothing. We only get the initial queue.
         let (audio_step0, _) = engine.step().unwrap();
         assert_eq!(audio_step0.len(), 1, "Init queued PlayBgm for bgm_intro");
-        assert!(matches!(&audio_step0[0], AudioCommand::PlayBgm { resource, .. } 
-            if resource.0 == AssetId::from_path("bgm_intro.ogg").0));
+        assert!(matches!(
+            &audio_step0[0],
+            AudioCommand::PlayBgm { resource, .. } if resource.0 == AssetId::from_path("bgm_intro.ogg").0
+        ));
 
         // === STEP 1 (Dialogue) ===
         // No music change in dialogue -> no audio command
@@ -450,8 +453,10 @@ mod tests {
         // before_music = bgm_intro, after_music = bgm_battle -> delta emits PlayBgm
         let (audio_step2, _) = engine.step().unwrap();
         assert_eq!(audio_step2.len(), 1, "Music change -> PlayBgm");
-        assert!(matches!(&audio_step2[0], AudioCommand::PlayBgm { resource, .. } 
-            if resource.0 == AssetId::from_path("bgm_battle.ogg").0));
+        assert!(matches!(
+            &audio_step2[0],
+            AudioCommand::PlayBgm { resource, .. } if resource.0 == AssetId::from_path("bgm_battle.ogg").0
+        ));
 
         // === Determinism: Run same script again, must get identical results ===
         let script2 = ScriptRaw::from_json(json).unwrap();
@@ -459,7 +464,8 @@ mod tests {
             script2,
             SecurityPolicy::default(),
             ResourceLimiter::default(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let (audio2_0, _) = engine2.step().unwrap();
         let (audio2_1, _) = engine2.step().unwrap();
@@ -469,5 +475,4 @@ mod tests {
         assert_eq!(audio_step1, audio2_1, "Run 1 step 1 == Run 2 step 1");
         assert_eq!(audio_step2, audio2_2, "Run 1 step 2 == Run 2 step 2");
     }
-
 }

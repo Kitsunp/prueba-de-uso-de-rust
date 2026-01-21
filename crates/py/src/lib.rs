@@ -4,8 +4,7 @@ use pyo3::prelude::*;
 use visual_novel_gui::{run_app as run_gui, GuiError};
 
 pub use bindings::{
-    PyAudio, PyEngine, PyResourceConfig, PyScriptBuilder, PyVnConfig,
-    vn_error_to_py,
+    vn_error_to_py, PyAudio, PyEngine, PyResourceConfig, PyScriptBuilder, PyVnConfig,
 };
 
 #[pymodule]

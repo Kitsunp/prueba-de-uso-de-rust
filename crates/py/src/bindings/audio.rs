@@ -1,5 +1,5 @@
-use std::time::Duration;
 use pyo3::prelude::*;
+use std::time::Duration;
 use visual_novel_engine::{AssetId, AudioCommand};
 
 use super::engine::PyEngine;
@@ -11,9 +11,7 @@ pub struct PyAudio {
 
 impl PyAudio {
     pub fn new(_py: Python<'_>, engine: Py<PyEngine>) -> PyResult<Self> {
-        Ok(Self {
-            engine,
-        })
+        Ok(Self { engine })
     }
 }
 

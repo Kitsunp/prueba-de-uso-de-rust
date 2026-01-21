@@ -1,5 +1,5 @@
-use visual_novel_engine::{ResourceLimiter, VnError};
 use pyo3::prelude::*;
+use visual_novel_engine::{ResourceLimiter, VnError};
 use visual_novel_gui::{SecurityMode, VnConfig as GuiConfig};
 
 pub fn vn_error_to_py(err: VnError) -> PyErr {
@@ -23,7 +23,8 @@ impl PyResourceConfig {
     fn new(max_texture_memory: Option<usize>, max_script_bytes: Option<usize>) -> Self {
         Self {
             max_texture_memory: max_texture_memory.unwrap_or(512 * 1024 * 1024),
-            max_script_bytes: max_script_bytes.unwrap_or(ResourceLimiter::default().max_script_bytes),
+            max_script_bytes: max_script_bytes
+                .unwrap_or(ResourceLimiter::default().max_script_bytes),
         }
     }
 }

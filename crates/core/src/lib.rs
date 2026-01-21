@@ -14,7 +14,10 @@ mod ui;
 mod version;
 mod visual;
 
+pub use assets::{AssetId, AssetManifest};
+pub use audio::AudioCommand;
 pub use engine::Engine;
+pub use engine::StateChange;
 pub use error::{VnError, VnResult};
 pub use event::{
     CharacterPatchCompiled, CharacterPatchRaw, CharacterPlacementCompiled, CharacterPlacementRaw,
@@ -32,9 +35,6 @@ pub use trace::{StateDigest, UiTrace, UiTraceStep, UiView as TraceUiView, Visual
 pub use ui::{UiState, UiView};
 pub use version::{COMPILED_FORMAT_VERSION, SAVE_FORMAT_VERSION, SCRIPT_SCHEMA_VERSION};
 pub use visual::VisualState;
-pub use assets::{AssetId, AssetManifest};
-pub use audio::AudioCommand;
-pub use engine::StateChange;
 
 pub type Event = EventCompiled;
 pub type Script = ScriptRaw;

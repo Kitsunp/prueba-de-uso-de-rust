@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
 use visual_novel_engine::{
-    EventCompiled, CharacterPlacementCompiled, CharacterPatchCompiled, SharedStr, UiState, UiView
+    CharacterPatchCompiled, CharacterPlacementCompiled, EventCompiled, SharedStr, UiState, UiView,
 };
 
 pub fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObject> {
@@ -95,7 +95,10 @@ pub fn characters_to_python(
     Ok(list.into())
 }
 
-pub fn patch_update_to_python(py: Python<'_>, update: &[CharacterPatchCompiled]) -> PyResult<PyObject> {
+pub fn patch_update_to_python(
+    py: Python<'_>,
+    update: &[CharacterPatchCompiled],
+) -> PyResult<PyObject> {
     let list = PyList::empty(py);
     for character in update {
         let character_dict = PyDict::new(py);
