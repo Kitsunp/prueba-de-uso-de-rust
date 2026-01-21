@@ -86,7 +86,7 @@ where
                     "Audio: Rodio initialization failed ({}), using SilentAudio",
                     e
                 );
-                Box::new(SilentAudio::default())
+                Box::new(SilentAudio)
             }
         };
 
