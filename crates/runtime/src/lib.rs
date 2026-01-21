@@ -1,11 +1,14 @@
 //! Runtime layer for driving the engine with a winit + pixels loop.
 
+pub mod assets;
+pub mod audio;
+pub mod input;
 mod loader;
 pub mod render;
 
 pub use loader::{AsyncLoader, LoadRequest, LoadResult};
 
-use std::collections::HashMap;
+use std::sync::Arc;
 
 // use pixels::{Pixels, SurfaceTexture}; // Removed unused imports
 // Logic moved to software.rs
@@ -14,109 +17,17 @@ use visual_novel_engine::{
 };
 use winit::{
     dpi::LogicalSize,
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event::{Event, WindowEvent},
+    event_loop::EventLoop,
     window::WindowBuilder,
 };
 
+pub use self::assets::{AssetStore, MemoryAssetStore};
+pub use self::audio::{Audio, RodioBackend, SilentAudio};
+pub use self::input::{ConfigurableInput, Input, InputAction};
 use self::render::{BuiltinSoftwareDrawer, RenderBackend, SoftwareBackend, WgpuBackend};
 
-/// Input trait that maps window events into engine actions.
-pub trait Input {
-    fn handle_window_event(&mut self, event: &WindowEvent) -> InputAction;
-}
-
-/// Audio trait stub for runtime audio playback.
-pub trait Audio {
-    fn play_music(&mut self, id: &str);
-    fn stop_music(&mut self);
-    fn play_sfx(&mut self, id: &str);
-}
-
-/// Asset store trait for runtime resource loading.
-pub trait AssetStore {
-    fn load_bytes(&self, id: &str) -> Result<Vec<u8>, String>;
-}
-
-/// Input actions produced by the runtime.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputAction {
-    None,
-    Advance,
-    Choose(usize),
-    Quit,
-}
-
-// UiState and UiView are re-exported from the core crate for shared use.
-
-/// Simple input mapper that uses keyboard shortcuts.
-#[derive(Default)]
-pub struct BasicInput;
-
-impl Input for BasicInput {
-    fn handle_window_event(&mut self, event: &WindowEvent) -> InputAction {
-        let WindowEvent::KeyboardInput {
-            input:
-                KeyboardInput {
-                    state: ElementState::Pressed,
-                    virtual_keycode: Some(key),
-                    ..
-                },
-            ..
-        } = event
-        else {
-            return InputAction::None;
-        };
-
-        match key {
-            VirtualKeyCode::Escape => InputAction::Quit,
-            VirtualKeyCode::Space | VirtualKeyCode::Return => InputAction::Advance,
-            VirtualKeyCode::Key1 => InputAction::Choose(0),
-            VirtualKeyCode::Key2 => InputAction::Choose(1),
-            VirtualKeyCode::Key3 => InputAction::Choose(2),
-            VirtualKeyCode::Key4 => InputAction::Choose(3),
-            VirtualKeyCode::Key5 => InputAction::Choose(4),
-            VirtualKeyCode::Key6 => InputAction::Choose(5),
-            VirtualKeyCode::Key7 => InputAction::Choose(6),
-            VirtualKeyCode::Key8 => InputAction::Choose(7),
-            VirtualKeyCode::Key9 => InputAction::Choose(8),
-            _ => InputAction::None,
-        }
-    }
-}
-
-/// Minimal audio backend placeholder.
-#[derive(Default)]
-pub struct SilentAudio;
-
-impl Audio for SilentAudio {
-    fn play_music(&mut self, _id: &str) {}
-
-    fn stop_music(&mut self) {}
-
-    fn play_sfx(&mut self, _id: &str) {}
-}
-
-/// In-memory asset store placeholder.
-#[derive(Default)]
-pub struct MemoryAssetStore {
-    assets: HashMap<String, Vec<u8>>,
-}
-
-impl MemoryAssetStore {
-    pub fn insert(&mut self, id: impl Into<String>, data: Vec<u8>) {
-        self.assets.insert(id.into(), data);
-    }
-}
-
-impl AssetStore for MemoryAssetStore {
-    fn load_bytes(&self, id: &str) -> Result<Vec<u8>, String> {
-        self.assets
-            .get(id)
-            .cloned()
-            .ok_or_else(|| format!("Asset not found: {}", id))
-    }
-}
+// AssetStore and MemoryAssetStore moved to assets.rs
 
 /// Runtime application wrapper. Logic controller.
 pub struct RuntimeApp<I, A, S> {
@@ -156,6 +67,32 @@ where
         Ok(app)
     }
 
+    /// Creates a new RuntimeApp trying to use RodioBackend (if available), falling back to SilentAudio.
+    pub fn new_auto(
+        engine: Engine,
+        input: I,
+        assets: Arc<S>,
+    ) -> visual_novel_engine::VnResult<RuntimeApp<I, Box<dyn Audio>, Arc<S>>>
+    where
+        S: AssetStore + Send + Sync + 'static,
+    {
+        let audio: Box<dyn Audio> = match RodioBackend::new(assets.clone()) {
+            Ok(backend) => {
+                eprintln!("Audio: Using Rodio Backend");
+                Box::new(backend)
+            }
+            Err(e) => {
+                eprintln!(
+                    "Audio: Rodio initialization failed ({}), using SilentAudio",
+                    e
+                );
+                Box::new(SilentAudio::default())
+            }
+        };
+
+        RuntimeApp::new(engine, input, audio, assets)
+    }
+
     pub fn engine(&self) -> &Engine {
         &self.engine
     }
@@ -178,6 +115,9 @@ where
                 self.refresh_state()?;
                 // After jumping, check if target is a Scene and apply its audio
                 self.apply_audio_for_current_scene();
+            }
+            InputAction::Back | InputAction::Menu => {
+                // TODO: Implement rollback and menu
             }
         }
         Ok(true)
@@ -241,19 +181,22 @@ where
     A: Audio + 'static,
     S: AssetStore + 'static,
 {
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title("VN Runtime")
-        .with_inner_size(LogicalSize::new(960.0, 540.0))
-        .with_min_inner_size(LogicalSize::new(640.0, 360.0))
-        .build(&event_loop)
-        .expect("failed to build runtime window");
+    let event_loop = EventLoop::new().expect("failed to create event loop");
+    #[allow(deprecated)]
+    let window = Arc::new(
+        WindowBuilder::new()
+            .with_title("VN Runtime")
+            .with_inner_size(LogicalSize::new(960.0, 540.0))
+            .with_min_inner_size(LogicalSize::new(640.0, 360.0))
+            .build(&event_loop)
+            .expect("failed to build runtime window"),
+    );
 
     let size = window.inner_size();
 
     // Initialize Backend with Fallback
     let mut backend: Box<dyn RenderBackend> =
-        match WgpuBackend::new(&window, size.width, size.height) {
+        match WgpuBackend::new(window.clone(), size.width, size.height) {
             Ok(backend) => {
                 eprintln!("Using WGPU Hardware Backend");
                 Box::new(backend)
@@ -264,7 +207,7 @@ where
                     err
                 );
                 Box::new(SoftwareBackend::new(
-                    &window,
+                    window.clone(),
                     size.width,
                     size.height,
                     Box::new(BuiltinSoftwareDrawer),
@@ -272,44 +215,45 @@ where
             }
         };
 
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
-        match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
-                }
-                WindowEvent::Resized(size) => {
-                    backend.resize(size.width, size.height);
-                }
-                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                    backend.resize(new_inner_size.width, new_inner_size.height);
-                }
-                _ => {
-                    let action = app.input.handle_window_event(&event);
-                    match app.handle_action(action) {
-                        Ok(true) => {
-                            window.request_redraw();
-                        }
-                        Ok(false) => {
-                            *control_flow = ControlFlow::Exit;
-                        }
-                        Err(_) => {
-                            *control_flow = ControlFlow::Exit;
+    event_loop
+        .run(move |event, elwt| {
+            match event {
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::CloseRequested => {
+                        elwt.exit();
+                    }
+                    WindowEvent::Resized(size) => {
+                        backend.resize(size.width, size.height);
+                    }
+                    WindowEvent::RedrawRequested => {
+                        if let Err(e) = backend.render(app.ui()) {
+                            eprintln!("Render error: {}", e);
+                            elwt.exit();
                         }
                     }
+                    _ => {
+                        let action = app.input.handle_window_event(&event);
+                        match app.handle_action(action) {
+                            Ok(true) => {
+                                window.request_redraw();
+                            }
+                            Ok(false) => {
+                                elwt.exit();
+                            }
+                            Err(_) => {
+                                elwt.exit();
+                            }
+                        }
+                    }
+                },
+                Event::AboutToWait => {
+                    // window.request_redraw();
                 }
-            },
-            Event::RedrawRequested(_) => {
-                if let Err(e) = backend.render(app.ui()) {
-                    eprintln!("Render error: {}", e);
-                    *control_flow = ControlFlow::Exit;
-                }
+                _ => {}
             }
-            Event::MainEventsCleared => {
-                // window.request_redraw();
-            }
-            _ => {}
-        }
-    });
+        })
+        .expect("event loop error");
+
+    // The run function in 0.29 may return, but we treat this as a divergent function
+    std::process::exit(0);
 }

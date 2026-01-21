@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 *.txt
 test_output.txt
+test_fail.log
+test_output.txt
+test_output.txt

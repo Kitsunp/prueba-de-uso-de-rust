@@ -65,7 +65,7 @@ impl StringBudget for EventRaw {
 
 /// Runtime events with pre-resolved targets and interned strings.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum EventCompiled {
     Dialogue(DialogueCompiled),
     Choice(ChoiceCompiled),

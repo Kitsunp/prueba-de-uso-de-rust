@@ -1,31 +1,31 @@
 use pollster::FutureExt;
+use std::sync::Arc;
 use visual_novel_engine::UiState;
 use wgpu::{
     Backends, Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
     Limits, LoadOp, Operations, PowerPreference, Queue, RenderPassColorAttachment,
-    RenderPassDescriptor, RequestAdapterOptions, Surface, SurfaceConfiguration, TextureUsages,
-    TextureViewDescriptor,
+    RenderPassDescriptor, RequestAdapterOptions, StoreOp, Surface, SurfaceConfiguration,
+    TextureUsages, TextureViewDescriptor,
 };
 use winit::window::Window;
 
 use super::backend::RenderBackend;
 
-pub struct WgpuBackend {
-    surface: Surface,
+pub struct WgpuBackend<'a> {
+    surface: Surface<'a>,
     device: Device,
     queue: Queue,
     config: SurfaceConfiguration,
 }
 
-impl WgpuBackend {
-    pub fn new(window: &Window, width: u32, height: u32) -> Result<Self, String> {
+impl<'a> WgpuBackend<'a> {
+    pub fn new(window: Arc<Window>, width: u32, height: u32) -> Result<Self, String> {
         let instance = Instance::new(wgpu::InstanceDescriptor {
             backends: Backends::all(),
-            dx12_shader_compiler: Default::default(),
+            ..Default::default()
         });
 
-        // Safety: The surface must outlive the window.
-        let surface = unsafe { instance.create_surface(window).map_err(|e| e.to_string())? };
+        let surface = instance.create_surface(window).map_err(|e| e.to_string())?;
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -40,8 +40,8 @@ impl WgpuBackend {
             .request_device(
                 &DeviceDescriptor {
                     label: Some("Wgpu Device"),
-                    features: Features::empty(),
-                    limits: Limits::default(),
+                    required_features: Features::empty(),
+                    required_limits: Limits::default(),
                 },
                 None,
             )
@@ -57,6 +57,7 @@ impl WgpuBackend {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
 
         surface.configure(&device, &config);
@@ -70,7 +71,7 @@ impl WgpuBackend {
     }
 }
 
-impl RenderBackend for WgpuBackend {
+impl<'a> RenderBackend for WgpuBackend<'a> {
     fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
             self.config.width = width;
@@ -107,10 +108,12 @@ impl RenderBackend for WgpuBackend {
                             b: 0.3, // Dark blueish
                             a: 1.0,
                         }),
-                        store: true,
+                        store: StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
         }
 

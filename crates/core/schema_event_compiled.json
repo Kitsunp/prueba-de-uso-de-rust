@@ -4,253 +4,180 @@
   "description": "Runtime events with pre-resolved targets and interned strings.",
   "oneOf": [
     {
-      "description": "Dialogue line with interned speaker and text.",
       "type": "object",
       "required": [
-        "speaker",
-        "text",
-        "type"
+        "dialogue"
       ],
       "properties": {
-        "speaker": {
-          "type": "string"
-        },
-        "text": {
-          "type": "string"
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "dialogue"
-          ]
+        "dialogue": {
+          "$ref": "#/definitions/DialogueCompiled"
         }
-      }
-    },
-    {
-      "description": "Choice prompt and options with pre-resolved targets.",
-      "type": "object",
-      "required": [
-        "options",
-        "prompt",
-        "type"
-      ],
-      "properties": {
-        "options": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ChoiceOptionCompiled"
-          }
-        },
-        "prompt": {
-          "type": "string"
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "choice"
-          ]
-        }
-      }
-    },
-    {
-      "description": "Scene update payload with interned strings.",
-      "type": "object",
-      "required": [
-        "characters",
-        "type"
-      ],
-      "properties": {
-        "background": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "characters": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/CharacterPlacementCompiled"
-          }
-        },
-        "music": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "scene"
-          ]
-        }
-      }
+      },
+      "additionalProperties": false
     },
     {
       "type": "object",
       "required": [
-        "target_ip",
-        "type"
+        "choice"
       ],
       "properties": {
-        "target_ip": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "jump"
-          ]
+        "choice": {
+          "$ref": "#/definitions/ChoiceCompiled"
         }
-      }
+      },
+      "additionalProperties": false
     },
     {
       "type": "object",
       "required": [
-        "flag_id",
-        "type",
-        "value"
+        "scene"
       ],
       "properties": {
-        "flag_id": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "set_flag"
-          ]
-        },
-        "value": {
-          "type": "boolean"
+        "scene": {
+          "$ref": "#/definitions/SceneUpdateCompiled"
         }
-      }
+      },
+      "additionalProperties": false
     },
     {
       "type": "object",
       "required": [
-        "type",
-        "value",
-        "var_id"
+        "jump"
       ],
       "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "set_var"
-          ]
-        },
-        "value": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "var_id": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        }
-      }
-    },
-    {
-      "type": "object",
-      "required": [
-        "cond",
-        "target_ip",
-        "type"
-      ],
-      "properties": {
-        "cond": {
-          "$ref": "#/definitions/CondCompiled"
-        },
-        "target_ip": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "jump_if"
-          ]
-        }
-      }
-    },
-    {
-      "description": "Scene patch with interned strings.",
-      "type": "object",
-      "required": [
-        "add",
-        "remove",
-        "type",
-        "update"
-      ],
-      "properties": {
-        "add": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/CharacterPlacementCompiled"
-          }
-        },
-        "background": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "music": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "remove": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "patch"
-          ]
-        },
-        "update": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/CharacterPatchCompiled"
+        "jump": {
+          "type": "object",
+          "required": [
+            "target_ip"
+          ],
+          "properties": {
+            "target_ip": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     {
       "type": "object",
       "required": [
-        "args",
-        "command",
-        "type"
+        "set_flag"
       ],
       "properties": {
-        "args": {
-          "type": "array",
-          "items": {
-            "type": "string"
+        "set_flag": {
+          "type": "object",
+          "required": [
+            "flag_id",
+            "value"
+          ],
+          "properties": {
+            "flag_id": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "value": {
+              "type": "boolean"
+            }
           }
-        },
-        "command": {
-          "type": "string"
-        },
-        "type": {
-          "type": "string",
-          "enum": [
-            "ext_call"
-          ]
         }
-      }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_var"
+      ],
+      "properties": {
+        "set_var": {
+          "type": "object",
+          "required": [
+            "value",
+            "var_id"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "var_id": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "jump_if"
+      ],
+      "properties": {
+        "jump_if": {
+          "type": "object",
+          "required": [
+            "cond",
+            "target_ip"
+          ],
+          "properties": {
+            "cond": {
+              "$ref": "#/definitions/CondCompiled"
+            },
+            "target_ip": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "patch"
+      ],
+      "properties": {
+        "patch": {
+          "$ref": "#/definitions/ScenePatchCompiled"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "ext_call"
+      ],
+      "properties": {
+        "ext_call": {
+          "type": "object",
+          "required": [
+            "args",
+            "command"
+          ],
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "command": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -299,6 +226,25 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "ChoiceCompiled": {
+      "description": "Choice prompt and options with pre-resolved targets.",
+      "type": "object",
+      "required": [
+        "options",
+        "prompt"
+      ],
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ChoiceOptionCompiled"
+          }
+        },
+        "prompt": {
+          "type": "string"
         }
       }
     },
@@ -393,6 +339,90 @@
           "additionalProperties": false
         }
       ]
+    },
+    "DialogueCompiled": {
+      "description": "Dialogue line with interned speaker and text.",
+      "type": "object",
+      "required": [
+        "speaker",
+        "text"
+      ],
+      "properties": {
+        "speaker": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "ScenePatchCompiled": {
+      "description": "Scene patch with interned strings.",
+      "type": "object",
+      "required": [
+        "add",
+        "remove",
+        "update"
+      ],
+      "properties": {
+        "add": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CharacterPlacementCompiled"
+          }
+        },
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "music": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "update": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CharacterPatchCompiled"
+          }
+        }
+      }
+    },
+    "SceneUpdateCompiled": {
+      "description": "Scene update payload with interned strings.",
+      "type": "object",
+      "required": [
+        "characters"
+      ],
+      "properties": {
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CharacterPlacementCompiled"
+          }
+        },
+        "music": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

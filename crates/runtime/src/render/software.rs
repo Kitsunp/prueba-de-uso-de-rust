@@ -1,4 +1,5 @@
 use pixels::{Pixels, SurfaceTexture};
+use std::sync::Arc;
 use visual_novel_engine::{UiState, UiView};
 use winit::window::Window;
 
@@ -10,14 +11,14 @@ pub trait SoftwareDrawStrategy {
 }
 
 /// Backend that uses `pixels` (software rasterization) to display the frame.
-pub struct SoftwareBackend {
-    pixels: Pixels,
+pub struct SoftwareBackend<'a> {
+    pixels: Pixels<'a>,
     strategy: Box<dyn SoftwareDrawStrategy>,
 }
 
-impl SoftwareBackend {
+impl<'a> SoftwareBackend<'a> {
     pub fn new(
-        window: &Window,
+        window: Arc<Window>,
         width: u32,
         height: u32,
         strategy: Box<dyn SoftwareDrawStrategy>,
@@ -28,7 +29,7 @@ impl SoftwareBackend {
     }
 }
 
-impl RenderBackend for SoftwareBackend {
+impl<'a> RenderBackend for SoftwareBackend<'a> {
     fn resize(&mut self, width: u32, height: u32) {
         let _ = self.pixels.resize_surface(width, height);
         let _ = self.pixels.resize_buffer(width, height);
