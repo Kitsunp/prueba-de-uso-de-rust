@@ -63,7 +63,7 @@ impl ScriptRaw {
 
     pub fn ensure_string_budget(&self, max_bytes: usize) -> VnResult<()> {
         let mut total = 0usize;
-        for (label, _) in &self.labels {
+        for label in self.labels.keys() {
             total = total.saturating_add(label.len());
         }
         if total > max_bytes {

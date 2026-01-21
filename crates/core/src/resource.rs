@@ -60,6 +60,10 @@ where
         self.map.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
     pub fn get(&mut self, key: &K) -> Option<&Vec<u8>> {
         if self.map.contains_key(key) {
             self.touch(key);
