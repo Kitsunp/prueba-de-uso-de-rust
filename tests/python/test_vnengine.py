@@ -240,12 +240,14 @@ class NativeBindingsTests(unittest.TestCase):
             calls.append((command, args))
 
         engine.register_handler(handler)
-        event = engine.step()
+        result = engine.step()
+        event = result.event
         self.assertEqual(event["type"], "ext_call")
         self.assertEqual(calls, [("minigame_start", ["poker"])])
 
         engine.resume()
-        next_event = engine.step()
+        next_result = engine.step()
+        next_event = next_result.event
         self.assertEqual(next_event["type"], "dialogue")
 
     def test_audio_controller_and_prefetch_api(self):
@@ -256,11 +258,9 @@ class NativeBindingsTests(unittest.TestCase):
         audio = engine.audio()
         audio.play_bgm("theme_song", loop=True, fade_in=0.5)
         
-        # Verify commands are queued by stepping and checking audio output
-        # This requires exposing audio commands from step() in Python API
-        event = engine.step()
-        
-        commands = engine.get_last_audio_commands()
+        # Verify commands are returned explicitly (Transparency Criterio O)
+        step_result = engine.step()
+        commands = step_result.audio
         self.assertEqual(len(commands), 1)
         self.assertEqual(commands[0]["type"], "play_bgm")
         # AssetId hashing makes resource checking hard without resolving, just check type

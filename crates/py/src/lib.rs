@@ -4,12 +4,13 @@ use pyo3::prelude::*;
 use visual_novel_gui::{run_app as run_gui, GuiError};
 
 pub use bindings::{
-    vn_error_to_py, PyAudio, PyEngine, PyResourceConfig, PyScriptBuilder, PyVnConfig,
+    vn_error_to_py, PyAudio, PyEngine, PyResourceConfig, PyScriptBuilder, PyVnConfig, StepResult,
 };
 
 #[pymodule]
 fn visual_novel_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
+    m.add_class::<StepResult>()?;
     m.add_class::<PyAudio>()?;
     m.add_class::<PyResourceConfig>()?;
     m.add_class::<PyScriptBuilder>()?;

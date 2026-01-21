@@ -1,18 +1,28 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::resource::StringBudget;
 
 use super::SharedStr;
 
 /// Scene update payload in raw form.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SceneUpdateRaw {
     pub background: Option<String>,
     pub music: Option<String>,
+    #[serde(default)]
     pub characters: Vec<CharacterPlacementRaw>,
 }
 
+impl StringBudget for SceneUpdateRaw {
+    fn string_bytes(&self) -> usize {
+        self.background.string_bytes() + self.music.string_bytes() + self.characters.string_bytes()
+    }
+}
+
 /// Scene update payload with interned strings.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 pub struct SceneUpdateCompiled {
     pub background: Option<SharedStr>,
     pub music: Option<SharedStr>,
@@ -20,7 +30,7 @@ pub struct SceneUpdateCompiled {
 }
 
 /// Character placement in raw form.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CharacterPlacementRaw {
     pub name: String,
@@ -28,8 +38,14 @@ pub struct CharacterPlacementRaw {
     pub position: Option<String>,
 }
 
+impl StringBudget for CharacterPlacementRaw {
+    fn string_bytes(&self) -> usize {
+        self.name.string_bytes() + self.expression.string_bytes() + self.position.string_bytes()
+    }
+}
+
 /// Character placement with interned strings.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 pub struct CharacterPlacementCompiled {
     pub name: SharedStr,
     pub expression: Option<SharedStr>,
@@ -37,7 +53,7 @@ pub struct CharacterPlacementCompiled {
 }
 
 /// Character patch for partial updates.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CharacterPatchRaw {
     pub name: String,
@@ -45,8 +61,14 @@ pub struct CharacterPatchRaw {
     pub position: Option<String>,
 }
 
+impl StringBudget for CharacterPatchRaw {
+    fn string_bytes(&self) -> usize {
+        self.name.string_bytes() + self.expression.string_bytes() + self.position.string_bytes()
+    }
+}
+
 /// Character patch with interned strings.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 pub struct CharacterPatchCompiled {
     pub name: SharedStr,
     pub expression: Option<SharedStr>,
@@ -54,7 +76,7 @@ pub struct CharacterPatchCompiled {
 }
 
 /// Scene patch in raw form (handling partial updates).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ScenePatchRaw {
     pub background: Option<String>,
@@ -67,8 +89,18 @@ pub struct ScenePatchRaw {
     pub remove: Vec<String>,
 }
 
+impl StringBudget for ScenePatchRaw {
+    fn string_bytes(&self) -> usize {
+        self.background.string_bytes()
+            + self.music.string_bytes()
+            + self.add.string_bytes()
+            + self.update.string_bytes()
+            + self.remove.string_bytes()
+    }
+}
+
 /// Scene patch with interned strings.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
 pub struct ScenePatchCompiled {
     pub background: Option<SharedStr>,
     pub music: Option<SharedStr>,

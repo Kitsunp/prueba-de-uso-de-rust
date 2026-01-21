@@ -1,0 +1,398 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EventCompiled",
+  "description": "Runtime events with pre-resolved targets and interned strings.",
+  "oneOf": [
+    {
+      "description": "Dialogue line with interned speaker and text.",
+      "type": "object",
+      "required": [
+        "speaker",
+        "text",
+        "type"
+      ],
+      "properties": {
+        "speaker": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "dialogue"
+          ]
+        }
+      }
+    },
+    {
+      "description": "Choice prompt and options with pre-resolved targets.",
+      "type": "object",
+      "required": [
+        "options",
+        "prompt",
+        "type"
+      ],
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ChoiceOptionCompiled"
+          }
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "choice"
+          ]
+        }
+      }
+    },
+    {
+      "description": "Scene update payload with interned strings.",
+      "type": "object",
+      "required": [
+        "characters",
+        "type"
+      ],
+      "properties": {
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CharacterPlacementCompiled"
+          }
+        },
+        "music": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "scene"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "target_ip",
+        "type"
+      ],
+      "properties": {
+        "target_ip": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "jump"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "flag_id",
+        "type",
+        "value"
+      ],
+      "properties": {
+        "flag_id": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "set_flag"
+          ]
+        },
+        "value": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "type",
+        "value",
+        "var_id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "set_var"
+          ]
+        },
+        "value": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "var_id": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "cond",
+        "target_ip",
+        "type"
+      ],
+      "properties": {
+        "cond": {
+          "$ref": "#/definitions/CondCompiled"
+        },
+        "target_ip": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "jump_if"
+          ]
+        }
+      }
+    },
+    {
+      "description": "Scene patch with interned strings.",
+      "type": "object",
+      "required": [
+        "add",
+        "remove",
+        "type",
+        "update"
+      ],
+      "properties": {
+        "add": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CharacterPlacementCompiled"
+          }
+        },
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "music": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remove": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "patch"
+          ]
+        },
+        "update": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CharacterPatchCompiled"
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "args",
+        "command",
+        "type"
+      ],
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "command": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "ext_call"
+          ]
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "CharacterPatchCompiled": {
+      "description": "Character patch with interned strings.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "expression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "CharacterPlacementCompiled": {
+      "description": "Character placement with interned strings.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "expression": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ChoiceOptionCompiled": {
+      "description": "Choice option with pre-resolved target instruction pointer.",
+      "type": "object",
+      "required": [
+        "target_ip",
+        "text"
+      ],
+      "properties": {
+        "target_ip": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "CmpOp": {
+      "description": "Comparison operators for variable conditions.",
+      "type": "string",
+      "enum": [
+        "eq",
+        "ne",
+        "lt",
+        "le",
+        "gt",
+        "ge"
+      ]
+    },
+    "CondCompiled": {
+      "description": "Condition for conditional jumps (compiled form).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Flag"
+          ],
+          "properties": {
+            "Flag": {
+              "type": "object",
+              "required": [
+                "flag_id",
+                "is_set"
+              ],
+              "properties": {
+                "flag_id": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                "is_set": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "VarCmp"
+          ],
+          "properties": {
+            "VarCmp": {
+              "type": "object",
+              "required": [
+                "op",
+                "value",
+                "var_id"
+              ],
+              "properties": {
+                "op": {
+                  "$ref": "#/definitions/CmpOp"
+                },
+                "value": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "var_id": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

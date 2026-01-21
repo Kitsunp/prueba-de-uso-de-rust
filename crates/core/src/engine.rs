@@ -12,6 +12,8 @@ use crate::script::{ScriptCompiled, ScriptRaw};
 use crate::security::SecurityPolicy;
 use crate::state::EngineState;
 
+const DEFAULT_FADE_MS: u64 = 500;
+
 /// Execution engine for compiled scripts.
 #[derive(Clone, Debug)]
 pub struct Engine {
@@ -374,7 +376,7 @@ fn initial_audio_commands(state: &EngineState) -> Vec<AudioCommand> {
             resource: AssetId::from_path(music.as_ref()),
             path: music.clone(),
             r#loop: true,
-            fade_in: Duration::from_millis(500),
+            fade_in: Duration::from_millis(DEFAULT_FADE_MS),
         });
     }
     commands
@@ -393,10 +395,10 @@ fn append_music_delta(
             resource: AssetId::from_path(music.as_ref()),
             path: music.clone(),
             r#loop: true,
-            fade_in: Duration::from_millis(500),
+            fade_in: Duration::from_millis(DEFAULT_FADE_MS),
         }),
         None => audio_commands.push(AudioCommand::StopBgm {
-            fade_out: Duration::from_millis(500),
+            fade_out: Duration::from_millis(DEFAULT_FADE_MS),
         }),
     }
 }

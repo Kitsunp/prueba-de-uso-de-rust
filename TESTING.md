@@ -46,6 +46,20 @@ cargo clippy --workspace --all-targets -D warnings
 cargo audit
 ```
 
+### Tests de Renderizado (Híbrido)
+
+El motor soporta pruebas duales para su arquitectura híbrida:
+
+1.  **Suite de Integración (CPU/Software)**:
+    - Se ejecuta por defecto con `cargo test`.
+    - Verifica la lógica de negocio y la integración básica del bucle principal.
+    - Utiliza el fallback de software, por lo que funciona en CI sin GPU.
+
+2.  **Suite de GPU (WGPU)**:
+    - Requiere hardware gráfico compatible.
+    - Actualmente cubierto por los mismos tests de integración, que intentan inicializar WGPU primero.
+    - Observar logs de stderr para confirmar "Using WGPU Hardware Backend".
+
 ## Tests Manuales Recomendados
 
 1. **GUI Básica**: Ejecutar `cargo run --example gui_demo` y verificar que la ventana abre correctamente.

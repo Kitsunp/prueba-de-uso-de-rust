@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use schemars::JsonSchema;
+
 use crate::error::{VnError, VnResult};
 use crate::event::{
     CharacterPatchCompiled, CharacterPlacementCompiled, ChoiceCompiled, ChoiceOptionCompiled,
@@ -12,7 +14,7 @@ use crate::version::SCRIPT_SCHEMA_VERSION;
 
 use super::compiled::ScriptCompiled;
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize, JsonSchema)]
 struct ScriptEnvelope {
     #[serde(default)]
     script_schema_version: Option<String>,
@@ -21,7 +23,7 @@ struct ScriptEnvelope {
 }
 
 /// JSON-facing script format with label names and raw string data.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ScriptRaw {
     pub events: Vec<EventRaw>,
@@ -72,85 +74,9 @@ impl ScriptRaw {
             ));
         }
 
+        use crate::resource::StringBudget;
         for event in &self.events {
-            match event {
-                EventRaw::Dialogue(dialogue) => {
-                    total = total.saturating_add(dialogue.speaker.len());
-                    total = total.saturating_add(dialogue.text.len());
-                }
-                EventRaw::Choice(choice) => {
-                    total = total.saturating_add(choice.prompt.len());
-                    for option in &choice.options {
-                        total = total.saturating_add(option.text.len());
-                        total = total.saturating_add(option.target.len());
-                    }
-                }
-                EventRaw::Scene(scene) => {
-                    if let Some(background) = &scene.background {
-                        total = total.saturating_add(background.len());
-                    }
-                    if let Some(music) = &scene.music {
-                        total = total.saturating_add(music.len());
-                    }
-                    for character in &scene.characters {
-                        total = total.saturating_add(character.name.len());
-                        if let Some(expression) = &character.expression {
-                            total = total.saturating_add(expression.len());
-                        }
-                        if let Some(position) = &character.position {
-                            total = total.saturating_add(position.len());
-                        }
-                    }
-                }
-                EventRaw::Jump { target } => {
-                    total = total.saturating_add(target.len());
-                }
-                EventRaw::SetFlag { key, .. } => {
-                    total = total.saturating_add(key.len());
-                }
-                EventRaw::SetVar { key, .. } => {
-                    total = total.saturating_add(key.len());
-                }
-                EventRaw::JumpIf { cond, target } => {
-                    total = total.saturating_add(target.len());
-                    total = total.saturating_add(cond_string_bytes(cond));
-                }
-                EventRaw::Patch(patch) => {
-                    if let Some(background) = &patch.background {
-                        total = total.saturating_add(background.len());
-                    }
-                    if let Some(music) = &patch.music {
-                        total = total.saturating_add(music.len());
-                    }
-                    for character in &patch.add {
-                        total = total.saturating_add(character.name.len());
-                        if let Some(expression) = &character.expression {
-                            total = total.saturating_add(expression.len());
-                        }
-                        if let Some(position) = &character.position {
-                            total = total.saturating_add(position.len());
-                        }
-                    }
-                    for character in &patch.update {
-                        total = total.saturating_add(character.name.len());
-                        if let Some(expression) = &character.expression {
-                            total = total.saturating_add(expression.len());
-                        }
-                        if let Some(position) = &character.position {
-                            total = total.saturating_add(position.len());
-                        }
-                    }
-                    for name in &patch.remove {
-                        total = total.saturating_add(name.len());
-                    }
-                }
-                EventRaw::ExtCall { command, args } => {
-                    total = total.saturating_add(command.len());
-                    for arg in args {
-                        total = total.saturating_add(arg.len());
-                    }
-                }
-            }
+            total = total.saturating_add(event.string_bytes());
             if total > max_bytes {
                 return Err(VnError::ResourceLimit("script string budget".to_string()));
             }
@@ -424,12 +350,5 @@ fn compile_cond(
                 value: *value,
             })
         }
-    }
-}
-
-fn cond_string_bytes(cond: &CondRaw) -> usize {
-    match cond {
-        CondRaw::Flag { key, .. } => key.len(),
-        CondRaw::VarCmp { key, .. } => key.len(),
     }
 }

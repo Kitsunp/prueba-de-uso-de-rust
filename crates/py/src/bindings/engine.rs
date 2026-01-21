@@ -19,6 +19,14 @@ pub struct PyEngine {
     last_audio_commands: Vec<AudioCommand>,
 }
 
+#[pyclass]
+pub struct StepResult {
+    #[pyo3(get)]
+    pub event: PyObject,
+    #[pyo3(get)]
+    pub audio: PyObject,
+}
+
 #[pymethods]
 impl PyEngine {
     #[new]
@@ -43,7 +51,7 @@ impl PyEngine {
         event_to_python(&event, py)
     }
 
-    fn step<'py>(&mut self, py: Python<'py>) -> PyResult<PyObject> {
+    fn step<'py>(&mut self, py: Python<'py>) -> PyResult<StepResult> {
         let (audio, change) = self.inner.step().map_err(vn_error_to_py)?;
         self.last_audio_commands = audio;
         let event = change.event;
@@ -58,7 +66,12 @@ impl PyEngine {
                 }
             }
         }
-        event_to_python(&event, py)
+        let event_obj = event_to_python(&event, py)?;
+        let audio_obj = self.get_last_audio_commands(py)?;
+        Ok(StepResult {
+            event: event_obj,
+            audio: audio_obj,
+        })
     }
 
     fn choose<'py>(&mut self, py: Python<'py>, option_index: usize) -> PyResult<PyObject> {

@@ -52,11 +52,37 @@ Ejecuta el script incluido para compilar Rust e instalar los bindings de Python:
    maturin build --manifest-path crates/py/Cargo.toml --release
    pip install target/wheels/*.whl --force-reinstall
    ```
+
 ### Con interfaz gráfica
 
 ```toml
 [dependencies]
 visual_novel_gui = { path = "crates/gui" }
+```
+
+## Prerrequisitos y Configuración Local
+
+Para compilar y ejecutar el proyecto correctamente en tu entorno local, asegúrate de instalar:
+
+### Windows
+
+1.  **Rust**: Usando `rustup`.
+2.  **C++ Build Tools**: A través de Visual Studio Installer (necesario para el enlazado).
+3.  **Drivers de GPU**: Asegúrate de tener drivers compatibles con **Vulkan**, **DirectX 12** o **DirectX 11**.
+    - Si no tienes GPU dedicada, el motor usará el fallback de Software automáticamente.
+4.  **Python 3.10+**: Necesario si planeas compilar o probar los bindings de Python (`crates/py`).
+
+### Testing
+
+El proyecto incluye una suite de pruebas completa:
+
+```bash
+# Ejecutar verificación de compilación (Rápido)
+cargo check --workspace --tests
+
+# Ejecutar todos los tests (Unitarios + Integración + Snapshots)
+# Nota: Puede fallar en entornos sin librerías gráficas o de python enlazadas.
+cargo test --workspace
 ```
 
 ## Uso rápido (Rust)

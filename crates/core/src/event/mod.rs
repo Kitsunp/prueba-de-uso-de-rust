@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::resource::StringBudget;
 
 pub mod branching;
 pub mod choice;
@@ -29,7 +32,7 @@ pub use python_bridge::PyEvent;
 pub type SharedStr = Arc<str>;
 
 /// JSON-facing events used in `ScriptRaw`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventRaw {
@@ -44,8 +47,25 @@ pub enum EventRaw {
     ExtCall { command: String, args: Vec<String> },
 }
 
+impl StringBudget for EventRaw {
+    fn string_bytes(&self) -> usize {
+        match self {
+            EventRaw::Dialogue(inner) => inner.string_bytes(),
+            EventRaw::Choice(inner) => inner.string_bytes(),
+            EventRaw::Scene(inner) => inner.string_bytes(),
+            EventRaw::Jump { target } => target.len(),
+            EventRaw::SetFlag { key, .. } => key.len(),
+            EventRaw::SetVar { key, .. } => key.len(),
+            EventRaw::JumpIf { cond, target } => cond.string_bytes() + target.len(),
+            EventRaw::Patch(inner) => inner.string_bytes(),
+            EventRaw::ExtCall { command, args } => command.len() + args.string_bytes(),
+        }
+    }
+}
+
 /// Runtime events with pre-resolved targets and interned strings.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventCompiled {
     Dialogue(DialogueCompiled),
     Choice(ChoiceCompiled),

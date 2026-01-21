@@ -6,15 +6,7 @@ use visual_novel_engine::{
     ChoiceOptionRaw, ChoiceRaw, Engine, EventRaw, ResourceLimiter, SceneUpdateRaw, ScriptRaw,
     SecurityPolicy,
 };
-use vnengine_runtime::{AssetStore, Audio, Input, InputAction, Renderer, RuntimeApp};
-
-#[derive(Default)]
-struct NullRenderer;
-
-impl Renderer for NullRenderer {
-    fn render(&mut self, _frame: &mut [u8], _size: (u32, u32), _ui: &visual_novel_engine::UiState) {
-    }
-}
+use vnengine_runtime::{AssetStore, Audio, Input, InputAction, RuntimeApp};
 
 #[derive(Default)]
 struct NullInput;
@@ -29,8 +21,8 @@ impl Input for NullInput {
 struct NullAssets;
 
 impl AssetStore for NullAssets {
-    fn load_bytes(&self, _id: &str) -> Option<Vec<u8>> {
-        None
+    fn load_bytes(&self, _id: &str) -> Result<Vec<u8>, String> {
+        Err("NullAssets".to_string())
     }
 }
 
@@ -38,6 +30,7 @@ impl AssetStore for NullAssets {
 struct AudioState {
     last_music: Option<String>,
     play_calls: Vec<String>,
+    sfx_calls: Vec<String>,
     stop_calls: usize,
 }
 
@@ -57,6 +50,11 @@ impl Audio for SharedAudio {
         let mut state = self.state.borrow_mut();
         state.last_music = None;
         state.stop_calls += 1;
+    }
+
+    fn play_sfx(&mut self, id: &str) {
+        let mut state = self.state.borrow_mut();
+        state.sfx_calls.push(id.to_string());
     }
 }
 
@@ -92,7 +90,6 @@ fn audio_updates_when_choice_jumps_to_scene() {
 
     let mut app = RuntimeApp::new(
         engine,
-        NullRenderer,
         NullInput,
         SharedAudio {
             state: audio_state.clone(),
@@ -135,7 +132,6 @@ fn audio_switches_music_for_scene_jump() {
 
     let mut app = RuntimeApp::new(
         engine,
-        NullRenderer,
         NullInput,
         SharedAudio {
             state: audio_state.clone(),

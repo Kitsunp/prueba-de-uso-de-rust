@@ -24,6 +24,32 @@ impl Default for ResourceLimiter {
     }
 }
 
+/// Trait for calculating the string budget (size in bytes) of a resource.
+pub trait StringBudget {
+    fn string_bytes(&self) -> usize;
+}
+
+impl StringBudget for String {
+    fn string_bytes(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<T: StringBudget> StringBudget for Option<T> {
+    fn string_bytes(&self) -> usize {
+        match self {
+            Some(inner) => inner.string_bytes(),
+            None => 0,
+        }
+    }
+}
+
+impl<T: StringBudget> StringBudget for Vec<T> {
+    fn string_bytes(&self) -> usize {
+        self.iter().map(|item| item.string_bytes()).sum()
+    }
+}
+
 #[derive(Debug)]
 pub struct LruCache<K>
 where
