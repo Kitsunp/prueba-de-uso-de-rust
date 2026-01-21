@@ -10,7 +10,7 @@ use std::collections::HashMap;
 // use pixels::{Pixels, SurfaceTexture}; // Removed unused imports
 // Logic moved to software.rs
 use visual_novel_engine::{
-    AudioCommand, Engine, EventCompiled, RenderOutput, TextRenderer, UiState, UiView, VisualState,
+    AudioCommand, Engine, EventCompiled, RenderOutput, TextRenderer, UiState, VisualState,
 };
 use winit::{
     dpi::LogicalSize,
