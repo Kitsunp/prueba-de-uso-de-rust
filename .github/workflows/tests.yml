@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -28,6 +32,10 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p visual_novel_engine --verbose
       - run: cargo test -p vnengine_runtime --verbose
@@ -41,6 +49,10 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p visual_novel_engine --features arbitrary --test fuzz_tests --verbose
 
@@ -50,6 +62,10 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
