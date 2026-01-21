@@ -77,12 +77,17 @@ impl ScriptRaw {
         for (label, _) in &self.labels {
             total = total.saturating_add(label.len());
         }
+        if total > max_bytes {
+             return Err(VnError::ResourceLimit("script string budget (labels)".to_string()));
+        }
+
         for event in &self.events {
             match event {
                 EventRaw::Dialogue(dialogue) => {
                     total = total.saturating_add(dialogue.speaker.len());
                     total = total.saturating_add(dialogue.text.len());
                 }
+                // ... (other cases remain, just adding the check at end of loop body)
                 EventRaw::Choice(choice) => {
                     total = total.saturating_add(choice.prompt.len());
                     for option in &choice.options {

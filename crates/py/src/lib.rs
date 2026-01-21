@@ -59,6 +59,7 @@ pub struct PyEngine {
     max_texture_memory: usize,
     prefetch_depth: usize,
     handler: Option<Py<PyAny>>,
+    last_audio_commands: Vec<AudioCommand>,
 }
 
 #[pymethods]
@@ -80,6 +81,7 @@ impl PyEngine {
             max_texture_memory: 512 * 1024 * 1024,
             prefetch_depth: 0,
             handler: None,
+            last_audio_commands: Vec::new(),
         })
     }
 
@@ -89,12 +91,18 @@ impl PyEngine {
     }
 
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<PyObject> {
-        let (_audio, change) = self.inner.step().map_err(vn_error_to_py)?;
+        let (audio, change) = self.inner.step().map_err(vn_error_to_py)?;
+        self.last_audio_commands = audio;
         let event = change.event;
         if let EventCompiled::ExtCall { command, args } = &event {
             if let Some(handler) = &self.handler {
                 let handler = handler.clone_ref(py);
-                handler.call1(py, (command.as_str(), args.clone()))?;
+                // Catch exceptions from handler
+                if let Err(e) = handler.call1(py, (command.as_str(), args.clone())) {
+                    // Log or store the error, but don't fail the step
+                    eprintln!("ExtCall handler error: {:?}", e);
+                    // Or store in PyEngine for later retrieval
+                }
             }
         }
         event_to_python(&event, py)
@@ -132,6 +140,31 @@ impl PyEngine {
         ui_state_to_python(&ui, py)
     }
 
+    fn get_last_audio_commands<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
+        let list = PyList::empty(py);
+        for cmd in &self.last_audio_commands {
+            let dict = PyDict::new(py);
+            match cmd {
+                AudioCommand::PlayBgm { resource, r#loop, fade_in } => {
+                    dict.set_item("type", "play_bgm")?;
+                    dict.set_item("resource", resource.0.to_string())?; // ID as string for now
+                    dict.set_item("loop", r#loop)?;
+                    dict.set_item("fade_in", fade_in.as_secs_f64())?;
+                }
+                AudioCommand::StopBgm { fade_out } => {
+                    dict.set_item("type", "stop_bgm")?;
+                    dict.set_item("fade_out", fade_out.as_secs_f64())?;
+                }
+                AudioCommand::PlaySfx { resource } => {
+                    dict.set_item("type", "play_sfx")?;
+                    dict.set_item("resource", resource.0.to_string())?;
+                }
+            }
+            list.append(dict)?;
+        }
+        Ok(list.into())
+    }
+
     fn set_resources(&mut self, config: PyResourceConfig) {
         self.max_texture_memory = config.max_texture_memory;
         self.resource_limits.max_script_bytes = config.max_script_bytes;
@@ -164,19 +197,20 @@ impl PyEngine {
 
     fn audio(slf: PyRef<'_, Self>) -> PyResult<Py<PyAudio>> {
         let py = slf.py();
-        Py::new(py, PyAudio::new(py, slf)?)
+        let engine: Py<PyEngine> = slf.into();
+        Py::new(py, PyAudio::new(py, engine)?)
     }
 }
 
 #[pyclass(name = "AudioController")]
 pub struct PyAudio {
-    engine: Py<PyAny>,
+    engine: Py<PyEngine>,
 }
 
 impl PyAudio {
-    fn new(py: Python<'_>, engine: PyRef<'_, PyEngine>) -> PyResult<Self> {
+    fn new(_py: Python<'_>, engine: Py<PyEngine>) -> PyResult<Self> {
         Ok(Self {
-            engine: engine.into_py(py),
+            engine,
         })
     }
 }
@@ -185,7 +219,7 @@ impl PyAudio {
 impl PyAudio {
     #[pyo3(signature = (resource, r#loop=true, fade_in=0.0))]
     fn play_bgm(&self, py: Python<'_>, resource: &str, r#loop: bool, fade_in: f64) -> PyResult<()> {
-        let mut engine: PyRefMut<'_, PyEngine> = self.engine.bind(py).extract()?;
+        let mut engine = self.engine.borrow_mut(py);
         engine.inner.queue_audio_command(AudioCommand::PlayBgm {
             resource: AssetId::from_path(resource),
             r#loop,
@@ -196,7 +230,7 @@ impl PyAudio {
 
     #[pyo3(signature = (fade_out=0.0))]
     fn stop_all(&self, py: Python<'_>, fade_out: f64) -> PyResult<()> {
-        let mut engine: PyRefMut<'_, PyEngine> = self.engine.bind(py).extract()?;
+        let mut engine = self.engine.borrow_mut(py);
         engine.inner.queue_audio_command(AudioCommand::StopBgm {
             fade_out: Duration::from_secs_f64(fade_out.max(0.0)),
         });
@@ -204,7 +238,7 @@ impl PyAudio {
     }
 
     fn play_sfx(&self, py: Python<'_>, resource: &str) -> PyResult<()> {
-        let mut engine: PyRefMut<'_, PyEngine> = self.engine.bind(py).extract()?;
+        let mut engine = self.engine.borrow_mut(py);
         engine.inner.queue_audio_command(AudioCommand::PlaySfx {
             resource: AssetId::from_path(resource),
         });

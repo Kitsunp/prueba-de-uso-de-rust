@@ -238,6 +238,7 @@ impl Engine {
     }
 
     pub fn peek_next_assets(&self, depth: usize) -> Vec<AssetId> {
+        let mut seen = std::collections::HashSet::new();
         let mut assets = Vec::new();
         let start = self.state.position as usize;
         let end = (start + depth).min(self.script.events.len());
@@ -245,36 +246,67 @@ impl Engine {
             match event {
                 EventCompiled::Scene(scene) => {
                     if let Some(background) = &scene.background {
-                        assets.push(AssetId::from_path(background.as_ref()));
+                        let id = AssetId::from_path(background.as_ref());
+                        if seen.insert(id) {
+                            assets.push(id);
+                        }
                     }
                     if let Some(music) = &scene.music {
-                        assets.push(AssetId::from_path(music.as_ref()));
+                        let id = AssetId::from_path(music.as_ref());
+                        if seen.insert(id) {
+                            assets.push(id);
+                        }
                     }
                     for character in &scene.characters {
-                        assets.push(AssetId::from_path(character.name.as_ref()));
+                        let id = AssetId::from_path(character.name.as_ref());
+                        if seen.insert(id) {
+                            assets.push(id);
+                        }
                         if let Some(expression) = &character.expression {
-                            assets.push(AssetId::from_path(expression.as_ref()));
+                            let id = AssetId::from_path(expression.as_ref());
+                            if seen.insert(id) {
+                                assets.push(id);
+                            }
                         }
                     }
                 }
                 EventCompiled::Patch(patch) => {
                     if let Some(background) = &patch.background {
-                        assets.push(AssetId::from_path(background.as_ref()));
+                        let id = AssetId::from_path(background.as_ref());
+                        if seen.insert(id) {
+                            assets.push(id);
+                        }
                     }
                     if let Some(music) = &patch.music {
-                        assets.push(AssetId::from_path(music.as_ref()));
-                    }
-                    for character in &patch.add {
-                        assets.push(AssetId::from_path(character.name.as_ref()));
-                        if let Some(expression) = &character.expression {
-                            assets.push(AssetId::from_path(expression.as_ref()));
+                        let id = AssetId::from_path(music.as_ref());
+                        if seen.insert(id) {
+                            assets.push(id);
                         }
+                    }
+                    // ... (simplified loop for patch additions/updates similar to scene)
+                    for character in &patch.add {
+                         let id = AssetId::from_path(character.name.as_ref());
+                         if seen.insert(id) {
+                             assets.push(id);
+                         }
+                         if let Some(expression) = &character.expression {
+                             let id = AssetId::from_path(expression.as_ref());
+                             if seen.insert(id) {
+                                 assets.push(id);
+                             }
+                         }
                     }
                     for character in &patch.update {
-                        assets.push(AssetId::from_path(character.name.as_ref()));
-                        if let Some(expression) = &character.expression {
-                            assets.push(AssetId::from_path(expression.as_ref()));
-                        }
+                         let id = AssetId::from_path(character.name.as_ref());
+                         if seen.insert(id) {
+                             assets.push(id);
+                         }
+                         if let Some(expression) = &character.expression {
+                             let id = AssetId::from_path(expression.as_ref());
+                             if seen.insert(id) {
+                                 assets.push(id);
+                             }
+                         }
                     }
                 }
                 _ => {}
@@ -341,7 +373,7 @@ fn initial_audio_commands(state: &EngineState) -> Vec<AudioCommand> {
         commands.push(AudioCommand::PlayBgm {
             resource: AssetId::from_path(music.as_ref()),
             r#loop: true,
-            fade_in: Duration::from_secs(0),
+            fade_in: Duration::from_millis(500),
         });
     }
     commands
@@ -359,10 +391,10 @@ fn append_music_delta(
         Some(music) => audio_commands.push(AudioCommand::PlayBgm {
             resource: AssetId::from_path(music.as_ref()),
             r#loop: true,
-            fade_in: Duration::from_secs(0),
+            fade_in: Duration::from_millis(500),
         }),
         None => audio_commands.push(AudioCommand::StopBgm {
-            fade_out: Duration::from_secs(0),
+            fade_out: Duration::from_millis(500),
         }),
     }
 }

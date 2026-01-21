@@ -22,6 +22,7 @@ pub struct AsyncLoader {
     sender: Sender<LoadRequest>,
     receiver: Receiver<LoadResult>,
     inflight: Arc<AtomicUsize>,
+    _thread_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl AsyncLoader {
@@ -30,20 +31,23 @@ impl AsyncLoader {
         let (result_tx, receiver) = mpsc::channel::<LoadResult>();
         let inflight = Arc::new(AtomicUsize::new(0));
         let inflight_thread = inflight.clone();
-        thread::spawn(move || {
+        
+        let handle = thread::spawn(move || {
             while let Ok(request) = request_rx.recv() {
                 let data = std::fs::read(&request.path).unwrap_or_default();
+                inflight_thread.fetch_sub(1, Ordering::Release);
                 let _ = result_tx.send(LoadResult {
                     id: request.id,
                     bytes: data,
                 });
-                inflight_thread.fetch_sub(1, Ordering::Release);
             }
         });
+        
         Self {
             sender,
             receiver,
             inflight,
+            _thread_handle: Some(handle),
         }
     }
 

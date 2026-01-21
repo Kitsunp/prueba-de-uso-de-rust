@@ -255,6 +255,18 @@ class NativeBindingsTests(unittest.TestCase):
 
         audio = engine.audio()
         audio.play_bgm("theme_song", loop=True, fade_in=0.5)
+        
+        # Verify commands are queued by stepping and checking audio output
+        # This requires exposing audio commands from step() in Python API
+        event = engine.step()
+        
+        commands = engine.get_last_audio_commands()
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0]["type"], "play_bgm")
+        # AssetId hashing makes resource checking hard without resolving, just check type
+        self.assertTrue(commands[0]["loop"])
+        self.assertEqual(commands[0]["fade_in"], 0.5)
+        
         audio.stop_all(fade_out=0.1)
         audio.play_sfx("click")
 

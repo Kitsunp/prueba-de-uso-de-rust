@@ -87,7 +87,7 @@ where
     }
 
     fn evict_overflow(&mut self) {
-        while self.current_bytes > self.max_bytes {
+        while self.current_bytes > self.max_bytes && !self.order.is_empty() {
             let Some(lru_key) = self.order.pop_front() else {
                 break;
             };
