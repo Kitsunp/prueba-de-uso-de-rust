@@ -16,6 +16,9 @@ pub struct VisualState {
 
 impl VisualState {
     /// Applies a scene update to the visual state.
+    ///
+    /// Note: Scene events preserve existing values when fields are None.
+    /// To fully replace/clear values, use Patch events with explicit null.
     pub fn apply_scene(&mut self, update: &SceneUpdateCompiled) {
         if let Some(background) = &update.background {
             self.background = Some(background.clone());

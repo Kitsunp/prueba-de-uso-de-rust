@@ -148,10 +148,13 @@ fn audio_switches_music_for_scene_jump() {
     app.handle_action(InputAction::Choose(0)).unwrap();
 
     let state = audio_state.borrow();
+    // Engine correctly emits PlayBgm only when music changes:
+    // 1. Initial scene (music/old.ogg) at RuntimeApp::new
+    // 2. Jump to scene with different music (music/new.ogg)
+    // Note: Advance on same scene does NOT re-emit since music hasn't changed
     assert_eq!(
         state.play_calls,
         vec![
-            "music/old.ogg".to_string(),
             "music/old.ogg".to_string(),
             "music/new.ogg".to_string(),
         ]

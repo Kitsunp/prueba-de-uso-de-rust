@@ -64,3 +64,40 @@ impl AsyncLoader {
         self.inflight.load(Ordering::Acquire) > 0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_async_loading_behavior() {
+        // Engineer Manifesto: Air Gapped / Concurrency.
+        // Ensure loading happens off-thread and doesn't block immediately.
+        
+        let loader = AsyncLoader::new();
+        let id = AssetId::from_path("test_asset");
+        let path = PathBuf::from("Cargo.toml"); // Use a file that exists
+        
+        assert!(!loader.is_loading());
+        
+        loader.enqueue(id, path);
+        
+        // Should register as loading
+        assert!(loader.is_loading());
+        
+        // Wait for result (in real engine this happens per frame)
+        let mut result = None;
+        for _ in 0..100 {
+            if let Some(res) = loader.try_recv() {
+                result = Some(res);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        
+        let result = result.expect("Loader should complete");
+        assert_eq!(result.id, id);
+        assert!(!result.bytes.is_empty(), "Should load file content");
+        assert!(!loader.is_loading(), "Should update inflight count");
+    }
+}

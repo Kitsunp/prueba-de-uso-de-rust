@@ -179,6 +179,8 @@ where
             InputAction::Choose(index) => {
                 let _ = self.engine.choose(index)?;
                 self.refresh_state()?;
+                // After jumping, check if target is a Scene and apply its audio
+                self.apply_audio_for_current_scene();
             }
         }
         Ok(true)
@@ -189,6 +191,17 @@ where
         self.visual = Self::derive_visual(&self.engine, &event);
         self.ui = UiState::from_event(&event, &self.visual);
         Ok(())
+    }
+
+    /// Applies audio when the current event is a Scene (used after jump without step)
+    fn apply_audio_for_current_scene(&mut self) {
+        if let Ok(event) = self.engine.current_event() {
+            if let EventCompiled::Scene(scene) = &event {
+                if let Some(music) = &scene.music {
+                    self.audio.play_music(&music.to_string());
+                }
+            }
+        }
     }
 
     fn derive_visual(engine: &Engine, event: &EventCompiled) -> VisualState {
@@ -202,8 +215,11 @@ where
     fn apply_audio_commands(&mut self, commands: &[AudioCommand]) {
         for command in commands {
             match command {
-                AudioCommand::PlayBgm { resource, .. } => {
-                    self.audio.play_music(&resource.0.to_string());
+                AudioCommand::PlayBgm { .. } => {
+                    // Use the actual music path from visual state for consistency
+                    if let Some(music) = &self.visual.music {
+                        self.audio.play_music(music.as_ref());
+                    }
                 }
                 AudioCommand::StopBgm { .. } => {
                     self.audio.stop_music();
