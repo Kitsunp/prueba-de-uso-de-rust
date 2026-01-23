@@ -234,3 +234,254 @@ El motor soporta dos modos:
 
 - **Trusted** (default): scripts/assets confiables.
 - **Untrusted**: valida rutas, tamaños y hashes de assets (manifest opcional).
+
+---
+
+## Sistema de Animaciones (Timeline)
+
+El motor incluye un sistema de línea de tiempo para animaciones deterministas.
+
+### Uso en Rust
+
+```rust
+use visual_novel_engine::{Timeline, Track, Keyframe, Easing, EntityId, PropertyType};
+
+// Crear timeline a 60 ticks/segundo
+let mut timeline = Timeline::new(60);
+
+// Crear track para animar posición X
+let mut track = Track::new(EntityId::new(1), PropertyType::PositionX);
+track.add_keyframe(Keyframe::new(0, 0, Easing::Linear))?;
+track.add_keyframe(Keyframe::new(60, 100, Easing::EaseOut))?;
+timeline.add_track(track)?;
+
+// Evaluar en cualquier tiempo
+timeline.seek(30);
+let values = timeline.evaluate(); // [(EntityId(1), PositionX, 50)]
+```
+
+### Uso en Python
+
+```python
+import visual_novel_engine as vn
+
+timeline = vn.Timeline(ticks_per_second=60)
+track = vn.Track(entity_id=1, property="position_x")
+track.add_keyframe(vn.Keyframe(0, 0, "linear"))
+track.add_keyframe(vn.Keyframe(60, 100, "ease_out"))
+timeline.add_track(track)
+
+timeline.seek(30)
+values = timeline.evaluate()
+```
+
+**Funciones de Easing**: `linear`, `ease_in`, `ease_out`, `ease_in_out`, `step`
+
+**Ejemplo completo**: Ver `examples/python/timeline_demo.py`
+
+---
+
+## Grafo de Historia (Story Graph)
+
+Genera un grafo dirigido desde el script compilado para visualizar el flujo narrativo.
+
+### Uso en Rust
+
+```rust
+use visual_novel_engine::{ScriptRaw, StoryGraph};
+
+let script = ScriptRaw::from_json(script_json)?;
+let compiled = script.compile()?;
+let graph = StoryGraph::from_script(&compiled);
+
+// Estadísticas
+let stats = graph.stats();
+println!("Nodos: {}, Inalcanzables: {}", stats.total_nodes, stats.unreachable_nodes);
+
+// Detectar nodos muertos
+let dead = graph.unreachable_nodes();
+
+// Exportar a DOT (Graphviz)
+let dot = graph.to_dot();
+std::fs::write("graph.dot", dot)?;
+// Generar PNG: dot -Tpng graph.dot -o graph.png
+```
+
+### Uso en Python
+
+```python
+import visual_novel_engine as vn
+
+graph = vn.StoryGraph.from_json(script_json)
+
+# Estadísticas
+stats = graph.stats()
+print(f"Nodos: {stats.total_nodes}, Inalcanzables: {stats.unreachable_nodes}")
+
+# Detectar código muerto
+for node_id in graph.unreachable_nodes():
+    print(f"⚠️ Nodo {node_id} inalcanzable")
+
+# Exportar para visualización
+with open("graph.dot", "w") as f:
+    f.write(graph.to_dot())
+```
+
+**Ejemplo completo**: Ver `examples/python/story_graph_demo.py`
+
+---
+
+## Sistema de Entidades (Entity System)
+
+Sistema ligero para gestionar entidades visuales (imágenes, personajes, texto).
+
+### Componentes Principales
+
+- **EntityId**: Identificador único (u32)
+- **Transform**: Posición, z-order, escala, opacidad (punto fijo)
+- **EntityKind**: Tipo de entidad (`Image`, `Text`, `Character`, `Video`, `Audio`)
+- **SceneState**: Colección de entidades con iteración determinista
+
+### Uso en Rust
+
+```rust
+use visual_novel_engine::{SceneState, EntityKind, ImageData, Transform};
+
+let mut scene = SceneState::new();
+
+// Spawn entidades
+let bg_id = scene.spawn(EntityKind::Image(ImageData {
+    path: "bg/room.png".into(),
+    tint: None,
+}))?;
+
+// Modificar transform
+if let Some(entity) = scene.get_mut(bg_id) {
+    entity.transform.z_order = -100;
+}
+
+// Iterar en orden determinista (z-order, luego id)
+for entity in scene.iter_sorted() {
+    println!("{}: {:?}", entity.id, entity.kind);
+}
+```
+
+---
+
+## Ejemplos
+
+### Rust
+
+```bash
+# Timeline demo
+cargo run -p visual_novel_engine --example timeline_demo
+
+# Story graph demo
+cargo run -p visual_novel_engine --example story_graph_demo
+```
+
+### Python
+
+```bash
+# Requiere: pip install visual_novel_engine
+python examples/python/timeline_demo.py
+python examples/python/story_graph_demo.py
+```
+
+---
+
+## 🎨 Editor Visual / Visual Editor
+
+### Español
+
+El motor incluye un editor visual nativo para crear y editar historias de forma interactiva.
+
+#### Ejecutar el Editor
+
+```bash
+# Compilar y ejecutar el editor
+cargo run -p visual_novel_gui --bin vn_editor
+
+# O compilar primero y luego ejecutar
+cargo build -p visual_novel_gui --bin vn_editor --release
+./target/release/vn_editor
+```
+
+#### Paneles del Editor
+
+| Panel         | Descripción                                                  |
+| ------------- | ------------------------------------------------------------ |
+| **Timeline**  | Controles de reproducción, scrubbing, lista de tracks        |
+| **Graph**     | Vista de nodos de la historia con detección de inalcanzables |
+| **Inspector** | Propiedades del nodo/entidad seleccionada                    |
+| **Viewport**  | Vista previa de la escena con entidades                      |
+
+#### Uso
+
+1. **File → Open Script**: Carga un archivo JSON de script
+2. **View**: Muestra/oculta los paneles (Timeline, Graph, Inspector)
+3. **Mode**: Cambia entre modo Player (juego) y Editor
+
+#### Script de Ejemplo
+
+Para probar el editor con un ejemplo completo, usa el script incluido:
+
+```bash
+# Abre el editor y carga el archivo de ejemplo
+# File → Open Script → examples/scripts/demo_story.json
+```
+
+El script `demo_story.json` incluye:
+
+- Escenas con fondos y personajes
+- Diálogos con múltiples personajes
+- Sistema de elecciones (3 rutas)
+- Variables y banderas
+
+---
+
+### English
+
+The engine includes a native visual editor for interactive story creation and editing.
+
+#### Running the Editor
+
+```bash
+# Compile and run the editor
+cargo run -p visual_novel_gui --bin vn_editor
+
+# Or compile first, then run
+cargo build -p visual_novel_gui --bin vn_editor --release
+./target/release/vn_editor
+```
+
+#### Editor Panels
+
+| Panel         | Description                                |
+| ------------- | ------------------------------------------ |
+| **Timeline**  | Playback controls, scrubbing, track list   |
+| **Graph**     | Story node view with unreachable detection |
+| **Inspector** | Selected node/entity properties            |
+| **Viewport**  | Scene preview with entities                |
+
+#### Usage
+
+1. **File → Open Script**: Load a JSON script file
+2. **View**: Show/hide panels (Timeline, Graph, Inspector)
+3. **Mode**: Switch between Player (game) and Editor mode
+
+#### Example Script
+
+To test the editor with a complete example, use the included script:
+
+```bash
+# Open the editor and load the example file
+# File → Open Script → examples/scripts/demo_story.json
+```
+
+The `demo_story.json` script includes:
+
+- Scenes with backgrounds and characters
+- Dialogues with multiple characters
+- Choice system (3 branching paths)
+- Variables and flags

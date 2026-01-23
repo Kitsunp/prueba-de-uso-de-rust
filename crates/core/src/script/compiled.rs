@@ -5,6 +5,14 @@ use crate::event::EventCompiled;
 use crate::version::{COMPILED_FORMAT_VERSION, SCRIPT_BINARY_MAGIC};
 
 /// Runtime-ready script that resolves labels and interns strings.
+///
+/// # Binary Format
+/// Uses Postcard serialization (compact, no-std compatible) with:
+/// - Magic bytes (4): "VNSC"
+/// - Version (2): LE u16
+/// - Checksum (4): CRC32 of payload
+/// - Length (4): LE u32
+/// - Payload: Postcard-serialized data
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ScriptCompiled {
     pub events: Vec<EventCompiled>,
@@ -15,8 +23,15 @@ pub struct ScriptCompiled {
 
 impl ScriptCompiled {
     /// Serializes the compiled script to a binary format with magic bytes, version, and checksum.
+    ///
+    /// # Preconditions
+    /// - `self` must be a valid, complete ScriptCompiled instance.
+    ///
+    /// # Postconditions
+    /// - Returns a binary blob that can be deserialized with `from_binary`.
+    /// - The binary is prefixed with magic bytes and includes a checksum.
     pub fn to_binary(&self) -> VnResult<Vec<u8>> {
-        let payload = bincode::serialize(self).map_err(binary_serialize_error)?;
+        let payload = postcard::to_allocvec(self).map_err(binary_serialize_error)?;
         let checksum = crc32fast::hash(&payload);
         let payload_len = u32::try_from(payload.len()).map_err(|_| {
             VnError::BinaryFormat("compiled script too large for binary format".to_string())
@@ -31,6 +46,16 @@ impl ScriptCompiled {
     }
 
     /// Deserializes a compiled script from binary data.
+    ///
+    /// # Preconditions
+    /// - `input` must be a valid binary produced by `to_binary`.
+    /// - The version must match `COMPILED_FORMAT_VERSION`.
+    ///
+    /// # Postconditions
+    /// - Returns a fully reconstructed `ScriptCompiled`.
+    ///
+    /// # Errors
+    /// - `VnError::BinaryFormat` if magic bytes, version, or checksum are invalid.
     pub fn from_binary(input: &[u8]) -> VnResult<Self> {
         if input.len() < 14 {
             return Err(binary_format_error("binary payload too small"));
@@ -41,7 +66,7 @@ impl ScriptCompiled {
         let version = u16::from_le_bytes([input[4], input[5]]);
         if version != COMPILED_FORMAT_VERSION {
             return Err(binary_format_error(format!(
-                "unsupported script version {version}"
+                "unsupported script version {version} (expected {COMPILED_FORMAT_VERSION})"
             )));
         }
         let checksum = u32::from_le_bytes([input[6], input[7], input[8], input[9]]);
@@ -56,7 +81,7 @@ impl ScriptCompiled {
         if payload_checksum != checksum {
             return Err(binary_format_error("payload checksum mismatch"));
         }
-        bincode::deserialize(payload).map_err(binary_serialize_error)
+        postcard::from_bytes(payload).map_err(binary_serialize_error)
     }
 }
 

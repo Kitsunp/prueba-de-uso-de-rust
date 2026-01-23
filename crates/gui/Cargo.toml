@@ -19,6 +19,8 @@ directories = "5.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rfd = "0.14"
 sha2 = "0.10"
+tracing = "0.1"
+miette = "7.0"
 
 [dev-dependencies]
 tempfile = "3.10"

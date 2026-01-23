@@ -1,0 +1,160 @@
+{
+    "script_schema_version": "1.0",
+    "events": [
+        {
+            "type": "scene",
+            "background": "bg/classroom.png",
+            "music": "music/morning.ogg",
+            "characters": []
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Narrator",
+            "text": "It was a bright morning at the academy. The cherry blossoms were in full bloom."
+        },
+        {
+            "type": "dialogue",
+            "speaker": "???",
+            "text": "Hey! Are you the new transfer student?"
+        },
+        {
+            "type": "scene",
+            "background": "bg/classroom.png",
+            "music": null,
+            "characters": [
+                {"name": "Sakura", "expression": "smile", "position": "center"}
+            ]
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Sakura",
+            "text": "I'm Sakura! Nice to meet you. Let me show you around!"
+        },
+        {
+            "type": "set_flag",
+            "key": "met_sakura",
+            "value": true
+        },
+        {
+            "type": "choice",
+            "prompt": "What do you want to do?",
+            "options": [
+                {"text": "Go to the library", "target": "library"},
+                {"text": "Visit the rooftop", "target": "rooftop"},
+                {"text": "Head to the cafeteria", "target": "cafeteria"}
+            ]
+        },
+        {
+            "type": "scene",
+            "background": "bg/library.png",
+            "music": "music/quiet.ogg",
+            "characters": [
+                {"name": "Sakura", "expression": "curious", "position": "left"}
+            ]
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Sakura",
+            "text": "The library is my favorite place. It's so peaceful here."
+        },
+        {
+            "type": "dialogue",
+            "speaker": "You",
+            "text": "It does feel nice. I could study here for hours."
+        },
+        {
+            "type": "set_var",
+            "key": "friendship",
+            "value": 1
+        },
+        {
+            "type": "jump",
+            "target": "ending"
+        },
+        {
+            "type": "scene",
+            "background": "bg/rooftop.png",
+            "music": "music/wind.ogg",
+            "characters": [
+                {"name": "Sakura", "expression": "happy", "position": "right"}
+            ]
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Sakura",
+            "text": "The view from here is amazing, isn't it?"
+        },
+        {
+            "type": "dialogue",
+            "speaker": "You",
+            "text": "I can see the whole city from up here!"
+        },
+        {
+            "type": "set_var",
+            "key": "friendship",
+            "value": 2
+        },
+        {
+            "type": "jump",
+            "target": "ending"
+        },
+        {
+            "type": "scene",
+            "background": "bg/cafeteria.png",
+            "music": "music/lively.ogg",
+            "characters": [
+                {"name": "Sakura", "expression": "smile", "position": "center"}
+            ]
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Sakura",
+            "text": "The food here is great! Want to try some taiyaki?"
+        },
+        {
+            "type": "dialogue",
+            "speaker": "You",
+            "text": "Sure, I love taiyaki!"
+        },
+        {
+            "type": "set_var",
+            "key": "friendship",
+            "value": 3
+        },
+        {
+            "type": "jump",
+            "target": "ending"
+        },
+        {
+            "type": "scene",
+            "background": "bg/school_gate.png",
+            "music": "music/evening.ogg",
+            "characters": [
+                {"name": "Sakura", "expression": "smile", "position": "center"}
+            ]
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Sakura",
+            "text": "Thanks for spending the day with me! See you tomorrow!"
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Narrator",
+            "text": "And so began your adventure at Sakura Academy..."
+        },
+        {
+            "type": "dialogue",
+            "speaker": "Narrator",
+            "text": "~ To Be Continued ~"
+        }
+    ],
+    "labels": {
+        "start": 0,
+        "meet_sakura": 3,
+        "library": 7,
+        "rooftop": 12,
+        "cafeteria": 17,
+        "ending": 22
+    }
+}

@@ -9,7 +9,8 @@ pub const SCRIPT_SCHEMA_VERSION: &str = "1.0";
 
 /// Current binary format version for compiled scripts.
 /// Increment when the binary layout changes.
-pub const COMPILED_FORMAT_VERSION: u16 = 1;
+/// v2: Migrated from bincode to postcard serialization.
+pub const COMPILED_FORMAT_VERSION: u16 = 2;
 
 /// Current format version for save files.
 /// Increment when EngineState serialization changes.

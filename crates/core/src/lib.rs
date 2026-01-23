@@ -1,14 +1,17 @@
 mod assets;
 mod audio;
 mod engine;
+mod entity;
 mod error;
 mod event;
+mod graph;
 mod render;
 mod resource;
 mod script;
 mod security;
 mod state;
 mod storage;
+mod timeline;
 mod trace;
 mod ui;
 mod version;
@@ -35,6 +38,21 @@ pub use trace::{StateDigest, UiTrace, UiTraceStep, UiView as TraceUiView, Visual
 pub use ui::{UiState, UiView};
 pub use version::{COMPILED_FORMAT_VERSION, SAVE_FORMAT_VERSION, SCRIPT_SCHEMA_VERSION};
 pub use visual::VisualState;
+
+// Phase 1: Entity System exports
+pub use entity::{
+    AudioData, CharacterData, Entity, EntityId, EntityKind, ImageData, SceneState, TextData,
+    Transform, VideoData, MAX_ENTITIES,
+};
+
+// Phase 2: Timeline System exports
+pub use timeline::{
+    Easing, Fixed, Keyframe, PropertyType, PropertyValue, Timeline, TimelineError, Track,
+    MAX_KEYFRAMES_PER_TRACK, MAX_TRACKS,
+};
+
+// Phase 3: Story Graph exports
+pub use graph::{EdgeType, GraphEdge, GraphNode, GraphStats, NodeType, StoryGraph};
 
 pub type Event = EventCompiled;
 pub type Script = ScriptRaw;
