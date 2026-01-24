@@ -182,6 +182,14 @@ impl<'a> InspectorPanel<'a> {
     }
 
     fn render_json_source(&self, ui: &mut egui::Ui) {
+        if let Some(id) = self.selected_node {
+            ui.label(
+                egui::RichText::new(format!("Selected Node Context: ID {}", id))
+                    .strong()
+                    .color(egui::Color32::LIGHT_BLUE),
+            );
+        }
+
         if let Some(script) = self.current_script {
             if let Ok(json) = serde_json::to_string_pretty(script) {
                 egui::ScrollArea::vertical()

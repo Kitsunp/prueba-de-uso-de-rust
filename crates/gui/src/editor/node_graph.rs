@@ -48,6 +48,8 @@ pub struct NodeGraph {
     pub(crate) zoom: f32,
     /// Node being edited inline
     pub editing: Option<u32>,
+    /// Node being dragged (robust interaction)
+    pub dragging_node: Option<u32>,
     /// Node being connected (Connect To mode)
     pub connecting_from: Option<u32>,
     /// Active context menu
@@ -66,6 +68,7 @@ impl Default for NodeGraph {
             pan: egui::Vec2::ZERO,
             zoom: ZOOM_DEFAULT,
             editing: None,
+            dragging_node: None,
             connecting_from: None,
             context_menu: None,
             modified: false,

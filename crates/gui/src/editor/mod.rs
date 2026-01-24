@@ -52,7 +52,10 @@ pub fn run_editor() -> Result<(), eframe::Error> {
     eframe::run_native(
         "Visual Novel Editor",
         options,
-        Box::new(|_cc| Box::new(EditorApp::default())),
+        Box::new(|cc| {
+            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            Box::new(EditorApp::default())
+        }),
     )
 }
 
@@ -577,13 +580,13 @@ impl EditorWorkbench {
                 // If graph was modified, push to undo stack AND sync to script (live preview)
                 if self.node_graph.is_modified() {
                     self.undo_stack.push(graph_before);
-                    
+
                     // Live Sync: Update the script in memory (for JSON view) but DO NOT save to disk.
                     // This keeps the "static part" (current_script) up-to-date with visuals.
                     if let Err(e) = self.sync_graph_to_script() {
                         tracing::warn!("Live sync failed: {}", e);
                     }
-                    
+
                     self.node_graph.clear_modified();
                 }
             } else {

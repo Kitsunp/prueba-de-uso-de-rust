@@ -51,7 +51,7 @@ impl<'a> GraphPanel<'a> {
                 for node in &graph.nodes {
                     let is_selected = *self.selected_node == Some(node.id);
                     let reachable_color = if node.reachable {
-                        egui::Color32::WHITE
+                        ui.visuals().text_color()
                     } else {
                         egui::Color32::RED
                     };
