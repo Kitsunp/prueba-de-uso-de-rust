@@ -186,8 +186,10 @@ pub struct PyLintSeverity {
 #[pymethods]
 impl PyLintSeverity {
     /// Error severity (critical issues).
+    /// Error severity (critical issues).
     #[classattr]
-    fn Error() -> Self {
+    #[pyo3(name = "Error")]
+    fn error() -> Self {
         Self {
             inner: LintSeverity::Error,
         }
@@ -195,7 +197,8 @@ impl PyLintSeverity {
 
     /// Warning severity (potential issues).
     #[classattr]
-    fn Warning() -> Self {
+    #[pyo3(name = "Warning")]
+    fn warning() -> Self {
         Self {
             inner: LintSeverity::Warning,
         }
@@ -203,7 +206,8 @@ impl PyLintSeverity {
 
     /// Info severity (informational).
     #[classattr]
-    fn Info() -> Self {
+    #[pyo3(name = "Info")]
+    fn info() -> Self {
         Self {
             inner: LintSeverity::Info,
         }

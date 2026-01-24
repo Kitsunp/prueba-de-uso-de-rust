@@ -544,7 +544,7 @@ impl StoryGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{ChoiceOptionCompiled, DialogueCompiled, SharedStr};
+    use crate::event::{ChoiceCompiled, ChoiceOptionCompiled, DialogueCompiled, SharedStr};
 
     fn make_dialogue(speaker: &str, text: &str) -> EventCompiled {
         EventCompiled::Dialogue(DialogueCompiled {

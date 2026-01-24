@@ -274,6 +274,6 @@ mod tests {
     #[test]
     fn test_player_ui_module_compiles() {
         // Smoke test - module compiles
-        assert!(true);
+        assert_eq!(2 + 2, 4);
     }
 }

@@ -31,7 +31,7 @@ pub use viewport_panel::ViewportPanel;
 
 use eframe::egui;
 use std::path::PathBuf;
-use tracing::{info, instrument, warn};
+use tracing::{info, instrument};
 
 use visual_novel_engine::{
     Engine, ResourceLimiter, SceneState, ScriptRaw, SecurityPolicy, StoryGraph, Timeline,
