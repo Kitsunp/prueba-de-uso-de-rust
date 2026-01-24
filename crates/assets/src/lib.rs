@@ -1,3 +1,4 @@
+#![allow(unused_assignments)]
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
