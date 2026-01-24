@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-use crate::event::{ChoiceCompiled, CondCompiled, EventCompiled};
+use crate::event::{CondCompiled, EventCompiled};
 use crate::script::ScriptCompiled;
 
 // =============================================================================
