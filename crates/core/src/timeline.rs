@@ -542,7 +542,6 @@ pub enum TimelineError {
         code(vn::timeline::duplicate_time),
         help("Keyframe times must be strictly increasing (t_i < t_{{i+1}})")
     )]
-    #[allow(unused_assignments)]
     DuplicateKeyframeTime { time: u32 },
 
     #[error("track limit exceeded (max: {MAX_TRACKS})")]
