@@ -7,7 +7,7 @@
 //! - **Modularity**: Separated from graph logic per Criterio J (500 line limit)
 //! - **Single Responsibility**: Only node type definitions and their presentation
 
-use eframe::egui;
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // Constants
@@ -42,7 +42,7 @@ pub const NODE_VERTICAL_SPACING: f32 = 90.0;
 ///
 /// # Invariant
 /// Start and End nodes are markers only; they don't generate script events.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StoryNode {
     /// Dialogue node with speaker and text.
     Dialogue { speaker: String, text: String },

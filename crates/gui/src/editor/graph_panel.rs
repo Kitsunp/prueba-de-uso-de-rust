@@ -2,134 +2,88 @@
 //!
 //! Displays the story flow as a visual graph with nodes and edges.
 
+use crate::editor::{NodeGraph, StoryNode};
 use eframe::egui;
-use visual_novel_engine::{NodeType, StoryGraph};
 
 /// Graph panel widget.
 pub struct GraphPanel<'a> {
-    graph: &'a Option<StoryGraph>,
-    selected_node: &'a mut Option<u32>,
+    graph: &'a mut NodeGraph,
 }
 
 impl<'a> GraphPanel<'a> {
-    pub fn new(graph: &'a Option<StoryGraph>, selected_node: &'a mut Option<u32>) -> Self {
-        Self {
-            graph,
-            selected_node,
-        }
+    pub fn new(graph: &'a mut NodeGraph) -> Self {
+        Self { graph }
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("📊 Story Graph");
         ui.separator();
 
-        if let Some(graph) = self.graph {
-            let stats = graph.stats();
+        let node_count = self.graph.len();
+        let connection_count = self.graph.connection_count();
 
-            // Statistics
-            ui.horizontal(|ui| {
-                ui.label(format!("Nodes: {}", stats.total_nodes));
-                ui.separator();
-                ui.label(format!("Edges: {}", stats.edge_count));
-            });
-
-            // Unreachable warning
-            if stats.unreachable_nodes > 0 {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("⚠️").color(egui::Color32::YELLOW));
-                    ui.label(
-                        egui::RichText::new(format!("{} unreachable", stats.unreachable_nodes))
-                            .color(egui::Color32::YELLOW),
-                    );
-                });
-            }
-
+        // Statistics
+        ui.horizontal(|ui| {
+            ui.label(format!("Nodes: {}", node_count));
             ui.separator();
+            ui.label(format!("Edges: {}", connection_count));
+        });
 
-            // Node list
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for node in &graph.nodes {
-                    let is_selected = *self.selected_node == Some(node.id);
-                    let reachable_color = if node.reachable {
-                        ui.visuals().text_color()
-                    } else {
-                        egui::Color32::RED
-                    };
+        ui.separator();
 
-                    let icon = match &node.node_type {
-                        NodeType::Dialogue { .. } => "💬",
-                        NodeType::Choice { .. } => "🔀",
-                        NodeType::Scene { .. } => "🎬",
-                        NodeType::Jump => "↪",
-                        NodeType::ConditionalJump { .. } => "❓",
-                        NodeType::StateChange { .. } => "🔧",
-                        NodeType::Patch => "📝",
-                        NodeType::ExtCall { .. } => "📞",
-                    };
-
-                    let label_text = match &node.node_type {
-                        NodeType::Dialogue {
-                            speaker,
-                            text_preview,
-                        } => {
-                            format!("{} {}: {}", icon, speaker, truncate(text_preview, 20))
-                        }
-                        NodeType::Choice {
-                            prompt,
-                            option_count,
-                        } => {
-                            format!("{} {} ({} opts)", icon, truncate(prompt, 15), option_count)
-                        }
-                        NodeType::Scene { background } => {
-                            format!(
-                                "{} Scene: {:?}",
-                                icon,
-                                background.as_ref().map(|s| truncate(s, 15))
-                            )
-                        }
-                        NodeType::Jump => format!("{} Jump", icon),
-                        NodeType::ConditionalJump { condition } => {
-                            format!("{} If: {}", icon, truncate(condition, 15))
-                        }
-                        NodeType::StateChange { description } => {
-                            format!("{} {}", icon, truncate(description, 20))
-                        }
-                        NodeType::Patch => format!("{} Patch", icon),
-                        NodeType::ExtCall { command } => {
-                            format!("{} Call: {}", icon, truncate(command, 15))
-                        }
-                    };
-
-                    let labels_text = if node.labels.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" [{}]", node.labels.join(", "))
-                    };
-
-                    let full_text = format!("{}: {}{}", node.id, label_text, labels_text);
-
-                    let response = ui.selectable_label(
-                        is_selected,
-                        egui::RichText::new(full_text).color(reachable_color),
-                    );
-
-                    if response.clicked() {
-                        *self.selected_node = Some(node.id);
+        // Node list
+        // snapshot IDs to avoid borrow conflict while iterating?
+        // We need to iterate and potentially mutate selection.
+        // We can't iterate `self.graph.nodes` (borrow) and mutate `self.graph.selected` (borrow mut).
+        // So we collect a list of (id, type_info) first.
+        let nodes: Vec<(u32, String, egui::Color32)> = self
+            .graph
+            .nodes()
+            .map(|(id, node, _)| {
+                let info = match node {
+                    StoryNode::Dialogue { speaker, text } => {
+                        format!("💬 {}: {}", speaker, truncate(text, 20))
                     }
+                    StoryNode::Choice { prompt, .. } => format!("🔀 {}", truncate(prompt, 20)),
+                    StoryNode::Scene { background } => format!("🎬 {}", truncate(background, 20)),
+                    StoryNode::Jump { target } => format!("↪ Jump to {}", target),
+                    StoryNode::Start => "▶ Start".to_string(),
+                    StoryNode::End => "⏹ End".to_string(),
+                };
+                (*id, info, node.color())
+            })
+            .collect();
+
+        let mut new_selection = None;
+        let current_selection = self.graph.selected;
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            for (id, text, color) in nodes {
+                let is_selected = current_selection == Some(id);
+                let response = ui.selectable_label(
+                    is_selected,
+                    egui::RichText::new(format!("{}: {}", id, text)).color(color),
+                );
+
+                if response.clicked() {
+                    new_selection = Some(id);
                 }
-            });
-        } else {
-            ui.centered_and_justified(|ui| {
-                ui.label("No script loaded");
-            });
+            }
+        });
+
+        if let Some(id) = new_selection {
+            self.graph.selected = Some(id);
         }
     }
 }
 
-fn truncate(s: &str, max_len: usize) -> &str {
-    if s.len() > max_len {
-        &s[..max_len.min(s.len())]
+/// Truncates a string to a certain length with ellipsis.
+pub fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
     } else {
-        s
+        let mut result: String = s.chars().take(max_chars).collect();
+        result.push('…');
+        result
     }
 }

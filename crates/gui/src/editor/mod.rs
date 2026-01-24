@@ -6,9 +6,13 @@
 //! - Viewport for scene preview
 //! - Inspector for entity properties
 
+mod asset_browser;
+mod diff_dialog;
+mod errors;
 mod graph_panel;
 mod inspector_panel;
 mod lint_checks;
+mod lint_panel;
 mod node_editor;
 mod node_graph;
 mod node_rendering;
@@ -18,27 +22,31 @@ mod script_sync;
 mod timeline_panel;
 mod undo;
 mod viewport_panel;
+mod visual_composer;
 
+pub use asset_browser::AssetBrowserPanel;
+pub use diff_dialog::DiffDialog;
+pub use errors::EditorError;
 pub use graph_panel::GraphPanel;
 pub use inspector_panel::InspectorPanel;
 pub use lint_checks::{validate as validate_graph, LintIssue, LintSeverity};
+pub use lint_panel::LintPanel;
 pub use node_editor::NodeEditorPanel;
 pub use node_graph::NodeGraph;
 pub use node_types::{ContextMenu, StoryNode, ToastKind, ToastState};
 pub use timeline_panel::TimelinePanel;
 pub use undo::UndoStack;
 pub use viewport_panel::ViewportPanel;
+pub use visual_composer::VisualComposerPanel;
 
 use eframe::egui;
 use std::path::PathBuf;
 use tracing::{info, instrument};
 
 use visual_novel_engine::{
-    Engine, ResourceLimiter, SceneState, ScriptRaw, SecurityPolicy, StoryGraph, Timeline,
+    manifest::ProjectManifest, Engine, ResourceLimiter, SceneState, ScriptRaw, SecurityPolicy,
+    StoryGraph, Timeline,
 };
-
-mod errors;
-pub use errors::EditorError;
 
 /// Runs the editor workbench as a standalone application.
 pub fn run_editor() -> Result<(), eframe::Error> {
@@ -131,6 +139,23 @@ pub struct EditorWorkbench {
     pub toast: Option<ToastState>,
     /// Error message (if any).
     pub error: Option<String>,
+    /// The project manifest (Single Source of Truth).
+    pub manifest: Option<ProjectManifest>,
+    /// Show asset browser panel.
+    pub show_asset_browser: bool,
+    /// Is the Node Editor popped out in a separate window?
+    pub node_editor_window_open: bool,
+
+    // Validation
+    /// Issues found during validation.
+    pub validation_issues: Vec<LintIssue>,
+    /// Show validation panel.
+    pub show_validation: bool,
+
+    // Save Confirmation
+    pub show_save_confirm: bool,
+    pub diff_dialog: Option<DiffDialog>,
+    pub pending_save_path: Option<PathBuf>,
 }
 
 impl Default for EditorWorkbench {
@@ -155,6 +180,14 @@ impl Default for EditorWorkbench {
             undo_stack: UndoStack::new(),
             toast: None,
             error: None,
+            manifest: Some(ProjectManifest::new("New Project", "Unknown")),
+            show_asset_browser: true,
+            node_editor_window_open: false,
+            validation_issues: Vec::new(),
+            show_validation: false,
+            show_save_confirm: false,
+            diff_dialog: None,
+            pending_save_path: None,
         }
     }
 }
@@ -166,36 +199,55 @@ impl EditorWorkbench {
     }
 
     /// Loads a script into the editor.
+    /// Loads a script into the editor.
     ///
     /// # Contract
-    /// - Parses and compiles the script
-    /// - Syncs the NodeGraph from the raw script
-    /// - Creates the engine for playback
+    /// - Parses the script (must be valid JSON)
+    /// - Syncs NodeGraph (always)
+    /// - Attempts to compile and create Engine
+    /// - If compilation fails, loads graph but sets error state
     pub fn load_script(&mut self, json: &str) -> Result<(), String> {
         let script = ScriptRaw::from_json(json).map_err(|e| e.to_string())?;
-        let compiled = script.compile().map_err(|e| e.to_string())?;
 
-        // Generate the story graph (for visualization)
-        self.graph = Some(StoryGraph::from_script(&compiled));
-
-        // Sync the node editor graph from raw script
+        // 1. Always load the graph so the user can see the structure
         self.node_graph = NodeGraph::from_script(&script);
         self.node_graph.clear_modified();
-
-        // Store the current script
         self.current_script = Some(script.clone());
-
-        // Create the engine for playback
-        let engine = Engine::new(
-            script,
-            SecurityPolicy::default(),
-            ResourceLimiter::default(),
-        )
-        .map_err(|e| e.to_string())?;
-
-        self.engine = Some(engine);
         self.selected_node = Some(0);
-        self.error = None;
+
+        // 2. Try to compile for Engine/Playback
+        match script.compile() {
+            Ok(compiled) => {
+                // Success: Full Load
+                self.graph = Some(StoryGraph::from_script(&compiled));
+
+                let engine = Engine::new(
+                    script,
+                    SecurityPolicy::default(),
+                    ResourceLimiter::default(),
+                )
+                .map_err(|e| e.to_string())?;
+
+                self.engine = Some(engine);
+                self.error = None;
+                self.toast = Some(ToastState::success("Script loaded successfully"));
+            }
+            Err(e) => {
+                // Failure: Partial Load (Graph only)
+                self.graph = None;
+                self.engine = None;
+                self.error = Some(format!("Loaded with errors: {}", e));
+                self.toast = Some(ToastState::warning("Loaded with errors"));
+
+                // Add to validation panel too
+                self.validation_issues.push(LintIssue {
+                    node_id: None,
+                    severity: LintSeverity::Error,
+                    message: e.to_string(),
+                });
+                self.show_validation = true;
+            }
+        }
 
         Ok(())
     }
@@ -209,19 +261,11 @@ impl EditorWorkbench {
     }
 
     /// Syncs the node graph back to the current script.
-    ///
-    /// # Contract
-    /// - Converts NodeGraph to ScriptRaw
-    /// - Recompiles and updates the engine
-    /// - Clears the modified flag
     pub fn sync_graph_to_script(&mut self) -> Result<(), String> {
         let script = self.node_graph.to_script();
         let compiled = script.compile().map_err(|e| e.to_string())?;
 
-        // Update story graph
         self.graph = Some(StoryGraph::from_script(&compiled));
-
-        // Update engine
         let engine = Engine::new(
             script.clone(),
             SecurityPolicy::default(),
@@ -247,97 +291,81 @@ impl EditorWorkbench {
         self.graph = None;
         self.undo_stack.clear();
         self.error = None;
-
-        debug_assert!(
-            self.node_graph.is_empty(),
-            "Postcondition: new script should have empty graph"
-        );
     }
 
-    /// Saves the script to the current file path.
-    ///
-    /// # Errors
-    /// Returns EditorError if no file path is set or write fails.
-    #[instrument(skip(self))]
-    pub fn save_script(&mut self) -> Result<(), String> {
-        let path = self
-            .current_file_path
-            .clone()
-            .ok_or_else(|| EditorError::NoFilePath.to_string())?;
-
-        info!("Saving script to {:?}", path);
-        self.save_script_as(&path)
+    /// Request to save the script ( triggers confirmation ).
+    pub fn request_save(&mut self) {
+        if let Some(path) = self.current_file_path.clone() {
+            self.request_save_as(&path);
+        }
     }
 
-    /// Saves the script to a specific path.
-    ///
-    /// # Contract
-    /// - Converts graph to script
-    /// - Writes JSON to file
-    /// - Updates current_file_path
-    #[instrument(skip(self))]
-    pub fn save_script_as(&mut self, path: &std::path::Path) -> Result<(), String> {
-        debug_assert!(
-            path.extension().is_some(),
-            "Precondition: path should have an extension"
-        );
+    /// Request to save as specific path ( triggers confirmation ).
+    pub fn request_save_as(&mut self, path: &std::path::Path) {
+        self.pending_save_path = Some(path.to_path_buf());
+        self.diff_dialog = Some(DiffDialog::new(
+            &self.node_graph,
+            self.current_script.as_ref(),
+        ));
+        self.show_save_confirm = true;
+    }
+
+    /// Actual save execution (called after confirmation).
+    pub fn execute_save(&mut self) -> Result<(), String> {
+        let Some(path) = self.pending_save_path.clone() else {
+            return Err("No save path specified".to_string());
+        };
 
         info!("Saving script as {:?}", path);
 
-        // Sync graph to script first
         let script = self.node_graph.to_script();
 
-        // Serialize to JSON
-        let json = serde_json::to_string_pretty(&script)
-            .map_err(|e| EditorError::JsonError(e).to_string())?;
+        // Serialize to JSON with version envelope
+        let json = script
+            .to_json()
+            .map_err(|e| EditorError::EngineError(e.to_string()).to_string())?;
 
         // Write to file
-        std::fs::write(path, &json).map_err(|e| EditorError::IoError(e).to_string())?;
+        std::fs::write(&path, &json).map_err(|e| EditorError::IoError(e).to_string())?;
 
-        // Update state
-        self.current_file_path = Some(path.to_path_buf());
+        self.current_file_path = Some(path);
         self.current_script = Some(script);
         self.node_graph.clear_modified();
 
         info!("Script saved successfully ({} bytes)", json.len());
-
-        debug_assert!(
-            !self.node_graph.is_modified(),
-            "Postcondition: modified flag should be cleared"
-        );
-
         Ok(())
     }
 
+    /// Validates the current project structure.
+    pub fn validate_project(&mut self) -> bool {
+        self.validation_issues = validate_graph(&self.node_graph);
+
+        if !self.validation_issues.is_empty() {
+            self.show_validation = true;
+            self.show_timeline = false;
+            self.show_asset_browser = false;
+            return false;
+        }
+
+        true
+    }
+
     /// Exports the compiled script to a file.
-    ///
-    /// # Contract
-    /// - Compiles the script
-    /// - Writes compiled JSON to file
     #[instrument(skip(self))]
     pub fn export_compiled(&self, path: &std::path::Path) -> Result<(), String> {
-        debug_assert!(
-            path.extension().is_some(),
-            "Precondition: path should have an extension"
-        );
-
         info!("Exporting compiled script to {:?}", path);
 
-        // Compile the script
         let script = self.node_graph.to_script();
         let compiled = script
             .compile()
             .map_err(|e| EditorError::CompileError(e.to_string()).to_string())?;
 
-        // Serialize compiled script to JSON
         let json =
             serde_json::to_string(&compiled).map_err(|e| EditorError::JsonError(e).to_string())?;
 
-        // Write to file
         std::fs::write(path, &json).map_err(|e| EditorError::IoError(e).to_string())?;
 
         info!("Compiled script exported ({} bytes)", json.len());
-
         Ok(())
     }
 
@@ -359,18 +387,15 @@ impl EditorWorkbench {
 
     /// Renders the editor UI.
     pub fn ui(&mut self, ctx: &egui::Context) {
-        // Top menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    // New Script
                     if ui.button("📄 New Script").clicked() {
                         self.new_script();
                         self.toast = Some(ToastState::success("New script created"));
                         ui.close_menu();
                     }
 
-                    // Open Script
                     if ui.button("📂 Open Script...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("JSON Script", &["json"])
@@ -378,50 +403,58 @@ impl EditorWorkbench {
                         {
                             if let Err(e) = self.load_script_from_path(&path) {
                                 self.error = Some(e);
-                            } else {
-                                self.toast = Some(ToastState::success("Script loaded"));
                             }
+                            // Toast is handled inside load_script/load_script_from_path
                         }
                         ui.close_menu();
                     }
 
                     ui.separator();
 
-                    // Save
                     let can_save = self.current_file_path.is_some();
                     if ui
                         .add_enabled(can_save, egui::Button::new("💾 Save"))
                         .clicked()
                     {
-                        if let Err(e) = self.save_script() {
-                            self.error = Some(e);
-                        } else {
-                            self.toast = Some(ToastState::success("Script saved"));
-                        }
+                        self.request_save();
                         ui.close_menu();
                     }
 
-                    // Save As
                     if ui.button("💾 Save As...").clicked() {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("JSON Script", &["json"])
                             .set_file_name("script.json")
                             .save_file()
                         {
-                            if let Err(e) = self.save_script_as(&path) {
-                                self.error = Some(e);
-                            } else {
-                                self.toast = Some(ToastState::success("Script saved"));
-                            }
+                            self.request_save_as(&path);
                         }
                         ui.close_menu();
                     }
 
                     ui.separator();
 
-                    // Export Compiled
+                    if ui.button("🛡️ Check Issues").clicked() {
+                        if self.validate_project() {
+                            self.toast = Some(ToastState::success("Project is valid!"));
+                        } else {
+                            self.toast = Some(ToastState::warning("Issues found"));
+                        }
+                        ui.close_menu();
+                    }
+
+                    ui.separator();
+
                     if ui.button("📦 Export Compiled...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
+                        self.validate_project();
+                        let has_errors = self
+                            .validation_issues
+                            .iter()
+                            .any(|i| i.severity == LintSeverity::Error);
+
+                        if has_errors {
+                            self.toast =
+                                Some(ToastState::error("Fix critical errors before exporting"));
+                        } else if let Some(path) = rfd::FileDialog::new()
                             .add_filter("Compiled Script", &["vnc"])
                             .set_file_name("script.vnc")
                             .save_file()
@@ -448,6 +481,7 @@ impl EditorWorkbench {
                     ui.checkbox(&mut self.show_inspector, "Inspector Panel");
                     ui.separator();
                     ui.checkbox(&mut self.show_node_editor, "📊 Node Editor");
+                    ui.checkbox(&mut self.node_editor_window_open, "🗖 Separate Window");
                 });
 
                 ui.menu_button("Mode", |ui| {
@@ -475,7 +509,6 @@ impl EditorWorkbench {
             });
         });
 
-        // Error banner
         let mut clear_error = false;
         if let Some(ref error) = self.error {
             let error_clone = error.clone();
@@ -493,72 +526,118 @@ impl EditorWorkbench {
             self.error = None;
         }
 
+        if self.show_save_confirm {
+            if let Some(dialog) = &self.diff_dialog {
+                if dialog.show(ctx, &mut self.show_save_confirm) {
+                    if let Err(e) = self.execute_save() {
+                        self.error = Some(e);
+                    } else {
+                        self.toast = Some(ToastState::success("Script saved safely"));
+                    }
+                }
+            }
+        }
+
         match self.mode {
             EditorMode::Player => self.render_player_mode(ctx),
             EditorMode::Editor => self.render_editor_mode(ctx),
         }
     }
 
-    /// Renders player mode (game view only).
     fn render_player_mode(&mut self, ctx: &egui::Context) {
-        // Delegate to player_ui module
         player_ui::render_player_ui(&mut self.engine, &mut self.toast, ctx);
     }
 
-    /// Renders editor mode with panels.
     fn render_editor_mode(&mut self, ctx: &egui::Context) {
-        // Left panel: Graph
         if self.show_graph {
             egui::SidePanel::left("graph_panel")
                 .default_width(300.0)
                 .resizable(true)
                 .show(ctx, |ui| {
-                    GraphPanel::new(&self.graph, &mut self.selected_node).ui(ui);
+                    GraphPanel::new(&mut self.node_graph).ui(ui);
                 });
         }
 
-        // Right panel: Inspector
         if self.show_inspector {
             egui::SidePanel::right("inspector_panel")
                 .default_width(250.0)
                 .resizable(true)
                 .show(ctx, |ui| {
+                    let selected = self.node_graph.selected;
                     InspectorPanel::new(
                         &self.scene,
-                        &self.graph,
-                        &self.current_script,
-                        self.selected_node,
+                        &mut self.node_graph,
+                        selected,
                         self.selected_entity,
                     )
                     .ui(ui);
                 });
         }
 
-        // Bottom panel: Timeline
-        if self.show_timeline {
+        if self.show_timeline || self.show_asset_browser || self.show_validation {
             egui::TopBottomPanel::bottom("timeline_panel")
-                .default_height(150.0)
+                .default_height(200.0)
                 .resizable(true)
                 .show(ctx, |ui| {
-                    TimelinePanel::new(
-                        &mut self.timeline,
-                        &mut self.current_time,
-                        &mut self.is_playing,
-                    )
-                    .ui(ui);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .selectable_label(
+                                self.show_timeline
+                                    && !self.show_asset_browser
+                                    && !self.show_validation,
+                                "Timeline",
+                            )
+                            .clicked()
+                        {
+                            self.show_timeline = true;
+                            self.show_asset_browser = false;
+                            self.show_validation = false;
+                        }
+                        if ui
+                            .selectable_label(self.show_asset_browser, "Asset Browser")
+                            .clicked()
+                        {
+                            self.show_asset_browser = true;
+                            self.show_timeline = false;
+                            self.show_validation = false;
+                        }
+                        if ui
+                            .selectable_label(self.show_validation, "Validation")
+                            .clicked()
+                        {
+                            self.show_validation = true;
+                            self.show_timeline = false;
+                            self.show_asset_browser = false;
+                        }
+                    });
+                    ui.separator();
+
+                    if self.show_validation {
+                        LintPanel::new(&self.validation_issues, &mut self.selected_node).ui(ui);
+                    } else if self.show_asset_browser {
+                        if let Some(manifest) = &self.manifest {
+                            AssetBrowserPanel::new(manifest).ui(ui);
+                        } else {
+                            ui.label("No Manifest Loaded");
+                        }
+                    } else {
+                        TimelinePanel::new(
+                            &mut self.timeline,
+                            &mut self.current_time,
+                            &mut self.is_playing,
+                        )
+                        .ui(ui);
+                    }
                 });
         }
 
-        // Global keyboard shortcuts for undo/redo
         ctx.input(|i| {
-            // Ctrl+Z = Undo
             if i.modifiers.ctrl && i.key_pressed(egui::Key::Z) && !i.modifiers.shift {
                 if let Some(previous) = self.undo_stack.undo(self.node_graph.clone()) {
                     self.node_graph = previous;
                     self.toast = Some(ToastState::success("Undo"));
                 }
             }
-            // Ctrl+Y or Ctrl+Shift+Z = Redo
             if (i.modifiers.ctrl && i.key_pressed(egui::Key::Y))
                 || (i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::Z))
             {
@@ -569,31 +648,61 @@ impl EditorWorkbench {
             }
         });
 
-        // Central panel: Viewport or Node Editor
+        if self.node_editor_window_open {
+            let mut was_modified = false;
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("node_editor_viewport"),
+                egui::ViewportBuilder::default()
+                    .with_title("Visual Novel Graph")
+                    .with_inner_size([900.0, 600.0]),
+                |ctx, _class| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let graph_before = self.node_graph.clone();
+                        NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack).ui(ui);
+                        if self.node_graph.is_modified() {
+                            self.undo_stack.push(graph_before);
+                            self.node_graph.clear_modified();
+                            was_modified = true;
+                        }
+                    });
+                },
+            );
+
+            if was_modified {
+                if let Err(e) = self.sync_graph_to_script() {
+                    tracing::warn!("Live sync failed: {}", e);
+                }
+            }
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            if self.show_node_editor {
-                // Save state before potential modifications for undo
-                let graph_before = self.node_graph.clone();
+            if self.node_editor_window_open || !self.show_node_editor {
+                VisualComposerPanel::new(
+                    &mut self.scene,
+                    &self.engine,
+                    &mut self.node_graph,
+                    &mut self.selected_entity,
+                )
+                .ui(ui);
 
-                NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack).ui(ui);
-
-                // If graph was modified, push to undo stack AND sync to script (live preview)
                 if self.node_graph.is_modified() {
-                    self.undo_stack.push(graph_before);
-
-                    // Live Sync: Update the script in memory (for JSON view) but DO NOT save to disk.
-                    // This keeps the "static part" (current_script) up-to-date with visuals.
                     if let Err(e) = self.sync_graph_to_script() {
-                        tracing::warn!("Live sync failed: {}", e);
+                        tracing::warn!("Drop sync failed: {}", e);
                     }
-
                     self.node_graph.clear_modified();
                 }
             } else {
-                ViewportPanel::new(&self.scene, &self.engine).ui(ui);
-            }
+                let graph_before = self.node_graph.clone();
+                NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack).ui(ui);
 
-            // Render toast notification on top
+                if self.node_graph.is_modified() {
+                    self.undo_stack.push(graph_before);
+                    if let Err(e) = self.sync_graph_to_script() {
+                        tracing::warn!("Live sync failed: {}", e);
+                    }
+                    self.node_graph.clear_modified();
+                }
+            }
             node_rendering::render_toast(ui, &mut self.toast);
         });
     }

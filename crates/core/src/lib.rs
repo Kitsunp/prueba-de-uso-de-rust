@@ -5,6 +5,7 @@ mod entity;
 mod error;
 mod event;
 mod graph;
+pub mod manifest;
 mod render;
 mod resource;
 mod script;

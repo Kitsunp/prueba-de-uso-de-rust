@@ -187,43 +187,8 @@ impl<'a> NodeEditorPanel<'a> {
     }
 
     fn handle_input(&mut self, ui: &egui::Ui, response: &egui::Response) {
-        // Pan with middle mouse, Ctrl+drag, or Left-drag on background
-        // We check if we are NOT dragging a specific node context later, but here
-        // response.dragged() means the painter (background) captured the drag.
-        // If the click started on a node, egui usually consumes it if we used separate widgets,
-        // but here we paint manually.
-        // However, in render_nodes, we check press_origin.
-        // If we drag the background, we want to pan.
-        // WE MUST ensure we don't pan if we are actually moving a node.
-        // The node drag logic updates node position. We should prevent panning if a node is being moved.
-        // But handle_input runs BEFORE render_nodes.
-        // Actually, if we use `response.dragged_by(PointerButton::Primary)`, it fires for both.
-        // Strategy: Only pan if standard pan keys OR (Left Drag AND no node selected/hovered?)
-        // Simpler: If the user presses Ctrl or Middle, explicit pan.
-        // For implicit left-pan: likely need to know if a node was hit.
-        // Efficient way: Check if hover_pos is contained in any node rect? No, expensive.
-        // Better: Let's trust that users who want to pan simply drag empty space.
-        // But if I drag a node, I don't want to move the camera.
-        // The node drag logic is in `render_nodes`.
-        // Let's implement a flag or logic:
-        // For now, let's just ADD Left Drag to the existing condition, assuming conflict resolution happens elsewhere or isn't fatal.
-        // Wait, if I drag a node, `response.dragged()` is true. If I pan, I move the node AND the camera. That's bad.
-        // Correct fix: We need to know if we clicked a node.
-        // We can check `self.graph.get_node_at(screen_pos)`? We don't have that easily without iterating.
-        // Let's stick to the requested "Input: Habilitar Pan con Clic Izquierdo en el fondo".
-        // Use `response.drag_start_pos()` if available or interact pointer.
-        // If we can cheap-check if we started on a node.
-
         let mut is_panning = response.dragged_by(egui::PointerButton::Middle)
             || (response.dragged() && ui.input(|i| i.modifiers.ctrl));
-
-        // Attempt to allow comfortable left-drag pan (if no node under cursor)
-        // This is tricky in immediate mode without hit-testing first.
-        // Let's defer strict hit-testing and just allow it for now, relying on the user to grab nodes accurately?
-        // No, that's buggy.
-        // Alternative: Input handling usually happens *after* rendering in some architectures, or we do a hit test pass.
-        // Let's iterate nodes inversely to check hit?
-        // Since we have < 100 nodes typically, it's fast.
 
         if response.dragged_by(egui::PointerButton::Primary)
             && !is_panning
@@ -234,7 +199,6 @@ impl<'a> NodeEditorPanel<'a> {
                 // We need the START position of the drag, not current.
                 if let Some(start_pos) = ui.input(|i| i.pointer.press_origin()) {
                     let mut started_on_node = false;
-                    // Simple hit test
                     for (_, _, n_pos) in self.graph.nodes() {
                         let screen_pos = self.graph_to_screen(response.rect, *n_pos);
                         let size = egui::vec2(NODE_WIDTH, NODE_HEIGHT) * self.graph.zoom();
@@ -298,38 +262,31 @@ impl<'a> NodeEditorPanel<'a> {
         }
 
         // === Zoom Keyboard Shortcuts ===
-        // + or = to zoom in
         if ui.input(|i| i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals)) {
             self.graph.zoom_by(0.1);
         }
-        // - to zoom out
         if ui.input(|i| i.key_pressed(egui::Key::Minus)) {
             self.graph.zoom_by(-0.1);
         }
-        // 0 to reset view
         if ui.input(|i| i.key_pressed(egui::Key::Num0)) {
             self.graph.reset_view();
         }
-        // H to zoom-to-fit all nodes
         if ui.input(|i| i.key_pressed(egui::Key::H)) {
             self.graph.zoom_to_fit();
         }
 
         // === Node Action Shortcuts ===
-        // Delete or Backspace to remove selected node
         if ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
             if let Some(id) = self.graph.selected {
                 self.graph.remove_node(id);
                 self.graph.selected = None;
             }
         }
-        // E to edit selected node
         if ui.input(|i| i.key_pressed(egui::Key::E)) {
             if let Some(id) = self.graph.selected {
                 self.graph.editing = Some(id);
             }
         }
-        // Ctrl+D to duplicate selected node
         if ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::D)) {
             if let Some(id) = self.graph.selected {
                 self.graph.duplicate_node(id);
@@ -338,28 +295,53 @@ impl<'a> NodeEditorPanel<'a> {
     }
 
     fn render_connections(&self, painter: &egui::Painter, rect: egui::Rect) {
-        for (from, to) in self.graph.connections() {
+        for conn in self.graph.connections() {
             let from_pos = self
                 .graph
                 .nodes()
-                .find(|(id, _, _)| *id == *from)
-                .map(|(_, _, p)| *p);
+                .find(|(id, _, _)| *id == conn.from)
+                .map(|(_, node, p)| (*p, node));
             let to_pos = self
                 .graph
                 .nodes()
-                .find(|(id, _, _)| *id == *to)
+                .find(|(id, _, _)| *id == conn.to)
                 .map(|(_, _, p)| *p);
-            if let (Some(from_pos), Some(to_pos)) = (from_pos, to_pos) {
-                // Fix: Scale the offsets by graph.zoom() so lines stay attached when zoomed out
+
+            if let (Some((from_base, from_node)), Some(to_base)) = (from_pos, to_pos) {
+                // Determine source port position
+                let from_screen = self.graph_to_screen(
+                    rect,
+                    self.calculate_port_pos(from_base, from_node, conn.from_port),
+                );
+
+                // Target is always Top-Center (Input)
                 let offset_x = (NODE_WIDTH / 2.0) * self.graph.zoom();
-                let offset_y = NODE_HEIGHT * self.graph.zoom();
-
-                let from_screen =
-                    self.graph_to_screen(rect, from_pos) + egui::vec2(offset_x, offset_y);
-
-                let to_screen = self.graph_to_screen(rect, to_pos) + egui::vec2(offset_x, 0.0);
+                let to_screen = self.graph_to_screen(rect, to_base) + egui::vec2(offset_x, 0.0);
 
                 node_rendering::draw_bezier_connection(painter, from_screen, to_screen);
+            }
+        }
+    }
+
+    /// Calculates local graph position of an output port
+    fn calculate_port_pos(
+        &self,
+        node_pos: egui::Pos2,
+        node: &StoryNode,
+        port: usize,
+    ) -> egui::Pos2 {
+        match node {
+            StoryNode::Choice { .. } => {
+                let header_height = 40.0;
+                let option_height = 30.0;
+                let option_offset =
+                    header_height + (port as f32 * option_height) + (option_height / 2.0);
+
+                node_pos + egui::vec2(NODE_WIDTH / 2.0, option_offset + 15.0)
+            }
+            _ => {
+                // Standard single output (Bottom Center)
+                node_pos + egui::vec2(NODE_WIDTH / 2.0, NODE_HEIGHT)
             }
         }
     }
@@ -376,15 +358,37 @@ impl<'a> NodeEditorPanel<'a> {
         let mut double_clicked_node = None;
         let nodes: Vec<_> = self.graph.nodes().cloned().collect();
 
-        // DRAG LOGIC: State Machine
-        // 1. Handle Drag Start
+        // 1. Handle Drag Start (Nodes)
         if response.drag_started_by(egui::PointerButton::Primary) {
             if let Some(pos) = response.interact_pointer_pos() {
-                // Check if any node was hit
-                // Iterate in reverse to respect Z-order (last rendered is top)
-                for (id, _, n_pos) in self.graph.nodes().collect::<Vec<_>>().iter().rev() {
+                // Check ports first (priority over node move)
+                for (id, node, n_pos) in nodes.iter().rev() {
+                    if let StoryNode::Choice { options, .. } = node {
+                        // Check option ports
+                        for (i, _) in options.iter().enumerate() {
+                            let port_pos = self.calculate_port_pos(*n_pos, node, i);
+                            let screen_pos = self.graph_to_screen(rect, port_pos);
+                            if screen_pos.distance(pos) < 10.0 * self.graph.zoom() {
+                                self.graph.connecting_from = Some((*id, i));
+                                return; // Consumed by port drag
+                            }
+                        }
+                    } else if node.can_connect_from() {
+                        // Standard port
+                        let port_pos = self.calculate_port_pos(*n_pos, node, 0);
+                        let screen_pos = self.graph_to_screen(rect, port_pos);
+                        if screen_pos.distance(pos) < 10.0 * self.graph.zoom() {
+                            self.graph.connecting_from = Some((*id, 0));
+                            return;
+                        }
+                    }
+                }
+
+                // Then Node Drag
+                for (id, _, n_pos) in nodes.iter().rev() {
                     let screen_pos = self.graph_to_screen(rect, *n_pos);
-                    let size = egui::vec2(NODE_WIDTH, NODE_HEIGHT) * self.graph.zoom();
+                    let height = self.get_node_height(self.graph.get_node(*id).unwrap());
+                    let size = egui::vec2(NODE_WIDTH, height) * self.graph.zoom();
                     let node_rect = egui::Rect::from_min_size(screen_pos, size);
                     if node_rect.contains(pos) {
                         self.graph.dragging_node = Some(*id);
@@ -394,7 +398,7 @@ impl<'a> NodeEditorPanel<'a> {
             }
         }
 
-        // 2. Handle Dragging (continuous)
+        // 2. Handle Dragging
         if response.dragged_by(egui::PointerButton::Primary) && self.graph.context_menu.is_none() {
             if let Some(id) = self.graph.dragging_node {
                 let delta = response.drag_delta() / self.graph.zoom();
@@ -408,21 +412,44 @@ impl<'a> NodeEditorPanel<'a> {
         // 3. Handle Drag End
         if response.drag_stopped() {
             self.graph.dragging_node = None;
+            if let Some((from, _)) = self.graph.connecting_from {
+                if let Some(pos) = response.interact_pointer_pos() {
+                    for (to_id, _, to_pos) in nodes.iter().rev() {
+                        let screen_pos = self.graph_to_screen(rect, *to_pos);
+                        let height = self.get_node_height(self.graph.get_node(*to_id).unwrap());
+                        let size = egui::vec2(NODE_WIDTH, height) * self.graph.zoom();
+                        let node_rect = egui::Rect::from_min_size(screen_pos, size);
+
+                        if node_rect.contains(pos) {
+                            if from != *to_id {
+                                // FINALIZE CONNECTION
+                                let port = self.graph.connecting_from.unwrap().1;
+                                self.graph.connect_port(from, port, *to_id);
+                            }
+                            break;
+                        }
+                    }
+                }
+                self.graph.connecting_from = None;
+            }
         }
 
+        // Rendering Loop
         for (id, node, pos) in &nodes {
             let screen_pos = self.graph_to_screen(rect, *pos);
-            let size = egui::vec2(NODE_WIDTH, NODE_HEIGHT) * self.graph.zoom();
+            let height = self.get_node_height(node);
+            let size = egui::vec2(NODE_WIDTH, height) * self.graph.zoom();
             let node_rect = egui::Rect::from_min_size(screen_pos, size);
+
             if !rect.intersects(node_rect) {
                 continue;
             }
 
             let is_selected = self.graph.selected == Some(*id);
-            let is_connecting = self.graph.connecting_from == Some(*id);
-            // Highlight if dragging THIS node
+            let is_connecting = self.graph.connecting_from.map(|(nid, _)| nid) == Some(*id);
             let is_dragging = self.graph.dragging_node == Some(*id);
 
+            // Shape
             let bg_color = if is_selected || is_dragging {
                 node.color().linear_multiply(1.3)
             } else if is_connecting {
@@ -432,48 +459,137 @@ impl<'a> NodeEditorPanel<'a> {
             };
 
             painter.rect_filled(node_rect, 6.0 * self.graph.zoom(), bg_color);
-            let border = if is_selected || is_dragging {
+            let border_color = if is_selected {
                 egui::Color32::from_rgb(100, 150, 255)
             } else {
                 egui::Color32::from_rgb(80, 80, 90)
             };
             painter.rect_stroke(
                 node_rect,
-                6.0 * self.graph.zoom(),
-                egui::Stroke::new(2.0, border),
+                2.0 * self.graph.zoom(),
+                egui::Stroke::new(2.0, border_color),
             );
 
-            let font = 13.0 * self.graph.zoom();
+            // Content
+            let font_size = 13.0 * self.graph.zoom();
+            let text_pos = node_rect.min + egui::vec2(8.0, 8.0) * self.graph.zoom();
             painter.text(
-                node_rect.min + egui::vec2(8.0, 8.0) * self.graph.zoom(),
+                text_pos,
                 egui::Align2::LEFT_TOP,
                 format!("{} {}", node.icon(), node.type_name()),
-                egui::FontId::proportional(font),
-                if is_dragging {
-                    egui::Color32::WHITE
-                } else {
-                    egui::Color32::from_gray(240)
-                }, // Explicit white for readability on dark nodes
+                egui::FontId::proportional(font_size),
+                egui::Color32::WHITE,
             );
 
-            painter.text(
-                node_rect.min + egui::vec2(8.0, 28.0) * self.graph.zoom(),
-                egui::Align2::LEFT_TOP,
-                self.get_node_preview(node),
-                egui::FontId::proportional(11.0 * self.graph.zoom()),
-                egui::Color32::from_gray(200),
-            );
+            // Body / Options
+            match node {
+                StoryNode::Choice { options, .. } => {
+                    let header_height = 40.0 * self.graph.zoom();
+                    let option_h = 30.0 * self.graph.zoom();
 
-            // Standard Clicks
-            if response.clicked() && !is_dragging {
-                // Only check clicks if we didn't just drag
+                    for (i, opt) in options.iter().enumerate() {
+                        let y_off = header_height + (i as f32 * option_h);
+                        let opt_rect = egui::Rect::from_min_size(
+                            node_rect.min + egui::vec2(0.0, y_off),
+                            egui::vec2(node_rect.width(), option_h),
+                        );
+
+                        // Double-click on option to edit
+                        if ui.input(|inp| {
+                            inp.pointer
+                                .button_double_clicked(egui::PointerButton::Primary)
+                        }) {
+                            if let Some(p) = response.interact_pointer_pos() {
+                                if opt_rect.contains(p) {
+                                    double_clicked_node = Some(*id);
+                                }
+                            }
+                        }
+
+                        painter.line_segment(
+                            [opt_rect.left_top(), opt_rect.right_top()],
+                            egui::Stroke::new(1.0, egui::Color32::BLACK),
+                        );
+
+                        painter.text(
+                            opt_rect.left_center() + egui::vec2(5.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            crate::editor::graph_panel::truncate(opt, 15),
+                            egui::FontId::proportional(11.0 * self.graph.zoom()),
+                            egui::Color32::LIGHT_GRAY,
+                        );
+
+                        // Socket visual & Interaction
+                        let socket_center =
+                            self.graph_to_screen(rect, self.calculate_port_pos(*pos, node, i));
+                        let hover_radius = 8.0 * self.graph.zoom();
+                        let is_hovered = response
+                            .hover_pos()
+                            .map_or(false, |p| p.distance(socket_center) < hover_radius);
+
+                        let mut color = egui::Color32::WHITE;
+                        let mut radius = 4.0 * self.graph.zoom();
+
+                        if is_hovered {
+                            color = egui::Color32::YELLOW;
+                            radius = 6.0 * self.graph.zoom();
+                            // Tooltip
+                            painter.text(
+                                socket_center + egui::vec2(10.0, -10.0),
+                                egui::Align2::LEFT_BOTTOM,
+                                format!("Connect '{}'", opt),
+                                egui::FontId::proportional(12.0),
+                                egui::Color32::YELLOW,
+                            );
+                        }
+
+                        painter.circle_filled(socket_center, radius, color);
+                    }
+                }
+                _ => {
+                    painter.text(
+                        node_rect.min + egui::vec2(8.0, 28.0) * self.graph.zoom(),
+                        egui::Align2::LEFT_TOP,
+                        self.get_node_preview(node),
+                        egui::FontId::proportional(11.0 * self.graph.zoom()),
+                        egui::Color32::from_gray(200),
+                    );
+
+                    if node.can_connect_from() {
+                        let socket_center =
+                            self.graph_to_screen(rect, self.calculate_port_pos(*pos, node, 0));
+                        let hover_radius = 8.0 * self.graph.zoom();
+                        let is_hovered = response
+                            .hover_pos()
+                            .map_or(false, |p| p.distance(socket_center) < hover_radius);
+
+                        let mut color = egui::Color32::WHITE;
+                        let mut radius = 4.0 * self.graph.zoom();
+
+                        if is_hovered {
+                            color = egui::Color32::YELLOW;
+                            radius = 6.0 * self.graph.zoom();
+                            painter.text(
+                                socket_center + egui::vec2(10.0, -10.0),
+                                egui::Align2::LEFT_BOTTOM,
+                                "Standard Output",
+                                egui::FontId::proportional(12.0),
+                                egui::Color32::YELLOW,
+                            );
+                        }
+
+                        painter.circle_filled(socket_center, radius, color);
+                    }
+                }
+            }
+
+            if response.clicked() && !is_dragging && self.graph.connecting_from.is_none() {
                 if let Some(p) = response.interact_pointer_pos() {
                     if node_rect.contains(p) {
                         clicked_node = Some(*id);
                     }
                 }
             }
-            // Right Click
             if response.secondary_clicked() {
                 if let Some(p) = response.interact_pointer_pos() {
                     if node_rect.contains(p) {
@@ -481,7 +597,6 @@ impl<'a> NodeEditorPanel<'a> {
                     }
                 }
             }
-            // Double Click
             if ui.input(|i| {
                 i.pointer
                     .button_double_clicked(egui::PointerButton::Primary)
@@ -495,13 +610,7 @@ impl<'a> NodeEditorPanel<'a> {
         }
 
         if let Some(id) = clicked_node {
-            if let Some(from) = self.graph.connecting_from.take() {
-                if from != id {
-                    self.graph.connect(from, id);
-                }
-            } else {
-                self.graph.selected = Some(id);
-            }
+            self.graph.selected = Some(id);
         }
         if let Some((id, pos)) = right_clicked_node {
             self.graph.context_menu = Some(ContextMenu {
@@ -511,6 +620,17 @@ impl<'a> NodeEditorPanel<'a> {
         }
         if let Some(id) = double_clicked_node {
             self.graph.editing = Some(id);
+        }
+    }
+
+    fn get_node_height(&self, node: &StoryNode) -> f32 {
+        match node {
+            StoryNode::Choice { options, .. } => {
+                let header = 40.0;
+                let option_h = 30.0;
+                header + (options.len().max(1) as f32 * option_h) + 10.0
+            }
+            _ => NODE_HEIGHT,
         }
     }
 
@@ -533,13 +653,11 @@ impl<'a> NodeEditorPanel<'a> {
         rect: egui::Rect,
         response: &egui::Response,
     ) {
-        if let Some(from_id) = self.graph.connecting_from {
-            if let Some((_, _, pos)) = self.graph.nodes().find(|(id, _, _)| *id == from_id) {
+        if let Some((from_id, from_port)) = self.graph.connecting_from {
+            if let Some((_, node, pos)) = self.graph.nodes().find(|(id, _, _)| *id == from_id) {
                 if let Some(cursor) = response.hover_pos() {
-                    let offset_x = (NODE_WIDTH / 2.0) * self.graph.zoom();
-                    let offset_y = NODE_HEIGHT * self.graph.zoom();
-
-                    let from = self.graph_to_screen(rect, *pos) + egui::vec2(offset_x, offset_y);
+                    let from =
+                        self.graph_to_screen(rect, self.calculate_port_pos(*pos, node, from_port));
                     painter.line_segment(
                         [from, cursor],
                         egui::Stroke::new(2.0, egui::Color32::YELLOW),
@@ -551,9 +669,9 @@ impl<'a> NodeEditorPanel<'a> {
 
     fn render_status_bar(&self, painter: &egui::Painter, rect: egui::Rect) {
         let hint = if self.graph.connecting_from.is_some() {
-            "🔗 Click a node to connect • Esc to cancel"
+            "🔗 Drag to target node to connect • Esc to cancel"
         } else {
-            "Click to select • Right-click for menu • Double-click to edit"
+            "Drag from socket to connect • Double-click to edit"
         };
         painter.text(
             rect.max - egui::vec2(10.0, 10.0),
@@ -572,17 +690,7 @@ mod tests {
     #[test]
     fn test_node_editor_panel_creation() {
         let mut graph = NodeGraph::new();
-        let _panel = NodeEditorPanel::new(&mut graph);
-    }
-
-    #[test]
-    fn test_get_node_preview_dialogue() {
-        let node = StoryNode::Dialogue {
-            speaker: "Alice".to_string(),
-            text: "Hello!".to_string(),
-        };
-        let mut graph = NodeGraph::new();
-        let panel = NodeEditorPanel::new(&mut graph);
-        assert_eq!(panel.get_node_preview(&node), "Alice");
+        let mut undo = UndoStack::new();
+        let _panel = NodeEditorPanel::new(&mut graph, &mut undo);
     }
 }

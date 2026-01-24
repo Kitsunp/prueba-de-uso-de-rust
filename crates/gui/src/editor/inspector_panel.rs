@@ -2,14 +2,14 @@
 //!
 //! Displays properties of selected nodes and entities.
 
+use crate::editor::{NodeGraph, StoryNode};
 use eframe::egui;
-use visual_novel_engine::{NodeType, SceneState, StoryGraph};
+use visual_novel_engine::SceneState;
 
 /// Inspector panel widget.
 pub struct InspectorPanel<'a> {
     scene: &'a SceneState,
-    graph: &'a Option<StoryGraph>,
-    current_script: &'a Option<visual_novel_engine::ScriptRaw>,
+    graph: &'a mut NodeGraph, // Now mutable NodeGraph
     selected_node: Option<u32>,
     selected_entity: Option<u32>,
 }
@@ -17,15 +17,13 @@ pub struct InspectorPanel<'a> {
 impl<'a> InspectorPanel<'a> {
     pub fn new(
         scene: &'a SceneState,
-        graph: &'a Option<StoryGraph>,
-        current_script: &'a Option<visual_novel_engine::ScriptRaw>,
+        graph: &'a mut NodeGraph,
         selected_node: Option<u32>,
         selected_entity: Option<u32>,
     ) -> Self {
         Self {
             scene,
             graph,
-            current_script,
             selected_node,
             selected_entity,
         }
@@ -38,7 +36,7 @@ impl<'a> InspectorPanel<'a> {
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Selected Node section
             ui.collapsing("Selected Node", |ui| {
-                self.render_node_info(ui);
+                self.render_node_editor(ui);
             });
 
             ui.separator();
@@ -50,87 +48,82 @@ impl<'a> InspectorPanel<'a> {
 
             ui.separator();
 
-            // Scene Overview
-            ui.collapsing("Scene Overview", |ui| {
-                self.render_scene_overview(ui);
-            });
-
-            ui.separator();
-
-            // JSON Source View
-            ui.collapsing("JSON Source", |ui| {
-                self.render_json_source(ui);
-            });
+            // Stats
+            ui.label(format!("Graph Nodes: {}", self.graph.len()));
         });
     }
 
-    fn render_node_info(&self, ui: &mut egui::Ui) {
-        if let (Some(node_id), Some(graph)) = (self.selected_node, self.graph) {
-            if let Some(node) = graph.get_node(node_id) {
-                ui.label(format!("ID: {}", node.id));
-                ui.label(format!(
-                    "Reachable: {}",
-                    if node.reachable { "✓" } else { "✗" }
-                ));
+    fn render_node_editor(&mut self, ui: &mut egui::Ui) {
+        let mut delete_option_idx = None;
+        let mut add_option_req = false;
+        let mut standard_changed = false;
 
-                if !node.labels.is_empty() {
-                    ui.label(format!("Labels: {}", node.labels.join(", ")));
-                }
-
+        if let Some(node_id) = self.selected_node {
+            if let Some(node) = self.graph.get_node_mut(node_id) {
+                ui.label(format!("Node ID: {}", node_id));
                 ui.separator();
 
-                match &node.node_type {
-                    NodeType::Dialogue {
-                        speaker,
-                        text_preview,
-                    } => {
-                        ui.label("Type: Dialogue");
-                        ui.label(format!("Speaker: {}", speaker));
-                        ui.label(format!("Text: {}", text_preview));
+                match node {
+                    StoryNode::Dialogue { speaker, text } => {
+                        ui.label("Speaker:");
+                        standard_changed |= ui.text_edit_singleline(speaker).changed();
+                        ui.label("Text:");
+                        standard_changed |= ui.text_edit_multiline(text).changed();
                     }
-                    NodeType::Choice {
-                        prompt,
-                        option_count,
-                    } => {
-                        ui.label("Type: Choice");
-                        ui.label(format!("Prompt: {}", prompt));
-                        ui.label(format!("Options: {}", option_count));
+                    StoryNode::Choice { prompt, options } => {
+                        ui.label("Prompt:");
+                        standard_changed |= ui.text_edit_multiline(prompt).changed();
+
+                        ui.separator();
+                        ui.label("Options:");
+
+                        // Option List
+                        for (i, opt) in options.iter_mut().enumerate() {
+                            ui.horizontal(|ui| {
+                                standard_changed |= ui.text_edit_singleline(opt).changed();
+                                if ui.button("🗑").clicked() {
+                                    delete_option_idx = Some(i);
+                                }
+                            });
+                        }
+
+                        if ui.button("➕ Add Option").clicked() {
+                            add_option_req = true;
+                        }
                     }
-                    NodeType::Scene { background } => {
-                        ui.label("Type: Scene");
-                        ui.label(format!("Background: {:?}", background));
+                    StoryNode::Scene { background } => {
+                        ui.label("Background Image:");
+                        standard_changed |= ui.text_edit_singleline(background).changed();
                     }
-                    NodeType::Jump => {
-                        ui.label("Type: Jump");
+                    StoryNode::Jump { target } => {
+                        ui.label("Jump Target (Label):");
+                        standard_changed |= ui.text_edit_singleline(target).changed();
                     }
-                    NodeType::ConditionalJump { condition } => {
-                        ui.label("Type: Conditional Jump");
-                        ui.label(format!("Condition: {}", condition));
+                    StoryNode::Start => {
+                        ui.label("Start Node (Entry Point)");
                     }
-                    NodeType::StateChange { description } => {
-                        ui.label("Type: State Change");
-                        ui.label(format!("Action: {}", description));
-                    }
-                    NodeType::Patch => {
-                        ui.label("Type: Scene Patch");
-                    }
-                    NodeType::ExtCall { command } => {
-                        ui.label("Type: External Call");
-                        ui.label(format!("Command: {}", command));
+                    StoryNode::End => {
+                        ui.label("End Node (Termination)");
                     }
                 }
 
-                // Outgoing edges
-                ui.separator();
-                ui.label("Outgoing Edges:");
-                let edges = graph.outgoing_edges(node_id);
-                for edge in edges {
-                    let label = edge
-                        .label
-                        .as_ref()
-                        .map(|l| format!(" \"{}\"", l))
-                        .unwrap_or_default();
-                    ui.label(format!("  → {} ({:?}){}", edge.to, edge.edge_type, label));
+                if standard_changed {
+                    self.graph.mark_modified();
+                }
+            } else {
+                ui.label("Node not found in editor graph.");
+                return; // Avoid borrow conflicts if we continued
+            }
+
+            // Apply Structural Changes (After dropping node borrow)
+            if let Some(idx) = delete_option_idx {
+                self.graph.remove_choice_option(node_id, idx);
+            }
+
+            if add_option_req {
+                if let Some(StoryNode::Choice { options, .. }) = self.graph.get_node_mut(node_id) {
+                    options.push("New Option".to_string());
+                    self.graph.mark_modified();
                 }
             }
         } else {
@@ -167,46 +160,6 @@ impl<'a> InspectorPanel<'a> {
             }
         } else {
             ui.label("No entity selected");
-        }
-    }
-
-    fn render_scene_overview(&self, ui: &mut egui::Ui) {
-        ui.label(format!("Entities: {}", self.scene.len()));
-
-        if !self.scene.is_empty() {
-            ui.separator();
-            for entity in self.scene.iter() {
-                ui.label(format!("  {} - {:?}", entity.id, entity.kind));
-            }
-        }
-    }
-
-    fn render_json_source(&self, ui: &mut egui::Ui) {
-        if let Some(id) = self.selected_node {
-            ui.label(
-                egui::RichText::new(format!("Selected Node Context: ID {}", id))
-                    .strong()
-                    .color(egui::Color32::LIGHT_BLUE),
-            );
-        }
-
-        if let Some(script) = self.current_script {
-            if let Ok(json) = serde_json::to_string_pretty(script) {
-                egui::ScrollArea::vertical()
-                    .max_height(300.0)
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut json.as_str())
-                                .code_editor()
-                                .lock_focus(true) // Prevent editing
-                                .desired_width(f32::INFINITY),
-                        );
-                    });
-            } else {
-                ui.label("Error serializing script");
-            }
-        } else {
-            ui.label("No script loaded");
         }
     }
 }

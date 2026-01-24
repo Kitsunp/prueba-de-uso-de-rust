@@ -115,7 +115,7 @@ pub fn render_context_menu(graph: &mut NodeGraph, ui: &egui::Ui) {
                 ui.separator();
 
                 if ui.button("🔗 Connect To...").clicked() {
-                    graph.connecting_from = Some(node_id);
+                    graph.connecting_from = Some((node_id, 0));
                     graph.context_menu = None;
                 }
 

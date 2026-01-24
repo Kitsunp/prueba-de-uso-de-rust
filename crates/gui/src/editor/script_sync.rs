@@ -88,10 +88,11 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
                 }
             }
             EventRaw::Choice(c) => {
-                for option in &c.options {
+                for (opt_idx, option) in c.options.iter().enumerate() {
                     if let Some(&target_idx) = label_to_index.get(option.target.as_str()) {
                         if let Some(&target_id) = index_to_id.get(&target_idx) {
-                            graph.connect(from_id, target_id);
+                            // Smart Branching: Connect from specific option port
+                            graph.connect_port(from_id, opt_idx, target_id);
                         }
                     }
                 }
@@ -109,14 +110,15 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
     let end_id = graph.add_node(StoryNode::End, egui::pos2(100.0, last_y));
 
     // Connect nodes with no outgoing connections to End
-    let nodes_with_outgoing: Vec<u32> = graph.connections_slice().iter().map(|(f, _)| *f).collect();
+    // Use GraphConnection struct access
+    let nodes_with_outgoing: Vec<u32> = graph.connections().map(|c| c.from).collect();
     let nodes_to_connect: Vec<u32> = graph
-        .nodes_slice()
-        .iter()
-        .filter(|(id, node, _)| {
-            !nodes_with_outgoing.contains(id) && !matches!(node, StoryNode::End)
-        })
+        .nodes()
         .map(|(id, _, _)| *id)
+        .filter(|id| {
+            !nodes_with_outgoing.contains(id)
+                && !matches!(graph.get_node(*id), Some(StoryNode::End))
+        })
         .collect();
 
     for id in nodes_to_connect {
@@ -128,14 +130,6 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
 }
 
 /// Converts a NodeGraph to a raw script.
-///
-/// # Contract
-/// - Generates `EventRaw` for each non-marker node
-/// - Creates labels for targets
-/// - Maintains execution order via BFS traversal from Start
-///
-/// # Returns
-/// A ScriptRaw that can be serialized to JSON or compiled.
 pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
     let mut events = Vec::new();
     let mut labels = BTreeMap::new();
@@ -160,9 +154,9 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
         }
         visited.push(id);
 
-        for (from, to) in graph.connections() {
-            if *from == id && !visited.contains(to) {
-                queue.push(*to);
+        for conn in graph.connections() {
+            if conn.from == id && !visited.contains(&conn.to) {
+                queue.push(conn.to);
             }
         }
     }
@@ -188,20 +182,22 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
                 }));
             }
             StoryNode::Choice { prompt, options } => {
-                let outgoing: Vec<u32> = graph
-                    .connections()
-                    .filter(|(f, _)| *f == id)
-                    .map(|(_, t)| *t)
-                    .collect();
-
+                // Collect outgoing connections per port
+                // We map options indices to targets
                 let choice_options: Vec<ChoiceOptionRaw> = options
                     .iter()
                     .enumerate()
                     .map(|(i, text)| {
-                        let target = outgoing
-                            .get(i)
+                        // Find connection from this port
+                        let target_node = graph
+                            .connections()
+                            .find(|c| c.from == id && c.from_port == i)
+                            .map(|c| c.to);
+
+                        let target = target_node
                             .map(|tid| format!("node_{}", tid))
-                            .unwrap_or_else(|| "start".to_string());
+                            .unwrap_or_else(|| "start".to_string()); // Default fallback
+
                         ChoiceOptionRaw {
                             text: text.clone(),
                             target,
@@ -227,7 +223,7 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
                 }));
             }
             StoryNode::Start | StoryNode::End => {
-                // Skip start/end markers - they don't generate script events
+                // Skip start/end markers
             }
         }
     }

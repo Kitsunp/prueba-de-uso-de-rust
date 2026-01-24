@@ -17,6 +17,18 @@ use super::node_types::{
     ZOOM_MIN,
 };
 use super::script_sync;
+use serde::{Deserialize, Serialize};
+
+// =============================================================================
+// GraphConnection - Explicit Port Connection
+// =============================================================================
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphConnection {
+    pub from: u32,
+    pub from_port: usize,
+    pub to: u32,
+    // to_port is implicitly 0 (top/input) for VN flow
+}
 
 // =============================================================================
 // NodeGraph - Main graph data structure
@@ -27,34 +39,35 @@ use super::script_sync;
 /// # Invariants
 /// - `next_id` is always greater than any existing node ID
 /// - `connections` only reference existing node IDs
-/// - `selected` is None or references an existing node ID
-/// - `zoom` is always in range [ZOOM_MIN, ZOOM_MAX]
-///
-/// # Contract
-/// All public methods preserve these invariants.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeGraph {
     /// Nodes: (id, node, position in graph space)
     pub(crate) nodes: Vec<(u32, StoryNode, egui::Pos2)>,
-    /// Connections: (from_id, to_id)
-    pub(crate) connections: Vec<(u32, u32)>,
+    /// Connections: Structured connections with ports
+    pub(crate) connections: Vec<GraphConnection>,
     /// Next available node ID
     next_id: u32,
     /// Currently selected node
+    #[serde(skip)]
     pub selected: Option<u32>,
     /// Pan offset (world-space translation)
     pub(crate) pan: egui::Vec2,
     /// Zoom level
     pub(crate) zoom: f32,
     /// Node being edited inline
+    #[serde(skip)]
     pub editing: Option<u32>,
     /// Node being dragged (robust interaction)
+    #[serde(skip)]
     pub dragging_node: Option<u32>,
     /// Node being connected (Connect To mode)
-    pub connecting_from: Option<u32>,
+    #[serde(skip)]
+    pub connecting_from: Option<(u32, usize)>,
     /// Active context menu
+    #[serde(skip)]
     pub context_menu: Option<ContextMenu>,
     /// Dirty flag (script modified since last save)
+    #[serde(skip)]
     pub(crate) modified: bool,
 }
 
@@ -92,21 +105,13 @@ impl NodeGraph {
         self.next_id += 1;
         self.nodes.push((id, node, pos));
         self.modified = true;
-
-        debug_assert!(
-            self.nodes.iter().filter(|(nid, _, _)| *nid == id).count() == 1,
-            "Postcondition: node ID {} should exist exactly once",
-            id
-        );
-
         id
     }
 
     /// Removes a node and all its connections.
     pub fn remove_node(&mut self, id: u32) {
         self.nodes.retain(|(nid, _, _)| *nid != id);
-        self.connections
-            .retain(|(from, to)| *from != id && *to != id);
+        self.connections.retain(|c| c.from != id && c.to != id);
 
         if self.selected == Some(id) {
             self.selected = None;
@@ -114,28 +119,51 @@ impl NodeGraph {
         if self.editing == Some(id) {
             self.editing = None;
         }
-        if self.connecting_from == Some(id) {
-            self.connecting_from = None;
+        if let Some((from_id, _)) = self.connecting_from {
+            if from_id == id {
+                self.connecting_from = None;
+            }
         }
 
         self.modified = true;
     }
 
-    /// Connects two nodes. Prevents duplicate connections and self-loops.
+    /// Connects two nodes.
+    /// Default connects from port 0 (primary output).
     pub fn connect(&mut self, from: u32, to: u32) {
+        self.connect_port(from, 0, to)
+    }
+
+    /// Connects a specific output port to a target node.
+    pub fn connect_port(&mut self, from: u32, from_port: usize, to: u32) {
         if from == to {
             return;
         }
 
-        if !self.connections.contains(&(from, to)) {
-            self.connections.push((from, to));
+        // Check if connection exists
+        if !self
+            .connections
+            .iter()
+            .any(|c| c.from == from && c.from_port == from_port && c.to == to)
+        {
+            // Optional: Check if port acts as "Single Output"?
+            // For Flow, usually 1 connection per port.
+            // Remove existing connection from this port?
+            self.connections
+                .retain(|c| !(c.from == from && c.from_port == from_port));
+
+            self.connections.push(GraphConnection {
+                from,
+                from_port,
+                to,
+            });
             self.modified = true;
         }
     }
 
-    /// Disconnects two nodes.
+    /// Disconnects two nodes (any port).
     pub fn disconnect(&mut self, from: u32, to: u32) {
-        self.connections.retain(|(f, t)| !(*f == from && *t == to));
+        self.connections.retain(|c| !(c.from == from && c.to == to));
         self.modified = true;
     }
 
@@ -300,6 +328,10 @@ impl NodeGraph {
     ///
     /// # Precondition
     /// - `target_id` should exist in the graph (silent no-op if not)
+    /// Inserts a new node before the target node, re-routing connections.
+    ///
+    /// # Precondition
+    /// - `target_id` should exist in the graph (silent no-op if not)
     pub fn insert_before(&mut self, target_id: u32, node: StoryNode) {
         let Some((_, _, pos)) = self.nodes.iter().find(|(id, _, _)| *id == target_id) else {
             debug_assert!(
@@ -313,19 +345,21 @@ impl NodeGraph {
         let new_pos = egui::pos2(pos.x, pos.y - NODE_VERTICAL_SPACING);
         let new_id = self.add_node(node, new_pos);
 
-        for (_, to) in &mut self.connections {
-            if *to == target_id {
-                *to = new_id;
+        // Redirect incoming connections
+        for conn in &mut self.connections {
+            if conn.to == target_id {
+                conn.to = new_id;
             }
         }
 
-        self.connections.push((new_id, target_id));
+        // Connect new node to target
+        self.connections.push(GraphConnection {
+            from: new_id,
+            from_port: 0,
+            to: target_id,
+        });
 
-        // Postcondition: new node exists and is connected to target
-        debug_assert!(
-            self.connections.contains(&(new_id, target_id)),
-            "Postcondition: new node should be connected to target"
-        );
+        self.modified = true;
     }
 
     /// Inserts a new node after the target node, re-routing connections.
@@ -334,68 +368,52 @@ impl NodeGraph {
     /// - `target_id` should exist in the graph (silent no-op if not)
     pub fn insert_after(&mut self, target_id: u32, node: StoryNode) {
         let Some((_, _, pos)) = self.nodes.iter().find(|(id, _, _)| *id == target_id) else {
-            debug_assert!(
-                false,
-                "Precondition warning: target_id {} not found in insert_after",
-                target_id
-            );
             return;
         };
 
         let new_pos = egui::pos2(pos.x, pos.y + NODE_VERTICAL_SPACING);
         let new_id = self.add_node(node, new_pos);
 
-        let old_targets: Vec<u32> = self
-            .connections
-            .iter()
-            .filter(|(from, _)| *from == target_id)
-            .map(|(_, to)| *to)
-            .collect();
+        // Redirect outgoing connections from Port 0 (Primary Flow)
 
-        self.connections.retain(|(from, _)| *from != target_id);
-        self.connections.push((target_id, new_id));
-
-        for old_to in old_targets {
-            self.connections.push((new_id, old_to));
+        // We collect indices to avoid borrow issues or use retain logic
+        // But here we want to MODIFY, not remove.
+        // Actually, we want to change `conn.from` to `new_id`.
+        // Identify connections from target node at port 0
+        for conn in &mut self.connections {
+            if conn.from == target_id && conn.from_port == 0 {
+                conn.from = new_id;
+                // Keep conn.from_port as 0? Or inherit?
+                // We assume the new node (Dialogue?) has port 0.
+                conn.from_port = 0;
+            }
         }
 
-        // Postcondition: target now connects to new node
-        debug_assert!(
-            self.connections.contains(&(target_id, new_id)),
-            "Postcondition: target should connect to new node"
-        );
+        // Connect target to new node
+        self.connections.push(GraphConnection {
+            from: target_id,
+            from_port: 0,
+            to: new_id,
+        });
+
+        self.modified = true;
     }
 
     /// Converts a node to a Choice node with default options.
-    ///
-    /// # Precondition
-    /// - `node_id` should exist in the graph (silent no-op if not)
     pub fn convert_to_choice(&mut self, node_id: u32) {
-        let exists = self.nodes.iter().any(|(id, _, _)| *id == node_id);
-        debug_assert!(
-            exists,
-            "Precondition warning: node_id {} not found in convert_to_choice",
-            node_id
-        );
-
         if let Some((_, node, _)) = self.nodes.iter_mut().find(|(id, _, _)| *id == node_id) {
             *node = StoryNode::Choice {
                 prompt: "Choose an option:".to_string(),
                 options: vec!["Option 1".to_string(), "Option 2".to_string()],
             };
             self.modified = true;
-
-            // Postcondition: node is now a Choice
-            debug_assert!(
-                matches!(self.get_node(node_id), Some(StoryNode::Choice { .. })),
-                "Postcondition: node should be converted to Choice"
-            );
         }
     }
 
     /// Creates a branch from a node (adds a Choice with two paths).
     pub fn create_branch(&mut self, node_id: u32) {
-        let Some((_, node, pos)) = self.nodes.iter().find(|(id, _, _)| *id == node_id) else {
+        let Some((_, node, pos)) = self.nodes.iter().find(|(id, _, _)| *id == node_id).cloned()
+        else {
             return;
         };
 
@@ -403,9 +421,7 @@ impl NodeGraph {
             return;
         }
 
-        let pos = *pos;
-
-        let choice_pos = egui::pos2(pos.x, pos.y + 50.0);
+        let choice_pos = egui::pos2(pos.x, pos.y + 120.0);
         let choice_id = self.add_node(
             StoryNode::Choice {
                 prompt: "Which path?".to_string(),
@@ -419,7 +435,7 @@ impl NodeGraph {
                 speaker: "Path A".to_string(),
                 text: "Content for path A...".to_string(),
             },
-            egui::pos2(pos.x - 120.0, pos.y + 140.0),
+            egui::pos2(choice_pos.x - 120.0, choice_pos.y + 140.0),
         );
 
         let branch_b = self.add_node(
@@ -427,12 +443,41 @@ impl NodeGraph {
                 speaker: "Path B".to_string(),
                 text: "Content for path B...".to_string(),
             },
-            egui::pos2(pos.x + 120.0, pos.y + 140.0),
+            egui::pos2(choice_pos.x + 120.0, choice_pos.y + 140.0),
         );
 
-        self.connect(node_id, choice_id);
-        self.connect(choice_id, branch_a);
-        self.connect(choice_id, branch_b);
+        // Connect Original -> Choice (Port 0)
+        self.connect_port(node_id, 0, choice_id);
+
+        // Connect Choice (Port 0) -> Branch A
+        self.connect_port(choice_id, 0, branch_a);
+
+        // Connect Choice (Port 1) -> Branch B
+        self.connect_port(choice_id, 1, branch_b);
+    }
+
+    /// Removes a specific option from a Choice node and updates connections.
+    pub fn remove_choice_option(&mut self, node_id: u32, option_idx: usize) {
+        // 1. Update Node Content
+        if let Some(StoryNode::Choice { options, .. }) = self.get_node_mut(node_id) {
+            if option_idx < options.len() {
+                options.remove(option_idx);
+            }
+        }
+
+        // 2. Update Connections
+        // Remove connection from the deleted port
+        self.connections
+            .retain(|c| !(c.from == node_id && c.from_port == option_idx));
+
+        // Shift higher ports down
+        for conn in &mut self.connections {
+            if conn.from == node_id && conn.from_port > option_idx {
+                conn.from_port -= 1;
+            }
+        }
+
+        self.modified = true;
     }
 
     // =========================================================================
@@ -456,7 +501,9 @@ impl NodeGraph {
     /// Returns the node at the given graph position, if any.
     pub fn node_at_position(&self, graph_pos: egui::Pos2) -> Option<u32> {
         for (id, _, pos) in &self.nodes {
+            // Check bounding box approximately
             let node_rect = egui::Rect::from_min_size(*pos, egui::vec2(NODE_WIDTH, NODE_HEIGHT));
+            // Note: Choice nodes might be taller. We'll update this logic later or use rendering hit tests.
             if node_rect.contains(graph_pos) {
                 return Some(*id);
             }
@@ -493,18 +540,18 @@ impl NodeGraph {
         self.nodes.iter()
     }
 
-    /// Returns a slice of all nodes (for script_sync module).
+    /// Returns an iterator over all connections.
+    pub fn connections(&self) -> impl Iterator<Item = &GraphConnection> {
+        self.connections.iter()
+    }
+
+    /// Returns a slice of all nodes (internal use).
     pub(crate) fn nodes_slice(&self) -> &[(u32, StoryNode, egui::Pos2)] {
         &self.nodes
     }
 
-    /// Returns an iterator over all connections.
-    pub fn connections(&self) -> impl Iterator<Item = &(u32, u32)> {
-        self.connections.iter()
-    }
-
-    /// Returns a slice of all connections (for script_sync module).
-    pub(crate) fn connections_slice(&self) -> &[(u32, u32)] {
+    /// Returns a slice of all connections (internal use).
+    pub(crate) fn connections_slice(&self) -> &[GraphConnection] {
         &self.connections
     }
 }

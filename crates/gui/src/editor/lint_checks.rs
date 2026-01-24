@@ -101,7 +101,7 @@ fn check_unreachable_nodes(graph: &NodeGraph) -> Vec<LintIssue> {
     let mut issues = Vec::new();
 
     // Collect all target node IDs
-    let reachable: Vec<u32> = graph.connections().map(|(_, to)| *to).collect();
+    let reachable: Vec<u32> = graph.connections().map(|c| c.to).collect();
 
     for (id, node, _) in graph.nodes() {
         // Start nodes don't need incoming connections
@@ -128,7 +128,7 @@ fn check_dead_ends(graph: &NodeGraph) -> Vec<LintIssue> {
     let mut issues = Vec::new();
 
     // Collect all source node IDs
-    let has_outgoing: Vec<u32> = graph.connections().map(|(from, _)| *from).collect();
+    let has_outgoing: Vec<u32> = graph.connections().map(|c| c.from).collect();
 
     for (id, node, _) in graph.nodes() {
         // End nodes don't need outgoing connections
@@ -171,17 +171,21 @@ fn check_orphan_choices(graph: &NodeGraph) -> Vec<LintIssue> {
 
     for (id, node, _) in graph.nodes() {
         if let StoryNode::Choice { options, .. } = node {
-            let outgoing_count = graph.connections().filter(|(from, _)| from == id).count();
+            for (i, opt) in options.iter().enumerate() {
+                // Check if this specific port has a connection
+                let is_connected = graph
+                    .connections()
+                    .any(|c| c.from == *id && c.from_port == i);
 
-            if outgoing_count < options.len() {
-                issues.push(LintIssue::warning(
-                    format!(
-                        "Choice has {} options but only {} connections",
-                        options.len(),
-                        outgoing_count
-                    ),
-                    Some(*id),
-                ));
+                if !is_connected {
+                    issues.push(LintIssue::warning(
+                        format!(
+                            "Option '{}' is not connected to anything",
+                            crate::editor::graph_panel::truncate(opt, 15)
+                        ),
+                        Some(*id),
+                    ));
+                }
             }
         }
     }
@@ -228,7 +232,9 @@ mod tests {
     #[test]
     fn test_missing_end() {
         let mut graph = NodeGraph::new();
-        graph.add_node(StoryNode::Start, pos(0.0, 0.0));
+        let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
+        // Self loop is prevented by connect().
+        // Just empty graph with Start.
 
         let issues = validate(&graph);
         assert!(issues.iter().any(|i| i.message.contains("End")));
@@ -265,6 +271,10 @@ mod tests {
     #[test]
     fn test_empty_dialogue() {
         let mut graph = NodeGraph::new();
+        let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
+        let end = graph.add_node(StoryNode::End, pos(0.0, 100.0));
+        graph.connect(start, end);
+
         graph.add_node(
             StoryNode::Dialogue {
                 speaker: "Test".to_string(),
@@ -280,21 +290,25 @@ mod tests {
     #[test]
     fn test_orphan_choice() {
         let mut graph = NodeGraph::new();
+        let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
         let choice = graph.add_node(
             StoryNode::Choice {
                 prompt: "Pick".to_string(),
                 options: vec!["A".to_string(), "B".to_string()],
             },
-            pos(0.0, 0.0),
+            pos(0.0, 100.0),
         );
-        let target = graph.add_node(StoryNode::End, pos(0.0, 100.0));
+        let target = graph.add_node(StoryNode::End, pos(0.0, 200.0));
 
-        // Only connect one option
-        graph.connect(choice, target);
+        graph.connect(start, choice);
+
+        // Connect option 0 ("A")
+        graph.connect_port(choice, 0, target);
+        // Option 1 ("B") is orphan
 
         let issues = validate(&graph);
         assert!(issues
             .iter()
-            .any(|i| i.message.contains("2 options but only 1")));
+            .any(|i| i.message.contains("Option 'B' is not connected")));
     }
 }

@@ -14,7 +14,7 @@ use crate::version::SCRIPT_SCHEMA_VERSION;
 
 use super::compiled::ScriptCompiled;
 
-#[derive(Clone, Debug, serde::Deserialize, JsonSchema)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, JsonSchema)]
 struct ScriptEnvelope {
     #[serde(default)]
     script_schema_version: Option<String>,
@@ -41,6 +41,20 @@ impl ScriptRaw {
         Self::from_json_with_limits(input, ResourceLimiter::default())
     }
 
+    /// Serializes the script to a JSON string with the current schema version.
+    pub fn to_json(&self) -> VnResult<String> {
+        let envelope = ScriptEnvelope {
+            script_schema_version: Some(SCRIPT_SCHEMA_VERSION.to_string()),
+            events: self.events.clone(),
+            labels: self.labels.clone(),
+        };
+        serde_json::to_string_pretty(&envelope).map_err(|e| VnError::Serialization {
+            message: e.to_string(),
+            src: "".to_string(),
+            span: (0, 0).into(),
+        })
+    }
+
     /// Parses a JSON script into a raw script structure with resource limits.
     pub fn from_json_with_limits(input: &str, limits: ResourceLimiter) -> VnResult<Self> {
         let envelope: ScriptEnvelope =
@@ -57,9 +71,15 @@ impl ScriptRaw {
             Some(version) => Err(VnError::InvalidScript(format!(
                 "schema incompatible: found {version}, expected {SCRIPT_SCHEMA_VERSION}"
             ))),
-            None => Err(VnError::InvalidScript(
-                "schema incompatible: missing script_schema_version".to_string(),
-            )),
+            None => {
+                // Allow legacy scripts without version
+                let script = Self {
+                    events: envelope.events,
+                    labels: envelope.labels,
+                };
+                script.ensure_string_budget(limits.max_script_bytes)?;
+                Ok(script)
+            }
         }
     }
 
@@ -105,7 +125,7 @@ impl ScriptRaw {
         let mut var_map: HashMap<String, u32> = HashMap::new();
 
         for (label, index) in &self.labels {
-            if *index >= self.events.len() {
+            if *index > self.events.len() {
                 return Err(VnError::InvalidScript(format!(
                     "label '{label}' points outside events"
                 )));
