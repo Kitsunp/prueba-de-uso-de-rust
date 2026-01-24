@@ -1,3 +1,4 @@
+#![allow(unused_assignments)]
 //! Timeline and animation system for the Visual Novel Engine.
 //!
 //! This module implements deterministic timeline-based animations following the
@@ -529,6 +530,7 @@ use miette::Diagnostic;
 /// # Diagnostics
 /// All errors include diagnostic codes for tooling integration.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, Diagnostic)]
+#[allow(unused_assignments)]
 pub enum TimelineError {
     #[error("keyframe limit exceeded (max: {MAX_KEYFRAMES_PER_TRACK})")]
     #[diagnostic(
