@@ -13,6 +13,7 @@ use eframe::egui;
 use super::node_graph::NodeGraph;
 use super::node_rendering;
 use super::node_types::{ContextMenu, StoryNode, NODE_HEIGHT, NODE_WIDTH};
+use super::undo::UndoStack;
 
 // =============================================================================
 // NodeEditorPanel - UI Widget
@@ -21,11 +22,12 @@ use super::node_types::{ContextMenu, StoryNode, NODE_HEIGHT, NODE_WIDTH};
 /// Node editor panel widget with pan/zoom and context menu.
 pub struct NodeEditorPanel<'a> {
     graph: &'a mut NodeGraph,
+    undo_stack: &'a mut UndoStack,
 }
 
 impl<'a> NodeEditorPanel<'a> {
-    pub fn new(graph: &'a mut NodeGraph) -> Self {
-        Self { graph }
+    pub fn new(graph: &'a mut NodeGraph, undo_stack: &'a mut UndoStack) -> Self {
+        Self { graph, undo_stack }
     }
 
     #[inline]
@@ -70,46 +72,50 @@ impl<'a> NodeEditorPanel<'a> {
             ui.menu_button("➕ Add Node", |ui| {
                 let pos = egui::pos2(100.0, 100.0) - self.graph.pan().to_pos2().to_vec2();
                 if ui.button("💬 Dialogue").clicked() {
-                    self.graph.add_node(StoryNode::default(), pos);
+                    let id = self.graph.add_node(StoryNode::default(), pos);
+                    self.graph.selected = Some(id);
                     ui.close_menu();
                 }
                 if ui.button("🔀 Choice").clicked() {
-                    self.graph.add_node(
+                    let id = self.graph.add_node(
                         StoryNode::Choice {
                             prompt: "Choose:".to_string(),
                             options: vec!["A".to_string(), "B".to_string()],
                         },
                         pos,
                     );
+                    self.graph.selected = Some(id);
                     ui.close_menu();
                 }
                 if ui.button("🎬 Scene").clicked() {
-                    self.graph.add_node(
+                    let id = self.graph.add_node(
                         StoryNode::Scene {
                             background: "bg.png".to_string(),
                         },
                         pos,
                     );
+                    self.graph.selected = Some(id);
                     ui.close_menu();
                 }
                 if ui.button("↪ Jump").clicked() {
-                    self.graph.add_node(
+                    let id = self.graph.add_node(
                         StoryNode::Jump {
                             target: "label".to_string(),
                         },
                         pos,
                     );
+                    self.graph.selected = Some(id);
                     ui.close_menu();
                 }
                 ui.separator();
                 if ui.button("▶ Start").clicked() {
-                    self.graph
-                        .add_node(StoryNode::Start, egui::pos2(50.0, 30.0));
+                    let id = self.graph.add_node(StoryNode::Start, egui::pos2(50.0, 30.0));
+                    self.graph.selected = Some(id);
                     ui.close_menu();
                 }
                 if ui.button("⏹ End").clicked() {
-                    self.graph
-                        .add_node(StoryNode::End, egui::pos2(200.0, 300.0));
+                    let id = self.graph.add_node(StoryNode::End, egui::pos2(200.0, 300.0));
+                    self.graph.selected = Some(id);
                     ui.close_menu();
                 }
             });
@@ -119,6 +125,21 @@ impl<'a> NodeEditorPanel<'a> {
                 self.graph.reset_view();
             }
             ui.label(format!("Zoom: {:.0}%", self.graph.zoom() * 100.0));
+            
+            ui.separator();
+            
+            // Undo/Redo
+            if ui.add_enabled(self.undo_stack.can_undo(), egui::Button::new("↩")).clicked() {
+                if let Some(previous) = self.undo_stack.undo(self.graph.clone()) {
+                    *self.graph = previous;
+                }
+            }
+            if ui.add_enabled(self.undo_stack.can_redo(), egui::Button::new("↪")).clicked() {
+                if let Some(next) = self.undo_stack.redo(self.graph.clone()) {
+                    *self.graph = next;
+                }
+            }
+
             ui.separator();
             ui.label(format!(
                 "Nodes: {} | Connections: {}",
@@ -161,6 +182,21 @@ impl<'a> NodeEditorPanel<'a> {
             || (response.dragged() && ui.input(|i| i.modifiers.ctrl))
         {
             self.graph.pan_by(response.drag_delta() / self.graph.zoom());
+        }
+
+        // Pan with Arrow Keys
+        let pan_speed = 5.0; // Pixels per frame approx
+        if ui.input(|i| i.key_down(egui::Key::ArrowUp)) {
+            self.graph.pan_by(egui::vec2(0.0, pan_speed) / self.graph.zoom());
+        }
+        if ui.input(|i| i.key_down(egui::Key::ArrowDown)) {
+            self.graph.pan_by(egui::vec2(0.0, -pan_speed) / self.graph.zoom());
+        }
+        if ui.input(|i| i.key_down(egui::Key::ArrowLeft)) {
+            self.graph.pan_by(egui::vec2(pan_speed, 0.0) / self.graph.zoom());
+        }
+        if ui.input(|i| i.key_down(egui::Key::ArrowRight)) {
+            self.graph.pan_by(egui::vec2(-pan_speed, 0.0) / self.graph.zoom());
         }
 
         // Zoom with scroll wheel
@@ -326,6 +362,31 @@ impl<'a> NodeEditorPanel<'a> {
                 if let Some(p) = response.interact_pointer_pos() {
                     if node_rect.contains(p) {
                         double_clicked_node = Some(*id);
+                    }
+                }
+            }
+
+            // DRAG LOGIC: Check if this specific node area is being dragged
+            // Note: allocate_painter response covers the whole area, but we can check if the start of the drag was on this node
+            // However, egui is immediate. A common pattern is to allocate a rect for the node properly.
+            // But we are doing manual painting.
+            // Improved strategy: Allocate a sense response for the node rect specifically?
+            // Doing that inside the loop might be expensive if many nodes.
+            // Better: Check if the main `response` is dragged, and if the `press_origin` was on this node.
+            if response.dragged() && self.graph.context_menu.is_none() {
+                if let Some(_press_origin) = response.interact_pointer_pos() {
+                    // This is current pos, we need press origin.
+                    // `response.interact_pointer_pos()` is current.
+                    // Check `ui.input(|i| i.pointer.press_origin())`.
+                    if let Some(origin) = ui.input(|i| i.pointer.press_origin()) {
+                        if node_rect.contains(origin) {
+                            // This node is being dragged!
+                            let delta = response.drag_delta() / self.graph.zoom();
+                            if let Some(node_pos) = self.graph.get_node_pos_mut(*id) {
+                                *node_pos += delta;
+                                self.graph.mark_modified();
+                            }
+                        }
                     }
                 }
             }

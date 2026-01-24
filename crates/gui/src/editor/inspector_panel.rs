@@ -9,6 +9,7 @@ use visual_novel_engine::{NodeType, SceneState, StoryGraph};
 pub struct InspectorPanel<'a> {
     scene: &'a SceneState,
     graph: &'a Option<StoryGraph>,
+    current_script: &'a Option<visual_novel_engine::ScriptRaw>,
     selected_node: Option<u32>,
     selected_entity: Option<u32>,
 }
@@ -17,12 +18,14 @@ impl<'a> InspectorPanel<'a> {
     pub fn new(
         scene: &'a SceneState,
         graph: &'a Option<StoryGraph>,
+        current_script: &'a Option<visual_novel_engine::ScriptRaw>,
         selected_node: Option<u32>,
         selected_entity: Option<u32>,
     ) -> Self {
         Self {
             scene,
             graph,
+            current_script,
             selected_node,
             selected_entity,
         }
@@ -50,6 +53,13 @@ impl<'a> InspectorPanel<'a> {
             // Scene Overview
             ui.collapsing("Scene Overview", |ui| {
                 self.render_scene_overview(ui);
+            });
+
+            ui.separator();
+
+            // JSON Source View
+            ui.collapsing("JSON Source", |ui| {
+                self.render_json_source(ui);
             });
         });
     }
@@ -168,6 +178,27 @@ impl<'a> InspectorPanel<'a> {
             for entity in self.scene.iter() {
                 ui.label(format!("  {} - {:?}", entity.id, entity.kind));
             }
+        }
+    }
+
+    fn render_json_source(&self, ui: &mut egui::Ui) {
+        if let Some(script) = self.current_script {
+            if let Ok(json) = serde_json::to_string_pretty(script) {
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut json.as_str())
+                                .code_editor()
+                                .lock_focus(true) // Prevent editing
+                                .desired_width(f32::INFINITY),
+                        );
+                    });
+            } else {
+                ui.label("Error serializing script");
+            }
+        } else {
+            ui.label("No script loaded");
         }
     }
 }

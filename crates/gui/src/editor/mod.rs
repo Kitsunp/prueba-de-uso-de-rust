@@ -523,6 +523,7 @@ impl EditorWorkbench {
                     InspectorPanel::new(
                         &self.scene,
                         &self.graph,
+                        &self.current_script,
                         self.selected_node,
                         self.selected_entity,
                     )
@@ -571,11 +572,18 @@ impl EditorWorkbench {
                 // Save state before potential modifications for undo
                 let graph_before = self.node_graph.clone();
 
-                NodeEditorPanel::new(&mut self.node_graph).ui(ui);
+                NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack).ui(ui);
 
-                // If graph was modified, push to undo stack
+                // If graph was modified, push to undo stack AND sync to script (live preview)
                 if self.node_graph.is_modified() {
                     self.undo_stack.push(graph_before);
+                    
+                    // Live Sync: Update the script in memory (for JSON view) but DO NOT save to disk.
+                    // This keeps the "static part" (current_script) up-to-date with visuals.
+                    if let Err(e) = self.sync_graph_to_script() {
+                        tracing::warn!("Live sync failed: {}", e);
+                    }
+                    
                     self.node_graph.clear_modified();
                 }
             } else {

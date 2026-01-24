@@ -477,6 +477,14 @@ impl NodeGraph {
             .map(|(_, node, _)| node)
     }
 
+    /// Gets a mutable reference to a node's position by ID.
+    pub fn get_node_pos_mut(&mut self, id: u32) -> Option<&mut egui::Pos2> {
+        self.nodes
+            .iter_mut()
+            .find(|(nid, _, _)| *nid == id)
+            .map(|(_, _, pos)| pos)
+    }
+
     /// Returns an iterator over all nodes.
     pub fn nodes(&self) -> impl Iterator<Item = &(u32, StoryNode, egui::Pos2)> {
         self.nodes.iter()
