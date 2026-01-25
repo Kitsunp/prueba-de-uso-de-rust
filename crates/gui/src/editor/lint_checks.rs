@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn test_missing_end() {
         let mut graph = NodeGraph::new();
-        let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
+        graph.add_node(StoryNode::Start, pos(0.0, 0.0));
         // Self loop is prevented by connect().
         // Just empty graph with Start.
 
