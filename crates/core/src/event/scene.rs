@@ -6,7 +6,7 @@ use crate::resource::StringBudget;
 use super::SharedStr;
 
 /// Scene update payload in raw form.
-#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SceneUpdateRaw {
     pub background: Option<String>,
@@ -30,12 +30,18 @@ pub struct SceneUpdateCompiled {
 }
 
 /// Character placement in raw form.
-#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CharacterPlacementRaw {
     pub name: String,
     pub expression: Option<String>,
     pub position: Option<String>,
+    #[serde(default)]
+    pub x: Option<i32>,
+    #[serde(default)]
+    pub y: Option<i32>,
+    #[serde(default)]
+    pub scale: Option<f32>,
 }
 
 impl StringBudget for CharacterPlacementRaw {
@@ -50,10 +56,13 @@ pub struct CharacterPlacementCompiled {
     pub name: SharedStr,
     pub expression: Option<SharedStr>,
     pub position: Option<SharedStr>,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub scale: Option<f32>,
 }
 
 /// Character patch for partial updates.
-#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CharacterPatchRaw {
     pub name: String,
@@ -76,7 +85,7 @@ pub struct CharacterPatchCompiled {
 }
 
 /// Scene patch in raw form (handling partial updates).
-#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ScenePatchRaw {
     pub background: Option<String>,
@@ -107,4 +116,29 @@ pub struct ScenePatchCompiled {
     pub add: Vec<CharacterPlacementCompiled>,
     pub update: Vec<CharacterPatchCompiled>,
     pub remove: Vec<SharedStr>,
+}
+
+/// Precise character positioning for Visual Composer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct SetCharacterPositionRaw {
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    pub scale: Option<f32>,
+}
+
+impl StringBudget for SetCharacterPositionRaw {
+    fn string_bytes(&self) -> usize {
+        self.name.string_bytes()
+    }
+}
+
+/// Compiled precise character positioning.
+#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+pub struct SetCharacterPositionCompiled {
+    pub name: SharedStr,
+    pub x: i32,
+    pub y: i32,
+    pub scale: Option<f32>,
 }

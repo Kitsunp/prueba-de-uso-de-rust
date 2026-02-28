@@ -82,6 +82,16 @@ fn render_event_ui(ui: &mut egui::Ui, engine: &mut Engine, toast: &mut Option<To
                     ui.label("Processing...");
                     let _ = engine.step();
                 }
+                EventCompiled::AudioAction(_) => {
+                    ui.label("🔊 Processing Audio...");
+                    // Audio should be handled by the engine system, UI just acknowledges it
+                    let _ = engine.step();
+                }
+                EventCompiled::Transition(_) => {
+                    ui.label("⏳ Processing Transition...");
+                    // Transition effect would be rendered here in a real engine
+                    let _ = engine.step();
+                }
             }
         }
         Err(e) => {

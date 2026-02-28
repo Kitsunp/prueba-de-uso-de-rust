@@ -24,10 +24,11 @@ pub use engine::Engine;
 pub use engine::StateChange;
 pub use error::{VnError, VnResult};
 pub use event::{
-    CharacterPatchCompiled, CharacterPatchRaw, CharacterPlacementCompiled, CharacterPlacementRaw,
-    ChoiceCompiled, ChoiceOptionCompiled, ChoiceOptionRaw, ChoiceRaw, CmpOp, CondCompiled, CondRaw,
-    DialogueCompiled, DialogueRaw, EventCompiled, EventRaw, ScenePatchCompiled, ScenePatchRaw,
-    SceneUpdateCompiled, SceneUpdateRaw, SharedStr,
+    AudioActionCompiled, AudioActionRaw, CharacterPatchCompiled, CharacterPatchRaw,
+    CharacterPlacementCompiled, CharacterPlacementRaw, ChoiceCompiled, ChoiceOptionCompiled,
+    ChoiceOptionRaw, ChoiceRaw, CmpOp, CondCompiled, CondRaw, DialogueCompiled, DialogueRaw,
+    EventCompiled, EventRaw, ScenePatchCompiled, ScenePatchRaw, SceneTransitionCompiled,
+    SceneTransitionRaw, SceneUpdateCompiled, SceneUpdateRaw, SharedStr,
 };
 pub use render::{RenderBackend, RenderOutput, TextRenderer};
 pub use resource::{LruCache, ResourceLimiter};

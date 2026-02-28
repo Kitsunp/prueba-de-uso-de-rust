@@ -6,7 +6,7 @@ use crate::resource::StringBudget;
 use super::SharedStr;
 
 /// Dialogue line with speaker and text in raw form.
-#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct DialogueRaw {
     pub speaker: String,

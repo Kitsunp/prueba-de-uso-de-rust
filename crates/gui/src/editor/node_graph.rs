@@ -546,11 +546,13 @@ impl NodeGraph {
     }
 
     /// Returns a slice of all nodes (internal use).
+    #[allow(dead_code)]
     pub(crate) fn nodes_slice(&self) -> &[(u32, StoryNode, egui::Pos2)] {
         &self.nodes
     }
 
     /// Returns a slice of all connections (internal use).
+    #[allow(dead_code)]
     pub(crate) fn connections_slice(&self) -> &[GraphConnection] {
         &self.connections
     }

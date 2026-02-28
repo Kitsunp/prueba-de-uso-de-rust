@@ -55,10 +55,44 @@ pub enum StoryNode {
     Scene { background: String },
     /// Jump to label.
     Jump { target: String },
+    /// Set a variable.
+    SetVariable { key: String, value: i32 },
+    /// Patch/Update scene (audio, characters, etc.) without full replacement.
+    ScenePatch(visual_novel_engine::ScenePatchRaw),
+    /// Conditional jump.
+    JumpIf {
+        target: String,
+        cond: visual_novel_engine::CondRaw,
+    },
     /// Start node (entry point marker, not a real event).
     Start,
     /// End node (terminal marker).
     End,
+    /// Audio action (BGM/SFX).
+    AudioAction {
+        channel: String,
+        action: String,
+        asset: Option<String>,
+        volume: Option<f32>,
+        fade_duration_ms: Option<u64>,
+        loop_playback: Option<bool>,
+    },
+    /// Scene transition.
+    Transition {
+        kind: String,
+        duration_ms: u32,
+        color: Option<String>,
+    },
+
+    /// Character placement (Visual Composer).
+    CharacterPlacement {
+        name: String,
+        x: i32,
+        y: i32,
+        scale: Option<f32>,
+    },
+    /// Generic node for unhandled events (preserves data).
+    Generic(visual_novel_engine::EventRaw),
 }
 
 impl Default for StoryNode {
@@ -82,8 +116,15 @@ impl StoryNode {
             StoryNode::Choice { .. } => "Choice",
             StoryNode::Scene { .. } => "Scene",
             StoryNode::Jump { .. } => "Jump",
+            StoryNode::SetVariable { .. } => "Set Var",
+            StoryNode::ScenePatch(_) => "Scene Patch",
+            StoryNode::JumpIf { .. } => "Branch (If)",
             StoryNode::Start => "Start",
             StoryNode::End => "End",
+            StoryNode::AudioAction { .. } => "Audio",
+            StoryNode::Transition { .. } => "Transition",
+            StoryNode::CharacterPlacement { .. } => "Placement",
+            StoryNode::Generic(_) => "Generic Event",
         }
     }
 
@@ -98,8 +139,15 @@ impl StoryNode {
             StoryNode::Choice { .. } => "🔀",
             StoryNode::Scene { .. } => "🎬",
             StoryNode::Jump { .. } => "↪",
+            StoryNode::SetVariable { .. } => "💾",
+            StoryNode::ScenePatch(_) => "🎭",
+            StoryNode::JumpIf { .. } => "❓",
             StoryNode::Start => "▶",
             StoryNode::End => "⏹",
+            StoryNode::AudioAction { .. } => "🔊",
+            StoryNode::Transition { .. } => "⏳",
+            StoryNode::CharacterPlacement { .. } => "🧍",
+            StoryNode::Generic(_) => "📦",
         }
     }
 
@@ -114,8 +162,15 @@ impl StoryNode {
             StoryNode::Choice { .. } => egui::Color32::from_rgb(100, 70, 90),
             StoryNode::Scene { .. } => egui::Color32::from_rgb(70, 90, 60),
             StoryNode::Jump { .. } => egui::Color32::from_rgb(90, 80, 50),
+            StoryNode::SetVariable { .. } => egui::Color32::from_rgb(80, 50, 90),
+            StoryNode::ScenePatch(_) => egui::Color32::from_rgb(60, 90, 80),
+            StoryNode::JumpIf { .. } => egui::Color32::from_rgb(90, 60, 20),
             StoryNode::Start => egui::Color32::from_rgb(50, 100, 50),
             StoryNode::End => egui::Color32::from_rgb(100, 50, 50),
+            StoryNode::AudioAction { .. } => egui::Color32::from_rgb(100, 100, 60), // Gold/Yellowish
+            StoryNode::Transition { .. } => egui::Color32::from_rgb(60, 100, 100),  // Cyan/Teal
+            StoryNode::CharacterPlacement { .. } => egui::Color32::from_rgb(100, 60, 100), // Purple-ish
+            StoryNode::Generic(_) => egui::Color32::from_rgb(80, 80, 80), // Gray for generic
         }
     }
 

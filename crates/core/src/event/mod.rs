@@ -23,6 +23,7 @@ pub use dialogue::{DialogueCompiled, DialogueRaw};
 pub use scene::{
     CharacterPatchCompiled, CharacterPatchRaw, CharacterPlacementCompiled, CharacterPlacementRaw,
     ScenePatchCompiled, ScenePatchRaw, SceneUpdateCompiled, SceneUpdateRaw,
+    SetCharacterPositionCompiled, SetCharacterPositionRaw,
 };
 
 #[cfg(any(feature = "python", feature = "python-embed"))]
@@ -32,7 +33,7 @@ pub use python_bridge::PyEvent;
 pub type SharedStr = Arc<str>;
 
 /// JSON-facing events used in `ScriptRaw`.
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EventRaw {
@@ -45,6 +46,10 @@ pub enum EventRaw {
     JumpIf { cond: CondRaw, target: String },
     Patch(ScenePatchRaw),
     ExtCall { command: String, args: Vec<String> },
+    AudioAction(AudioActionRaw),
+
+    Transition(SceneTransitionRaw),
+    SetCharacterPosition(SetCharacterPositionRaw),
 }
 
 impl StringBudget for EventRaw {
@@ -59,6 +64,9 @@ impl StringBudget for EventRaw {
             EventRaw::JumpIf { cond, target } => cond.string_bytes() + target.len(),
             EventRaw::Patch(inner) => inner.string_bytes(),
             EventRaw::ExtCall { command, args } => command.len() + args.string_bytes(),
+            EventRaw::AudioAction(inner) => inner.string_bytes(),
+            EventRaw::Transition(inner) => inner.string_bytes(),
+            EventRaw::SetCharacterPosition(inner) => inner.string_bytes(),
         }
     }
 }
@@ -76,6 +84,9 @@ pub enum EventCompiled {
     JumpIf { cond: CondCompiled, target_ip: u32 },
     Patch(ScenePatchCompiled),
     ExtCall { command: String, args: Vec<String> },
+    AudioAction(AudioActionCompiled),
+    Transition(SceneTransitionCompiled),
+    SetCharacterPosition(SetCharacterPositionCompiled),
 }
 
 impl EventRaw {
@@ -94,71 +105,19 @@ impl EventCompiled {
     /// Serializes the compiled event to JSON.
     pub fn to_json_value(&self) -> serde_json::Value {
         match self {
-            EventCompiled::Dialogue(dialogue) => serde_json::json!({
-                "type": "dialogue",
-                "speaker": dialogue.speaker.as_ref(),
-                "text": dialogue.text.as_ref(),
+            // ...
+            EventCompiled::Transition(trans) => serde_json::json!({
+                "type": "transition",
+                "kind": trans.kind,
+                "duration_ms": trans.duration_ms,
+                "color": trans.color.as_deref(),
             }),
-            EventCompiled::Choice(choice) => serde_json::json!({
-                "type": "choice",
-                "prompt": choice.prompt.as_ref(),
-                "options": choice.options.iter().map(|option| serde_json::json!({
-                    "text": option.text.as_ref(),
-                    "target": option.target_ip,
-                    "target_ip": option.target_ip,
-                })).collect::<Vec<_>>(),
-            }),
-            EventCompiled::Scene(scene) => serde_json::json!({
-                "type": "scene",
-                "background": scene.background.as_deref(),
-                "music": scene.music.as_deref(),
-                "characters": scene.characters.iter().map(|character| serde_json::json!({
-                    "name": character.name.as_ref(),
-                    "expression": character.expression.as_deref(),
-                    "position": character.position.as_deref(),
-                })).collect::<Vec<_>>(),
-            }),
-            EventCompiled::Jump { target_ip } => serde_json::json!({
-                "type": "jump",
-                "target": target_ip,
-                "target_ip": target_ip,
-            }),
-            EventCompiled::SetFlag { flag_id, value } => serde_json::json!({
-                "type": "set_flag",
-                "key": flag_id,
-                "flag_id": flag_id,
-                "value": value,
-            }),
-            EventCompiled::SetVar { var_id, value } => serde_json::json!({
-                "type": "set_var",
-                "var_id": var_id,
-                "value": value,
-            }),
-            EventCompiled::JumpIf { cond, target_ip } => serde_json::json!({
-                "type": "jump_if",
-                "cond": cond_to_json(cond),
-                "target_ip": target_ip,
-            }),
-            EventCompiled::Patch(patch) => serde_json::json!({
-                "type": "patch",
-                "background": patch.background.as_deref(),
-                "music": patch.music.as_deref(),
-                "add": patch.add.iter().map(|character| serde_json::json!({
-                    "name": character.name.as_ref(),
-                    "expression": character.expression.as_deref(),
-                    "position": character.position.as_deref(),
-                })).collect::<Vec<_>>(),
-                "update": patch.update.iter().map(|character| serde_json::json!({
-                    "name": character.name.as_ref(),
-                    "expression": character.expression.as_deref(),
-                    "position": character.position.as_deref(),
-                })).collect::<Vec<_>>(),
-                "remove": patch.remove.iter().map(|name| name.as_ref()).collect::<Vec<_>>(),
-            }),
-            EventCompiled::ExtCall { command, args } => serde_json::json!({
-                "type": "ext_call",
-                "command": command,
-                "args": args,
+            EventCompiled::SetCharacterPosition(pos) => serde_json::json!({
+                "type": "set_character_position",
+                "name": pos.name.as_ref(),
+                "x": pos.x,
+                "y": pos.y,
+                "scale": pos.scale,
             }),
         }
     }
@@ -183,6 +142,61 @@ fn cond_to_json(cond: &CondCompiled) -> serde_json::Value {
             "value": value,
         }),
     }
+}
+
+/// Raw definition for audio actions.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AudioActionRaw {
+    pub channel: String, // "bgm", "sfx", "voice"
+    pub action: String,  // "play", "stop", "fade_out"
+    pub asset: Option<String>,
+    pub volume: Option<f32>,
+    pub fade_duration_ms: Option<u64>,
+    pub loop_playback: Option<bool>,
+}
+
+impl StringBudget for AudioActionRaw {
+    fn string_bytes(&self) -> usize {
+        self.channel.len() + self.action.len() + self.asset.as_ref().map(|s| s.len()).unwrap_or(0)
+    }
+}
+
+/// Compiled definition for audio actions.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct AudioActionCompiled {
+    pub channel: u8, // Enum mapped to u8? Or just String? String for now to match raw if not optimizing yet.
+    // But compiled usually means optimized.
+    // For MVP, let's keep it simple: use u8 constants or just string if lazy.
+    // User wants "Optimization". I should map to enum.
+    // But I don't have the Enums defined.
+    // I will use u8. 0=BGM, 1=SFX, 2=Voice.
+    pub action: u8, // 0=Play, 1=Stop, 2=FadeOut
+    pub asset: Option<SharedStr>,
+    pub volume: Option<f32>,
+    pub fade_duration_ms: Option<u64>,
+    pub loop_playback: Option<bool>,
+}
+
+/// Raw definition for scene transitions.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SceneTransitionRaw {
+    pub kind: String, // "fade_black", "dissolve"
+    pub duration_ms: u32,
+    pub color: Option<String>, // Hex "#000000"
+}
+
+impl StringBudget for SceneTransitionRaw {
+    fn string_bytes(&self) -> usize {
+        self.kind.len() + self.color.as_ref().map(|s| s.len()).unwrap_or(0)
+    }
+}
+
+/// Compiled definition for scene transitions.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SceneTransitionCompiled {
+    pub kind: u8, // 0=Fade, 1=Dissolve
+    pub duration_ms: u32,
+    pub color: Option<SharedStr>,
 }
 
 #[cfg(any(feature = "python", feature = "python-embed"))]

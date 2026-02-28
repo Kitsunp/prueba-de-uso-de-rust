@@ -184,6 +184,9 @@ impl ScriptRaw {
                                 .position
                                 .as_deref()
                                 .map(|value| pool.intern(value)),
+                            x: character.x,
+                            y: character.y,
+                            scale: character.scale,
                         })
                         .collect(),
                 }),
@@ -230,6 +233,9 @@ impl ScriptRaw {
                                 .position
                                 .as_deref()
                                 .map(|value| pool.intern(value)),
+                            x: character.x,
+                            y: character.y,
+                            scale: character.scale,
                         })
                         .collect(),
                     update: patch
@@ -253,6 +259,45 @@ impl ScriptRaw {
                     command: command.clone(),
                     args: args.clone(),
                 },
+                EventRaw::AudioAction(action) => {
+                    EventCompiled::AudioAction(crate::event::AudioActionCompiled {
+                        channel: match action.channel.as_str() {
+                            "bgm" => 0,
+                            "sfx" => 1,
+                            "voice" => 2,
+                            _ => 1,
+                        },
+                        action: match action.action.as_str() {
+                            "play" => 0,
+                            "stop" => 1,
+                            "fade_out" => 2,
+                            _ => 0,
+                        }, // Simple mapping
+                        asset: action.asset.as_deref().map(|s| pool.intern(s)),
+                        volume: action.volume,
+                        fade_duration_ms: action.fade_duration_ms,
+                        loop_playback: action.loop_playback,
+                    })
+                }
+                EventRaw::Transition(transition) => {
+                    EventCompiled::Transition(crate::event::SceneTransitionCompiled {
+                        kind: match transition.kind.as_str() {
+                            "fade_black" => 0,
+                            "dissolve" => 1,
+                            _ => 0,
+                        },
+                        duration_ms: transition.duration_ms,
+                        color: transition.color.as_deref().map(|s| pool.intern(s)),
+                    })
+                }
+                EventRaw::SetCharacterPosition(pos) => EventCompiled::SetCharacterPosition(
+                    crate::event::SetCharacterPositionCompiled {
+                        name: pool.intern(&pos.name),
+                        x: pos.x,
+                        y: pos.y,
+                        scale: pos.scale,
+                    },
+                ),
             };
             compiled_events.push(compiled);
         }

@@ -180,6 +180,12 @@ impl SecurityPolicy {
                         }
                     }
                 }
+                EventRaw::AudioAction(action) => {
+                    if let Some(asset) = &action.asset {
+                        validate_path(asset, "audio asset", limits)?;
+                    }
+                }
+                EventRaw::Transition(_) => {}
             }
         }
         Ok(())

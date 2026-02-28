@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::resource::StringBudget;
 
 /// Condition for conditional jumps (raw form).
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CondRaw {

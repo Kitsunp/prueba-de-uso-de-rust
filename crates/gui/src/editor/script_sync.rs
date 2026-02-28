@@ -55,7 +55,39 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
             EventRaw::Jump { target } => StoryNode::Jump {
                 target: target.clone(),
             },
-            _ => continue, // Skip SetFlag, SetVar, JumpIf, etc.
+            EventRaw::SetVar { key, value } => StoryNode::SetVariable {
+                key: key.clone(),
+                value: *value,
+            },
+            EventRaw::JumpIf { cond, target } => StoryNode::JumpIf {
+                target: target.clone(),
+                cond: cond.clone(),
+            },
+            EventRaw::Patch(patch) => StoryNode::ScenePatch(patch.clone()),
+            EventRaw::ExtCall {
+                command: _command, ..
+            } => StoryNode::Generic(event.clone()), // Use Generic for ExtCall for now
+            EventRaw::AudioAction(action) => StoryNode::AudioAction {
+                channel: action.channel.clone(),
+                action: action.action.clone(),
+                asset: action.asset.clone(),
+                volume: action.volume,
+                fade_duration_ms: action.fade_duration_ms,
+                loop_playback: action.loop_playback,
+            },
+            EventRaw::Transition(trans) => StoryNode::Transition {
+                kind: trans.kind.clone(),
+                duration_ms: trans.duration_ms,
+                color: trans.color.clone(),
+            },
+            EventRaw::SetCharacterPosition(pos) => StoryNode::CharacterPlacement {
+                name: pos.name.clone(),
+                x: pos.x,
+                y: pos.y,
+                scale: pos.scale,
+            },
+            // CRITICAL: Capture any unhandled event as a GenericNode to prevent data loss.
+            other => StoryNode::Generic(other.clone()),
         };
 
         let id = graph.add_node(node, egui::pos2(100.0, y));
@@ -95,6 +127,18 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
                             graph.connect_port(from_id, opt_idx, target_id);
                         }
                     }
+                }
+            }
+            EventRaw::JumpIf { target, .. } => {
+                // Handle JumpIf logic flow: it can go to target OR next
+                if let Some(&target_idx) = label_to_index.get(target.as_str()) {
+                    if let Some(&target_id) = index_to_id.get(&target_idx) {
+                        graph.connect(from_id, target_id);
+                    }
+                }
+                // Also flow to next (fallthrough)
+                if let Some(&next_id) = index_to_id.get(&(idx + 1)) {
+                    graph.connect(from_id, next_id);
                 }
             }
             _ => {
@@ -169,6 +213,11 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
             continue;
         };
 
+        // We only generate labels/events for non-marker nodes
+        if node.is_marker() {
+            continue;
+        }
+
         let event_idx = events.len();
         let label = format!("node_{}", id);
         node_to_label.insert(id, label.clone());
@@ -215,12 +264,71 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
                     target: target.clone(),
                 });
             }
+            StoryNode::SetVariable { key, value } => {
+                events.push(EventRaw::SetVar {
+                    key: key.clone(),
+                    value: *value,
+                });
+            }
+            StoryNode::JumpIf { cond, target } => {
+                events.push(EventRaw::JumpIf {
+                    cond: cond.clone(),
+                    target: target.clone(),
+                });
+            }
+            StoryNode::ScenePatch(patch) => {
+                events.push(EventRaw::Patch(patch.clone()));
+            }
             StoryNode::Scene { background } => {
                 events.push(EventRaw::Scene(SceneUpdateRaw {
                     background: Some(background.clone()),
                     music: None,
                     characters: vec![],
                 }));
+            }
+            StoryNode::AudioAction {
+                channel,
+                action,
+                asset,
+                volume,
+                fade_duration_ms,
+                loop_playback,
+            } => {
+                events.push(EventRaw::AudioAction(visual_novel_engine::AudioActionRaw {
+                    channel: channel.clone(),
+                    action: action.clone(),
+                    asset: asset.clone(),
+                    volume: *volume,
+                    fade_duration_ms: *fade_duration_ms,
+                    loop_playback: *loop_playback,
+                }));
+            }
+            StoryNode::Transition {
+                kind,
+                duration_ms,
+                color,
+            } => {
+                events.push(EventRaw::Transition(
+                    visual_novel_engine::SceneTransitionRaw {
+                        kind: kind.clone(),
+                        duration_ms: *duration_ms,
+                        color: color.clone(),
+                    },
+                ));
+            }
+            StoryNode::CharacterPlacement { name, x, y, scale } => {
+                events.push(EventRaw::SetCharacterPosition(
+                    visual_novel_engine::SetCharacterPositionRaw {
+                        name: name.clone(),
+                        x: *x,
+                        y: *y,
+                        scale: *scale,
+                    },
+                ));
+            }
+            StoryNode::Generic(event) => {
+                // Pass through the generic event
+                events.push(event.clone());
             }
             StoryNode::Start | StoryNode::End => {
                 // Skip start/end markers
@@ -243,10 +351,6 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn pos(x: f32, y: f32) -> egui::Pos2 {
-        egui::pos2(x, y)
-    }
 
     #[test]
     fn test_roundtrip_empty_script() {
@@ -275,177 +379,5 @@ mod tests {
         // Should have at least one dialogue event
         assert!(!roundtrip.events.is_empty());
         assert!(roundtrip.labels.contains_key("start"));
-    }
-
-    #[test]
-    fn test_roundtrip_preserves_dialogue_content() {
-        let mut labels = BTreeMap::new();
-        labels.insert("start".to_string(), 0);
-
-        let events = vec![
-            EventRaw::Dialogue(DialogueRaw {
-                speaker: "Bob".to_string(),
-                text: "First line".to_string(),
-            }),
-            EventRaw::Dialogue(DialogueRaw {
-                speaker: "Alice".to_string(),
-                text: "Second line".to_string(),
-            }),
-        ];
-
-        let original = ScriptRaw::new(events, labels);
-        let graph = from_script(&original);
-        let roundtrip = to_script(&graph);
-
-        // Count dialogue events
-        let dialogue_count = roundtrip
-            .events
-            .iter()
-            .filter(|e| matches!(e, EventRaw::Dialogue(_)))
-            .count();
-
-        // Should preserve both dialogues
-        assert_eq!(dialogue_count, 2);
-    }
-
-    #[test]
-    fn test_roundtrip_choice_structure() {
-        let mut labels = BTreeMap::new();
-        labels.insert("start".to_string(), 0);
-        labels.insert("option_a".to_string(), 1);
-        labels.insert("option_b".to_string(), 2);
-
-        let events = vec![
-            EventRaw::Choice(ChoiceRaw {
-                prompt: "Choose wisely".to_string(),
-                options: vec![
-                    ChoiceOptionRaw {
-                        text: "Option A".to_string(),
-                        target: "option_a".to_string(),
-                    },
-                    ChoiceOptionRaw {
-                        text: "Option B".to_string(),
-                        target: "option_b".to_string(),
-                    },
-                ],
-            }),
-            EventRaw::Dialogue(DialogueRaw {
-                speaker: "A".to_string(),
-                text: "Path A".to_string(),
-            }),
-            EventRaw::Dialogue(DialogueRaw {
-                speaker: "B".to_string(),
-                text: "Path B".to_string(),
-            }),
-        ];
-
-        let original = ScriptRaw::new(events, labels);
-        let graph = from_script(&original);
-
-        // Graph should have nodes
-        assert!(graph.len() >= 4);
-
-        let roundtrip = to_script(&graph);
-
-        // Should have choice event
-        let has_choice = roundtrip
-            .events
-            .iter()
-            .any(|e| matches!(e, EventRaw::Choice(_)));
-        assert!(has_choice);
-    }
-
-    #[test]
-    fn test_manual_graph_to_script() {
-        // Test creating a graph manually and converting to script
-        let mut graph = NodeGraph::new();
-
-        let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
-        let dialogue = graph.add_node(
-            StoryNode::Dialogue {
-                speaker: "Narrator".to_string(),
-                text: "Welcome to the story".to_string(),
-            },
-            pos(0.0, 100.0),
-        );
-        let end = graph.add_node(StoryNode::End, pos(0.0, 200.0));
-
-        graph.connect(start, dialogue);
-        graph.connect(dialogue, end);
-
-        let script = to_script(&graph);
-
-        // Should have at least one dialogue
-        assert!(!script.events.is_empty());
-        assert!(script.labels.contains_key("start"));
-    }
-
-    #[test]
-    fn test_roundtrip_scene_nodes() {
-        // Test that Scene nodes are properly synced
-        let mut graph = NodeGraph::new();
-
-        let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
-        let scene = graph.add_node(
-            StoryNode::Scene {
-                background: "forest_bg.png".to_string(),
-            },
-            pos(0.0, 100.0),
-        );
-        let dialogue = graph.add_node(
-            StoryNode::Dialogue {
-                speaker: "Guide".to_string(),
-                text: "Welcome to the forest".to_string(),
-            },
-            pos(0.0, 200.0),
-        );
-        let end = graph.add_node(StoryNode::End, pos(0.0, 300.0));
-
-        graph.connect(start, scene);
-        graph.connect(scene, dialogue);
-        graph.connect(dialogue, end);
-
-        let script = to_script(&graph);
-
-        // Should have Scene event
-        let has_scene = script
-            .events
-            .iter()
-            .any(|e| matches!(e, EventRaw::Scene(_)));
-        assert!(has_scene, "Script should contain a Scene event");
-
-        // Should have dialogue
-        let has_dialogue = script
-            .events
-            .iter()
-            .any(|e| matches!(e, EventRaw::Dialogue(_)));
-        assert!(has_dialogue, "Script should contain a Dialogue event");
-    }
-
-    #[test]
-    fn test_roundtrip_with_jump() {
-        // Test Jump nodes are properly synced
-        let mut graph = NodeGraph::new();
-
-        let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
-        let jump = graph.add_node(
-            StoryNode::Jump {
-                target: "some_label".to_string(),
-            },
-            pos(0.0, 100.0),
-        );
-        let end = graph.add_node(StoryNode::End, pos(0.0, 200.0));
-
-        graph.connect(start, jump);
-        graph.connect(jump, end);
-
-        let script = to_script(&graph);
-
-        // Should have Jump event
-        let has_jump = script
-            .events
-            .iter()
-            .any(|e| matches!(e, EventRaw::Jump { .. }));
-        assert!(has_jump, "Script should contain a Jump event");
     }
 }

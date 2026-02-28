@@ -1,6 +1,6 @@
 //! Validation panel for displaying lint issues.
 
-use super::lint_checks::{LintIssue, LintSeverity};
+use super::validator::{LintIssue, LintSeverity};
 use eframe::egui;
 
 /// Panel for displaying validation results.

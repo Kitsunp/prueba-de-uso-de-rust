@@ -47,6 +47,14 @@ pub enum NodeType {
     Patch,
     /// An external command call.
     ExtCall { command: String },
+    /// An audio action.
+    AudioAction {
+        channel: u8,
+        action: u8,
+        asset: Option<String>,
+    },
+    /// A scene transition.
+    Transition { kind: String, duration: u64 },
 }
 
 /// A node in the story graph.
@@ -340,6 +348,47 @@ impl StoryGraph {
                 };
                 (node_type, edges)
             }
+
+            EventCompiled::AudioAction(action) => {
+                let node_type = NodeType::AudioAction {
+                    channel: action.channel,
+                    action: action.action,
+                    asset: action.asset.as_ref().map(|s| s.to_string()),
+                };
+                let edges = if has_next {
+                    vec![GraphEdge {
+                        from: ip,
+                        to: next_ip,
+                        edge_type: EdgeType::Sequential,
+                        label: None,
+                    }]
+                } else {
+                    vec![]
+                };
+                (node_type, edges)
+            }
+
+            EventCompiled::Transition(transition) => {
+                let node_type = NodeType::Transition {
+                    kind: if transition.kind == 0 {
+                        "fade".to_string()
+                    } else {
+                        "dissolve".to_string()
+                    }, // simplistic mapping for now
+                    duration: transition.duration_ms.into(),
+                };
+                let edges = if has_next {
+                    vec![GraphEdge {
+                        from: ip,
+                        to: next_ip,
+                        edge_type: EdgeType::Sequential,
+                        label: None,
+                    }]
+                } else {
+                    vec![]
+                };
+                (node_type, edges)
+            }
         }
     }
 
@@ -493,6 +542,14 @@ impl StoryGraph {
                 }
                 NodeType::Patch => format!("[{}] Patch", node.id),
                 NodeType::ExtCall { command } => format!("[{}] Call: {}", node.id, command),
+                NodeType::AudioAction {
+                    channel, action, ..
+                } => {
+                    format!("[{}] Audio: {}/{}", node.id, channel, action)
+                }
+                NodeType::Transition { kind, .. } => {
+                    format!("[{}] Transition: {}", node.id, kind)
+                }
             };
 
             let shape = match &node.node_type {

@@ -1,17 +1,18 @@
-use crate::editor::{NodeGraph, StoryNode};
+use crate::editor::StoryNode; // Removed NodeGraph
 use eframe::egui;
+use std::collections::HashMap;
 use visual_novel_engine::{Engine, EntityId, EntityKind, SceneState};
 
+pub enum VisualComposerAction {
+    SelectNode(u32),
+    CreateNode { node: StoryNode, pos: egui::Pos2 },
+}
+
 /// The WYSIWYG Scene Composer.
-///
-/// Allows visual editing of the scene layout.
-/// - Drag & Drop entities to move them.
-/// - Click to select.
-/// - Shows gizmos for selected entities.
 pub struct VisualComposerPanel<'a> {
     scene: &'a mut SceneState,
     engine: &'a Option<Engine>,
-    graph: &'a mut NodeGraph, // Added for dropping assets -> creating nodes
+    // graph: Removed to avoid borrow conflicts
     selected_entity_id: &'a mut Option<u32>,
 }
 
@@ -19,18 +20,21 @@ impl<'a> VisualComposerPanel<'a> {
     pub fn new(
         scene: &'a mut SceneState,
         engine: &'a Option<Engine>,
-        graph: &'a mut NodeGraph,
         selected_entity_id: &'a mut Option<u32>,
     ) -> Self {
         Self {
             scene,
             engine,
-            graph,
             selected_entity_id,
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui) {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        entity_owners: &HashMap<u32, u32>,
+    ) -> Option<VisualComposerAction> {
+        let mut action = None;
         ui.heading("🎨 Visual Composer");
         ui.separator();
 
@@ -58,12 +62,13 @@ impl<'a> VisualComposerPanel<'a> {
                         let asset_type = parts[0];
                         let asset_name = parts[1];
 
-                        // Create Logic Node
-                        // We place it at a random/offset position in the graph so they don't stack perfectly?
-                        // Or roughly where we are viewing? We don't have graph pan info here easily (it's in NodeEditorPanel).
-                        // We'll use a fixed offset relative to count.
-                        let offset = (self.graph.len() as f32) * 20.0;
-                        let pos = egui::pos2(100.0 + offset, 100.0 + offset);
+                        // Heuristic Position: Center of viewport or cursor?
+                        // If we use cursor, it might be relative to screen.
+                        // visual_composer doesn't know graph scroll/pan.
+                        // We will return screen pos, workbench converts it if possible,
+                        // or just creates it at a default location.
+                        // Let's assume (0,0) for now or use a fixed offset in workbench.
+                        let pos = egui::pos2(100.0, 100.0);
 
                         let node = match asset_type {
                             "char" => Some(StoryNode::Dialogue {
@@ -77,9 +82,7 @@ impl<'a> VisualComposerPanel<'a> {
                         };
 
                         if let Some(n) = node {
-                            let new_id = self.graph.add_node(n, pos);
-                            self.graph.selected = Some(new_id);
-                            self.graph.mark_modified();
+                            action = Some(VisualComposerAction::CreateNode { node: n, pos });
                         }
 
                         // Clear payload
@@ -129,37 +132,9 @@ impl<'a> VisualComposerPanel<'a> {
                 if interact.clicked() {
                     *self.selected_entity_id = Some(raw_id);
 
-                    // Sync Selection to Graph (Heuristic)
-                    // We attempt to find the node that defined this entity.
-                    let mut found_node = None;
-                    match &entity.kind {
-                        EntityKind::Character(c) => {
-                            // Find Dialogue/ShowCharacter with this speaker
-                            for (nid, node, _) in self.graph.nodes() {
-                                if let StoryNode::Dialogue { speaker, .. } = node {
-                                    if speaker == c.name.as_ref() {
-                                        found_node = Some(*nid);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        EntityKind::Image(img) => {
-                            // Find Scene with this background
-                            for (nid, node, _) in self.graph.nodes() {
-                                if let StoryNode::Scene { background } = node {
-                                    if background == img.path.as_ref() {
-                                        found_node = Some(*nid);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-
-                    if let Some(nid) = found_node {
-                        self.graph.selected = Some(nid);
+                    // Trigger Node Selection if mapping exists
+                    if let Some(node_id) = entity_owners.get(&raw_id) {
+                        action = Some(VisualComposerAction::SelectNode(*node_id));
                     }
                 }
 
@@ -238,5 +213,7 @@ impl<'a> VisualComposerPanel<'a> {
                 });
             },
         );
+
+        action
     }
 }

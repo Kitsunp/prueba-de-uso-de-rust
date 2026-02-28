@@ -76,6 +76,21 @@ pub fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObje
             }
             dict.set_item("args", list)?;
         }
+        EventCompiled::AudioAction(action) => {
+            dict.set_item("type", "audio_action")?;
+            dict.set_item("channel", action.channel)?;
+            dict.set_item("action", action.action)?;
+            dict.set_item("asset", action.asset.as_deref())?;
+            dict.set_item("volume", action.volume)?;
+            dict.set_item("fade_duration_ms", action.fade_duration_ms)?;
+            dict.set_item("loop_playback", action.loop_playback)?;
+        }
+        EventCompiled::Transition(trans) => {
+            dict.set_item("type", "transition")?;
+            dict.set_item("kind", trans.kind)?;
+            dict.set_item("duration_ms", trans.duration_ms)?;
+            dict.set_item("color", trans.color.as_deref())?;
+        }
     }
     Ok(dict.into())
 }

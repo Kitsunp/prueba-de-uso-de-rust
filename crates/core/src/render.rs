@@ -85,6 +85,11 @@ impl RenderBackend for TextRenderer {
             EventCompiled::ExtCall { command, args } => {
                 format!("ExtCall {command}({})", args.join(", "))
             }
+            EventCompiled::AudioAction(_) => "Audio Action".to_string(),
+            EventCompiled::Transition(_) => "Transition".to_string(),
+            EventCompiled::SetCharacterPosition(pos) => {
+                format!("SetCharacterPosition {} ({}, {})", pos.name, pos.x, pos.y)
+            }
         };
         RenderOutput { text }
     }

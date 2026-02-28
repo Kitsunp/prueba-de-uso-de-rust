@@ -47,8 +47,35 @@ impl<'a> GraphPanel<'a> {
                     StoryNode::Choice { prompt, .. } => format!("🔀 {}", truncate(prompt, 20)),
                     StoryNode::Scene { background } => format!("🎬 {}", truncate(background, 20)),
                     StoryNode::Jump { target } => format!("↪ Jump to {}", target),
+                    StoryNode::SetVariable { key, value } => format!("💾 {} = {}", key, value),
+                    StoryNode::ScenePatch(_) => "🎭 Scene Patch".to_string(),
+                    StoryNode::JumpIf { target, .. } => format!("❓ If -> {}", target),
                     StoryNode::Start => "▶ Start".to_string(),
                     StoryNode::End => "⏹ End".to_string(),
+                    StoryNode::Generic(event) => {
+                        let json = event.to_json_value();
+                        let type_name = json
+                            .get("type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("unknown");
+                        format!("📦 Generic ({})", type_name)
+                    }
+                    StoryNode::AudioAction {
+                        channel, action, ..
+                    } => {
+                        format!("🔊 Audio: {} {}", action, channel)
+                    }
+                    StoryNode::Transition { kind, .. } => {
+                        format!("⏳ Transition: {}", kind)
+                    }
+                    StoryNode::CharacterPlacement {
+                        name,
+                        x,
+                        y,
+                        scale: _,
+                    } => {
+                        format!("🧍 Placement: {} ({}, {})", name, x, y)
+                    }
                 };
                 (*id, info, node.color())
             })

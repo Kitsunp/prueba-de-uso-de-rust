@@ -62,6 +62,9 @@ impl PyEvent {
                 EventRaw::JumpIf { .. } => "jump_if",
                 EventRaw::Patch(_) => "patch",
                 EventRaw::ExtCall { .. } => "ext_call",
+                EventRaw::AudioAction(_) => "audio_action",
+                EventRaw::Transition(_) => "transition",
+                EventRaw::SetCharacterPosition(_) => "set_character_position",
             },
             PyEventData::Compiled(event) => match event {
                 EventCompiled::Dialogue(_) => "dialogue",
@@ -73,6 +76,9 @@ impl PyEvent {
                 EventCompiled::JumpIf { .. } => "jump_if",
                 EventCompiled::Patch(_) => "patch",
                 EventCompiled::ExtCall { .. } => "ext_call",
+                EventCompiled::AudioAction(_) => "audio_action",
+                EventCompiled::Transition(_) => "transition",
+                EventCompiled::SetCharacterPosition(_) => "set_character_position",
             },
         }
     }

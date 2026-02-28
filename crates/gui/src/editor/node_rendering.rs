@@ -193,8 +193,64 @@ pub fn render_inline_editor(graph: &mut NodeGraph, ui: &egui::Ui) {
                         changed |= ui.text_edit_singleline(target).changed();
                     });
                 }
+                StoryNode::SetVariable { key, value } => {
+                    // Simple inline editor for var
+                    ui.horizontal(|ui| {
+                        ui.label("Var:");
+                        changed |= ui.text_edit_singleline(key).changed();
+                        ui.label("Val:");
+                        // egui DragValue for i32
+                        changed |= ui.add(egui::DragValue::new(value)).changed();
+                    });
+                }
+                StoryNode::JumpIf { target, .. } => {
+                    ui.horizontal(|ui| {
+                        ui.label("Target:");
+                        changed |= ui.text_edit_singleline(target).changed();
+                    });
+                    ui.label("(Edit condition in Inspector)");
+                }
+                StoryNode::ScenePatch(_) => {
+                    ui.label("Scene Patch");
+                    ui.label("(Edit details in Inspector)");
+                }
+                StoryNode::AudioAction {
+                    channel, action, ..
+                } => {
+                    ui.label(format!("Audio: {} {}", action, channel));
+                    ui.label("(Edit details in Inspector)");
+                }
+                StoryNode::Transition { kind, .. } => {
+                    ui.label(format!("Transition: {}", kind));
+                    ui.label("(Edit details in Inspector)");
+                }
                 StoryNode::Start | StoryNode::End => {
                     ui.label("This node has no editable properties.");
+                }
+                StoryNode::Generic(_) => {
+                    ui.label("This node type cannot be edited locally.");
+                    ui.label("Use the Inspector to view details.");
+                }
+                StoryNode::CharacterPlacement { name, x, y, scale } => {
+                    ui.label("Character Placement");
+                    ui.horizontal(|ui| {
+                        ui.label("Name:");
+                        changed |= ui.text_edit_singleline(name).changed();
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("X:");
+                        changed |= ui.add(egui::DragValue::new(x)).changed();
+                        ui.label("Y:");
+                        changed |= ui.add(egui::DragValue::new(y)).changed();
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Scale:");
+                        let mut s = scale.unwrap_or(1.0);
+                        if ui.add(egui::DragValue::new(&mut s).speed(0.1)).changed() {
+                            *scale = Some(s);
+                            changed = true;
+                        }
+                    });
                 }
             }
 

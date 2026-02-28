@@ -14,6 +14,9 @@ fn sample_script() -> ScriptRaw {
                 name: "Ava".to_string(),
                 expression: Some("smile".to_string()),
                 position: Some("center".to_string()),
+                x: None,
+                y: None,
+                scale: None,
             }],
         }),
         EventRaw::Dialogue(visual_novel_engine::DialogueRaw {
@@ -343,7 +346,9 @@ fn collect_raw_sequence(script: &ScriptRaw, choices: &[usize]) -> Vec<String> {
             | EventRaw::Scene(_)
             | EventRaw::SetVar { .. }
             | EventRaw::Patch(_)
-            | EventRaw::ExtCall { .. } => {
+            | EventRaw::ExtCall { .. }
+            | EventRaw::AudioAction(_)
+            | EventRaw::Transition(_) => {
                 position += 1;
             }
             EventRaw::JumpIf { .. } => {
@@ -379,6 +384,9 @@ fn event_signature(event: &EventCompiled) -> String {
         EventCompiled::JumpIf { cond: _, target_ip } => format!("jump_if:{target_ip}"),
         EventCompiled::Patch(_) => "patch".to_string(),
         EventCompiled::ExtCall { command, .. } => format!("ext_call:{command}"),
+        EventCompiled::AudioAction(action) => format!("audio:{}:{}", action.action, action.channel),
+        EventCompiled::Transition(trans) => format!("transition:{}", trans.kind),
+        EventCompiled::SetCharacterPosition(pos) => format!("placement:{}", pos.name),
     }
 }
 
@@ -395,5 +403,8 @@ fn event_signature_raw(event: &EventRaw) -> String {
         EventRaw::JumpIf { .. } => "jump_if".to_string(),
         EventRaw::Patch(_) => "patch".to_string(),
         EventRaw::ExtCall { command, .. } => format!("ext_call:{command}"),
+        EventRaw::AudioAction(action) => format!("audio:{}:{}", action.action, action.channel),
+        EventRaw::Transition(trans) => format!("transition:{}", trans.kind),
+        EventRaw::SetCharacterPosition(pos) => format!("placement:{}", pos.name),
     }
 }

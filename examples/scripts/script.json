@@ -14,7 +14,7 @@
     },
     {
       "type": "dialogue",
-      "speaker": "???",
+      "speaker": "a",
       "text": "Hey! Are you the new transfer student?"
     },
     {
@@ -30,13 +30,11 @@
     }
   ],
   "labels": {
-    "node_0": 0,
     "node_1": 0,
     "node_2": 1,
     "node_3": 2,
     "node_4": 3,
     "node_5": 4,
-    "node_6": 5,
     "start": 0
   }
 }

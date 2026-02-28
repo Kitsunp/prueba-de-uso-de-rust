@@ -166,6 +166,21 @@ impl PyStoryGraph {
                     visual_novel_engine::NodeType::ExtCall { command } => {
                         ("ext_call".to_string(), command.clone())
                     }
+                    visual_novel_engine::NodeType::AudioAction {
+                        channel,
+                        action,
+                        asset,
+                    } => (
+                        "audio_action".to_string(),
+                        format!(
+                            "Channel: {}, Action: {}, Asset: {:?}",
+                            channel, action, asset
+                        ),
+                    ),
+                    visual_novel_engine::NodeType::Transition { kind, duration } => (
+                        "transition".to_string(),
+                        format!("Kind: {}, Duration: {}", kind, duration),
+                    ),
                 };
                 PyGraphNode {
                     id: n.id,

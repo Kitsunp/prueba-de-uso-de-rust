@@ -29,6 +29,8 @@ pub struct ProjectSettings {
     pub resolution: (u32, u32),
     pub default_language: String,
     pub supported_languages: Vec<String>,
+    /// Main script file to load (e.g. "main.json")
+    pub entry_point: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -97,6 +99,7 @@ impl ProjectManifest {
                 resolution: (1280, 720),
                 default_language: "en".to_string(),
                 supported_languages: vec!["en".to_string()],
+                entry_point: "main.json".to_string(),
             },
             assets: AssetManifest::default(),
         }
@@ -122,5 +125,6 @@ mod tests {
         let manifest = ProjectManifest::new("P", "A");
         assert_eq!(manifest.settings.resolution, (1280, 720));
         assert_eq!(manifest.settings.default_language, "en");
+        assert_eq!(manifest.settings.entry_point, "main.json");
     }
 }

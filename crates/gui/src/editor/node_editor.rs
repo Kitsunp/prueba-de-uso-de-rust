@@ -642,8 +642,49 @@ impl<'a> NodeEditorPanel<'a> {
             StoryNode::Jump { target } => {
                 format!("→ {}", target.chars().take(10).collect::<String>())
             }
+            StoryNode::SetVariable { key, value } => format!("{} = {}", key, value),
+            StoryNode::ScenePatch(patch) => {
+                let mut summary = String::new();
+                if patch.music.is_some() {
+                    summary.push_str("♫ ");
+                }
+                if !patch.add.is_empty() {
+                    summary.push_str("C+ ");
+                }
+                if !patch.update.is_empty() {
+                    summary.push_str("C~ ");
+                }
+                if !patch.remove.is_empty() {
+                    summary.push_str("C- ");
+                }
+                if summary.is_empty() {
+                    "Empty Patch".to_string()
+                } else {
+                    summary
+                }
+            }
+            StoryNode::JumpIf { .. } => "Conditional".to_string(),
             StoryNode::Start => "Entry Point".to_string(),
             StoryNode::End => "Exit Point".to_string(),
+            StoryNode::Generic(event) => {
+                let json = event.to_json_value();
+                let type_name = json
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("unknown");
+                format!("Generic: {}", type_name)
+            }
+            StoryNode::AudioAction {
+                channel, action, ..
+            } => {
+                format!("{} {}", action, channel)
+            }
+            StoryNode::Transition { kind, .. } => {
+                format!("Transition: {}", kind)
+            }
+            StoryNode::CharacterPlacement { name, x, y, .. } => {
+                format!("{}: ({}, {})", name, x, y)
+            }
         }
     }
 

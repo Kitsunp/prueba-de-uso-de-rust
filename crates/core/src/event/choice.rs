@@ -6,7 +6,7 @@ use crate::resource::StringBudget;
 use super::SharedStr;
 
 /// Choice prompt and options in raw form.
-#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ChoiceRaw {
     pub prompt: String,
@@ -27,7 +27,7 @@ pub struct ChoiceCompiled {
 }
 
 /// Choice option with label target in raw form.
-#[derive(Clone, Debug, Serialize, Deserialize, Default, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ChoiceOptionRaw {
     pub text: String,

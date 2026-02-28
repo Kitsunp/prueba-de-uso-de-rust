@@ -163,6 +163,57 @@ impl Engine {
                 self.advance_position()
             }
             EventCompiled::ExtCall { .. } => Ok(()),
+            EventCompiled::AudioAction(action) => {
+                use crate::audio::AudioCommand;
+                // Simple mapping: 0=BGM, others=SFX. 0=Play, 1=Stop.
+                let cmd = match action.action {
+                    0 => {
+                        // Play
+                        if let Some(path) = &action.asset {
+                            if action.channel == 0 {
+                                Some(AudioCommand::PlayBgm {
+                                    resource: AssetId::from_path(path.as_ref()),
+                                    path: path.clone(),
+                                    r#loop: action.loop_playback.unwrap_or(true),
+                                    fade_in: Duration::from_millis(
+                                        action.fade_duration_ms.unwrap_or(DEFAULT_FADE_MS),
+                                    ),
+                                })
+                            } else {
+                                Some(AudioCommand::PlaySfx {
+                                    resource: AssetId::from_path(path.as_ref()),
+                                    path: path.clone(),
+                                })
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    1 => {
+                        // Stop
+                        if action.channel == 0 {
+                            Some(AudioCommand::StopBgm {
+                                fade_out: Duration::from_millis(
+                                    action.fade_duration_ms.unwrap_or(DEFAULT_FADE_MS),
+                                ),
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+
+                if let Some(c) = cmd {
+                    audio_commands.push(c);
+                }
+                self.advance_position()
+            }
+            EventCompiled::SetCharacterPosition(pos) => {
+                self.state.visual.set_character_position(pos);
+                self.advance_position()
+            }
+            EventCompiled::Transition(_) => self.advance_position(),
         }
     }
 

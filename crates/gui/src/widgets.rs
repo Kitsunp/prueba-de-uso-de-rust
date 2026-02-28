@@ -20,5 +20,8 @@ pub fn event_kind(event: &EventCompiled) -> String {
         EventCompiled::JumpIf { .. } => "JumpIf".to_string(),
         EventCompiled::Patch(_) => "Patch".to_string(),
         EventCompiled::ExtCall { .. } => "ExtCall".to_string(),
+        EventCompiled::AudioAction(_) => "Audio".to_string(),
+        EventCompiled::Transition(_) => "Transition".to_string(),
+        EventCompiled::SetCharacterPosition(_) => "Placement".to_string(),
     }
 }

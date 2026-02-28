@@ -85,6 +85,15 @@ impl UiView {
             EventCompiled::ExtCall { command, args } => UiView::System {
                 message: format!("ExtCall {command}({})", args.join(", ")),
             },
+            EventCompiled::AudioAction(_) => UiView::System {
+                message: "Audio Action".to_string(),
+            },
+            EventCompiled::Transition(_) => UiView::System {
+                message: "Transition".to_string(),
+            },
+            EventCompiled::SetCharacterPosition(pos) => UiView::System {
+                message: format!("SetCharacterPosition: {} ({}, {})", pos.name, pos.x, pos.y),
+            },
         }
     }
 }

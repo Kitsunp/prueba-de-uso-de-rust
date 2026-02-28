@@ -1,0 +1,17 @@
+[metadata]
+name = "Demo Story"
+author = "User"
+version = "0.1.0"
+description = "A demo visual novel project"
+
+[settings]
+resolution = [1280, 720]
+default_language = "en"
+supported_languages = ["en"]
+entry_point = "demo_story.json"
+
+[assets.backgrounds]
+
+[assets.characters]
+
+[assets.audio]
