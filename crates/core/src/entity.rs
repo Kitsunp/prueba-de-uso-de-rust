@@ -105,7 +105,10 @@ pub enum EntityKind {
     Text(TextData),
     /// A character sprite with expressions.
     Character(CharacterData),
-    /// A video player component (placeholder for future implementation).
+    /// A video clip descriptor for runtime playback surfaces.
+    ///
+    /// Rendering and decode are backend responsibilities; the entity stores
+    /// deterministic scene intent (path + looping) for preview/runtime parity.
     Video(VideoData),
     /// An audio source attached to this entity.
     Audio(AudioData),

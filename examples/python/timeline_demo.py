@@ -21,8 +21,12 @@ def main():
 
     # Add keyframes with different easing
     track_x.add_keyframe(vn.Keyframe(time=0, value=0, easing="linear"))
-    track_x.add_keyframe(vn.Keyframe(time=60, value=100, easing="ease_out"))  # At 1 second
-    track_x.add_keyframe(vn.Keyframe(time=120, value=50, easing="ease_in_out"))  # At 2 seconds
+    track_x.add_keyframe(
+        vn.Keyframe(time=60, value=100, easing="ease_out")
+    )  # At 1 second
+    track_x.add_keyframe(
+        vn.Keyframe(time=120, value=50, easing="ease_in_out")
+    )  # At 2 seconds
 
     print(f"Created track: {track_x}")
     print(f"Keyframes: {track_x.keyframes()}")

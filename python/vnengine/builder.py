@@ -109,7 +109,9 @@ class ScriptBuilder:
     def jump_if_flag(self, key: str, is_set: bool, target: str) -> None:
         """Append a conditional jump on a flag."""
 
-        self._events.append(JumpIf(cond=CondFlag(key=key, is_set=is_set), target=target))
+        self._events.append(
+            JumpIf(cond=CondFlag(key=key, is_set=is_set), target=target)
+        )
 
     def jump_if_var(self, key: str, op: str, value: int, target: str) -> None:
         """Append a conditional jump on a variable comparison."""
@@ -162,12 +164,12 @@ class ScriptBuilder:
             )
         )
 
-    def transition(self, kind: str, duration_ms: int, color: Optional[str] = None) -> None:
+    def transition(
+        self, kind: str, duration_ms: int, color: Optional[str] = None
+    ) -> None:
         """Append a transition event."""
 
-        self._events.append(
-            Transition(kind=kind, duration_ms=duration_ms, color=color)
-        )
+        self._events.append(Transition(kind=kind, duration_ms=duration_ms, color=color))
 
     def set_character_position(
         self, name: str, x: int, y: int, scale: Optional[float] = None

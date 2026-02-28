@@ -30,6 +30,7 @@ script_json = """
 }
 """
 
+
 def main():
     # Configuración de la ventana
     config = vn.VnConfig(
@@ -38,12 +39,12 @@ def main():
         height=720.0,
         fullscreen=False,
     )
-    
+
     print("Iniciando demo...")
     print("Controles:")
     print("  ESC  - Menú de configuración (guardar/cargar)")
     print("  F12  - Inspector de depuración")
-    
+
     try:
         vn.run_visual_novel(script_json, config)
         print("Demo finalizada.")

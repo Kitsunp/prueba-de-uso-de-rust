@@ -8,9 +8,11 @@ use crate::editor::{
 use visual_novel_engine::{CmpOp, CondRaw, Engine, EventCompiled, EventRaw, ScriptRaw, StoryGraph};
 
 const DRY_RUN_MAX_STEPS: usize = 2048;
+const DRY_RUN_EXHAUSTIVE_ROUTE_LIMIT: usize = 32;
+const DRY_RUN_EXHAUSTIVE_CHOICE_DEPTH: usize = 12;
 const REPRO_DEFAULT_RADIUS: usize = 12;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ChoiceStrategy {
     First,
     Last,
@@ -23,6 +25,28 @@ impl ChoiceStrategy {
             ChoiceStrategy::First => "first",
             ChoiceStrategy::Last => "last",
             ChoiceStrategy::Alternating => "alternating",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ChoicePolicy {
+    Strategy(ChoiceStrategy),
+    Scripted(Vec<usize>),
+}
+
+impl ChoicePolicy {
+    fn label(&self) -> String {
+        match self {
+            ChoicePolicy::Strategy(strategy) => strategy.label().to_string(),
+            ChoicePolicy::Scripted(path) => {
+                let route = path
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(".");
+                format!("scripted({route})")
+            }
         }
     }
 }
@@ -172,15 +196,13 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
                         detail: "Engine initialized".to_string(),
                     });
 
-                    let outcome = run_dry_run(engine.clone(), ChoiceStrategy::First);
+                    let primary_policy = ChoicePolicy::Strategy(ChoiceStrategy::First);
+                    let outcome = run_dry_run(engine.clone(), &primary_policy);
                     dry_run_report = Some(outcome.report.clone());
                     issues.extend(outcome.issues);
 
-                    let parity_issues = check_preview_runtime_parity(
-                        &script,
-                        &outcome.report,
-                        ChoiceStrategy::First,
-                    );
+                    let parity_issues =
+                        check_preview_runtime_parity(&script, &outcome.report, &primary_policy);
                     if let Some(report) = dry_run_report.as_mut() {
                         report.failing_event_ip = report
                             .failing_event_ip
@@ -188,22 +210,42 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
                     }
                     issues.extend(parity_issues);
 
-                    for strategy in [ChoiceStrategy::Last, ChoiceStrategy::Alternating] {
+                    let mut route_policies = vec![
+                        ChoicePolicy::Strategy(ChoiceStrategy::Last),
+                        ChoicePolicy::Strategy(ChoiceStrategy::Alternating),
+                    ];
+                    for path in enumerate_choice_routes(
+                        &script,
+                        DRY_RUN_MAX_STEPS,
+                        DRY_RUN_EXHAUSTIVE_ROUTE_LIMIT,
+                        DRY_RUN_EXHAUSTIVE_CHOICE_DEPTH,
+                    ) {
+                        route_policies.push(ChoicePolicy::Scripted(path));
+                    }
+
+                    let mut seen_policies = HashSet::new();
+                    seen_policies.insert(primary_policy.clone());
+                    for policy in route_policies {
+                        if !seen_policies.insert(policy.clone()) {
+                            continue;
+                        }
+
                         match Engine::from_compiled(
                             compiled.clone(),
                             visual_novel_engine::SecurityPolicy::default(),
                             visual_novel_engine::ResourceLimiter::default(),
                         ) {
                             Ok(route_engine) => {
-                                let route_outcome = run_dry_run(route_engine, strategy);
+                                let route_outcome = run_dry_run(route_engine, &policy);
                                 let mut route_issues = check_preview_runtime_parity(
                                     &script,
                                     &route_outcome.report,
-                                    strategy,
+                                    &policy,
                                 );
                                 if route_outcome.report.stop_reason
                                     == DryRunStopReason::RuntimeError
                                 {
+                                    let route_label = policy.label();
                                     route_issues.push(
                                         LintIssue::error(
                                             None,
@@ -211,8 +253,7 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
                                             LintCode::DryRunRuntimeError,
                                             format!(
                                                 "Dry Run route '{}' runtime error: {}",
-                                                strategy.label(),
-                                                route_outcome.report.stop_message
+                                                route_label, route_outcome.report.stop_message
                                             ),
                                         )
                                         .with_event_ip(route_outcome.report.failing_event_ip),
@@ -228,14 +269,14 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
                                 issues.extend(route_issues);
                             }
                             Err(err) => {
+                                let route_label = policy.label();
                                 issues.push(LintIssue::error(
                                     None,
                                     ValidationPhase::Runtime,
                                     LintCode::RuntimeInitError,
                                     format!(
                                         "Runtime initialization failed for route '{}': {}",
-                                        strategy.label(),
-                                        err
+                                        route_label, err
                                     ),
                                 ));
                             }
@@ -303,10 +344,11 @@ struct DryRunOutcome {
     report: DryRunReport,
 }
 
-fn run_dry_run(mut engine: Engine, strategy: ChoiceStrategy) -> DryRunOutcome {
+fn run_dry_run(mut engine: Engine, policy: &ChoicePolicy) -> DryRunOutcome {
     let mut issues = Vec::new();
     let mut traces = Vec::new();
     let mut steps = 0usize;
+    let mut choice_cursor = 0usize;
     let mut failing_event_ip = None;
 
     let (stop_reason, stop_message) = loop {
@@ -367,7 +409,9 @@ fn run_dry_run(mut engine: Engine, strategy: ChoiceStrategy) -> DryRunOutcome {
                 if choice.options.is_empty() {
                     Err(visual_novel_engine::VnError::InvalidChoice)
                 } else {
-                    let idx = select_choice_index(strategy, steps, choice.options.len());
+                    let idx =
+                        select_choice_index(policy, steps, choice.options.len(), choice_cursor);
+                    choice_cursor = choice_cursor.saturating_add(1);
                     engine.choose(idx).map(|_| ())
                 }
             }
@@ -623,14 +667,24 @@ fn fmt_opt_f32(value: Option<f32>) -> String {
     }
 }
 
-fn select_choice_index(strategy: ChoiceStrategy, step: usize, option_len: usize) -> usize {
+fn select_choice_index(
+    policy: &ChoicePolicy,
+    step: usize,
+    option_len: usize,
+    choice_cursor: usize,
+) -> usize {
     if option_len == 0 {
         return 0;
     }
-    match strategy {
-        ChoiceStrategy::First => 0,
-        ChoiceStrategy::Last => option_len.saturating_sub(1),
-        ChoiceStrategy::Alternating => step % option_len,
+    match policy {
+        ChoicePolicy::Strategy(ChoiceStrategy::First) => 0,
+        ChoicePolicy::Strategy(ChoiceStrategy::Last) => option_len.saturating_sub(1),
+        ChoicePolicy::Strategy(ChoiceStrategy::Alternating) => step % option_len,
+        ChoicePolicy::Scripted(path) => path
+            .get(choice_cursor)
+            .copied()
+            .unwrap_or(0)
+            .min(option_len.saturating_sub(1)),
     }
 }
 
@@ -658,14 +712,166 @@ struct RawStepTrace {
     character_count: usize,
 }
 
+#[derive(Debug, Clone)]
+struct RawRouteFrame {
+    ip: usize,
+    steps: usize,
+    choice_depth: usize,
+    choices: Vec<usize>,
+    state: RawSimulationState,
+}
+
+fn enumerate_choice_routes(
+    script: &ScriptRaw,
+    max_steps: usize,
+    max_routes: usize,
+    max_choice_depth: usize,
+) -> Vec<Vec<usize>> {
+    let mut routes = Vec::new();
+    let start_ip = match script.start_index() {
+        Ok(idx) => idx,
+        Err(_) => return routes,
+    };
+
+    let mut stack = vec![RawRouteFrame {
+        ip: start_ip,
+        steps: 0,
+        choice_depth: 0,
+        choices: Vec::new(),
+        state: RawSimulationState::default(),
+    }];
+
+    while let Some(frame) = stack.pop() {
+        if routes.len() >= max_routes {
+            break;
+        }
+        if frame.steps >= max_steps || frame.ip >= script.events.len() {
+            routes.push(frame.choices);
+            continue;
+        }
+
+        let event = &script.events[frame.ip];
+        if let EventRaw::Choice(choice) = event {
+            if choice.options.is_empty() || frame.choice_depth >= max_choice_depth {
+                routes.push(frame.choices);
+                continue;
+            }
+
+            let mut pushed = false;
+            for option_idx in (0..choice.options.len()).rev() {
+                let Some(target_ip) = script
+                    .labels
+                    .get(&choice.options[option_idx].target)
+                    .copied()
+                else {
+                    continue;
+                };
+                let mut next = frame.clone();
+                next.steps = next.steps.saturating_add(1);
+                next.choice_depth = next.choice_depth.saturating_add(1);
+                next.ip = target_ip;
+                next.choices.push(option_idx);
+                stack.push(next);
+                pushed = true;
+            }
+
+            if !pushed {
+                routes.push(frame.choices);
+            }
+            continue;
+        }
+
+        let mut next = frame;
+        let mut next_ip = next.ip.saturating_add(1);
+        match event {
+            EventRaw::Scene(scene) => {
+                if let Some(bg) = &scene.background {
+                    next.state.visual.background = Some(bg.clone());
+                }
+                if let Some(music) = &scene.music {
+                    next.state.visual.music = Some(music.clone());
+                }
+                if !scene.characters.is_empty() {
+                    next.state.visual.characters.clear();
+                    for character in &scene.characters {
+                        next.state.visual.characters.insert(character.name.clone());
+                    }
+                }
+            }
+            EventRaw::Patch(patch) => {
+                if let Some(bg) = &patch.background {
+                    next.state.visual.background = Some(bg.clone());
+                }
+                if let Some(music) = &patch.music {
+                    next.state.visual.music = Some(music.clone());
+                }
+                for removed in &patch.remove {
+                    next.state.visual.characters.remove(removed);
+                }
+                for added in &patch.add {
+                    next.state.visual.characters.insert(added.name.clone());
+                }
+                for updated in &patch.update {
+                    next.state.visual.characters.insert(updated.name.clone());
+                }
+            }
+            EventRaw::SetCharacterPosition(pos) => {
+                next.state.visual.characters.insert(pos.name.clone());
+            }
+            EventRaw::SetFlag { key, value } => {
+                next.state.flags.insert(key.clone(), *value);
+            }
+            EventRaw::SetVar { key, value } => {
+                next.state.vars.insert(key.clone(), *value);
+            }
+            EventRaw::Jump { target } => {
+                let Some(target_ip) = script.labels.get(target).copied() else {
+                    routes.push(next.choices);
+                    continue;
+                };
+                next_ip = target_ip;
+            }
+            EventRaw::JumpIf { cond, target } => {
+                if eval_cond_raw(cond, &next.state) {
+                    let Some(target_ip) = script.labels.get(target).copied() else {
+                        routes.push(next.choices);
+                        continue;
+                    };
+                    next_ip = target_ip;
+                }
+            }
+            EventRaw::Dialogue(_)
+            | EventRaw::ExtCall { .. }
+            | EventRaw::AudioAction(_)
+            | EventRaw::Transition(_)
+            | EventRaw::Choice(_) => {}
+        }
+
+        next.ip = next_ip;
+        next.steps = next.steps.saturating_add(1);
+        stack.push(next);
+    }
+
+    if routes.is_empty() {
+        routes.push(Vec::new());
+    }
+    routes.sort();
+    routes.dedup();
+    if routes.len() > max_routes {
+        routes.truncate(max_routes);
+    }
+    routes
+}
+
 fn simulate_raw_sequence(
     script: &ScriptRaw,
     max_steps: usize,
-    strategy: ChoiceStrategy,
+    policy: &ChoicePolicy,
 ) -> Vec<RawStepTrace> {
     let mut out = Vec::new();
     let mut state = RawSimulationState::default();
     let mut steps = 0usize;
+    let mut choice_cursor = 0usize;
     let mut ip = match script.start_index() {
         Ok(idx) => idx,
         Err(_) => return out,
@@ -711,6 +917,9 @@ fn simulate_raw_sequence(
                 for added in &patch.add {
                     state.visual.characters.insert(added.name.clone());
                 }
+                for updated in &patch.update {
+                    state.visual.characters.insert(updated.name.clone());
+                }
             }
             EventRaw::SetCharacterPosition(pos) => {
                 state.visual.characters.insert(pos.name.clone());
@@ -728,7 +937,9 @@ fn simulate_raw_sequence(
                 next_ip = target_ip;
             }
             EventRaw::Choice(choice) => {
-                let choice_idx = select_choice_index(strategy, steps, choice.options.len());
+                let choice_idx =
+                    select_choice_index(policy, steps, choice.options.len(), choice_cursor);
+                choice_cursor = choice_cursor.saturating_add(1);
                 let Some(target_label) = choice
                     .options
                     .get(choice_idx)
@@ -782,11 +993,12 @@ fn eval_cond_raw(cond: &CondRaw, state: &RawSimulationState) -> bool {
 fn check_preview_runtime_parity(
     script: &ScriptRaw,
     report: &DryRunReport,
-    strategy: ChoiceStrategy,
+    policy: &ChoicePolicy,
 ) -> Vec<LintIssue> {
     let mut issues = Vec::new();
     let runtime_steps = &report.steps;
-    let raw_steps = simulate_raw_sequence(script, report.max_steps, strategy);
+    let raw_steps = simulate_raw_sequence(script, report.max_steps, policy);
+    let route_label = policy.label();
     let overlap = runtime_steps.len().min(raw_steps.len());
 
     for idx in 0..overlap {
@@ -801,7 +1013,7 @@ fn check_preview_runtime_parity(
                     LintCode::DryRunParityMismatch,
                     format!(
                         "Parity mismatch [route={}] at step {}: preview {}@{} vs runtime {}@{}",
-                        strategy.label(),
+                        route_label.as_str(),
                         idx,
                         raw.event_kind,
                         raw.event_ip,
@@ -822,7 +1034,7 @@ fn check_preview_runtime_parity(
                     LintCode::DryRunParityMismatch,
                     format!(
                         "Parity payload mismatch [route={}] at step {}: preview '{}' vs runtime '{}'",
-                        strategy.label(),
+                        route_label.as_str(),
                         idx,
                         raw.event_signature,
                         runtime.event_signature
@@ -844,7 +1056,7 @@ fn check_preview_runtime_parity(
                     LintCode::DryRunParityMismatch,
                     format!(
                         "Parity visual mismatch [route={}] at step {}: preview bg={:?}, music={:?}, chars={} vs runtime bg={:?}, music={:?}, chars={}",
-                        strategy.label(),
+                        route_label.as_str(),
                         idx,
                         raw.visual_background,
                         raw.visual_music,
@@ -873,7 +1085,7 @@ fn check_preview_runtime_parity(
                 LintCode::DryRunParityMismatch,
                 format!(
                     "Parity length mismatch [route={}]: preview={} runtime={}",
-                    strategy.label(),
+                    route_label.as_str(),
                     raw_steps.len(),
                     runtime_steps.len()
                 ),
@@ -1061,7 +1273,8 @@ mod tests {
             .iter()
             .map(|step| step.event_signature.clone())
             .collect();
-        let raw_seq: Vec<String> = simulate_raw_sequence(&result.script, 32, ChoiceStrategy::First)
+        let first = ChoicePolicy::Strategy(ChoiceStrategy::First);
+        let raw_seq: Vec<String> = simulate_raw_sequence(&result.script, 32, &first)
             .into_iter()
             .map(|step| step.event_signature)
             .collect();
@@ -1077,9 +1290,12 @@ mod tests {
         let graph = build_branching_graph();
         let script = crate::editor::script_sync::to_script(&graph);
 
-        let first = simulate_raw_sequence(&script, 32, ChoiceStrategy::First);
-        let last = simulate_raw_sequence(&script, 32, ChoiceStrategy::Last);
-        let alternating = simulate_raw_sequence(&script, 32, ChoiceStrategy::Alternating);
+        let first_policy = ChoicePolicy::Strategy(ChoiceStrategy::First);
+        let last_policy = ChoicePolicy::Strategy(ChoiceStrategy::Last);
+        let alternating_policy = ChoicePolicy::Strategy(ChoiceStrategy::Alternating);
+        let first = simulate_raw_sequence(&script, 32, &first_policy);
+        let last = simulate_raw_sequence(&script, 32, &last_policy);
+        let alternating = simulate_raw_sequence(&script, 32, &alternating_policy);
 
         assert!(!first.is_empty());
         assert!(!last.is_empty());
@@ -1088,6 +1304,16 @@ mod tests {
             first.iter().map(|s| &s.event_signature).collect::<Vec<_>>(),
             last.iter().map(|s| &s.event_signature).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn route_enumerator_covers_choice_branches() {
+        let graph = build_branching_graph();
+        let script = crate::editor::script_sync::to_script(&graph);
+        let routes = enumerate_choice_routes(&script, 64, 16, 8);
+
+        assert!(routes.iter().any(|route| route.as_slice() == [0]));
+        assert!(routes.iter().any(|route| route.as_slice() == [1]));
     }
 
     #[test]

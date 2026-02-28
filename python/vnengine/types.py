@@ -96,7 +96,7 @@ class CharacterPlacement:
             x=int(data["x"]) if data.get("x") is not None else None,
             y=int(data["y"]) if data.get("y") is not None else None,
             scale=float(data["scale"]) if data.get("scale") is not None else None,
-        ) 
+        )
 
 
 @dataclass(frozen=True)
@@ -329,10 +329,10 @@ class SetFlag:
         value = data["value"]
         if not isinstance(value, bool):
             raise ValueError(
-                "SetFlag 'value' must be bool, got "
-                f"{type(value).__name__}"
+                f"SetFlag 'value' must be bool, got {type(value).__name__}"
             )
         return cls(key=str(data["key"]), value=value)
+
 
 @dataclass(frozen=True)
 class SetVar:
@@ -348,10 +348,7 @@ class SetVar:
     def from_dict(cls, data: Mapping[str, Any]) -> "SetVar":
         value = data["value"]
         if not isinstance(value, int):
-            raise ValueError(
-                "SetVar 'value' must be int, got "
-                f"{type(value).__name__}"
-            )
+            raise ValueError(f"SetVar 'value' must be int, got {type(value).__name__}")
         return cls(key=str(data["key"]), value=value)
 
 
@@ -368,8 +365,7 @@ class CondFlag:
         value = data["is_set"]
         if not isinstance(value, bool):
             raise ValueError(
-                "CondFlag 'is_set' must be bool, got "
-                f"{type(value).__name__}"
+                f"CondFlag 'is_set' must be bool, got {type(value).__name__}"
             )
         return cls(key=str(data["key"]), is_set=value)
 
@@ -388,8 +384,7 @@ class CondVarCmp:
         value = data["value"]
         if not isinstance(value, int):
             raise ValueError(
-                "CondVarCmp 'value' must be int, got "
-                f"{type(value).__name__}"
+                f"CondVarCmp 'value' must be int, got {type(value).__name__}"
             )
         return cls(key=str(data["key"]), op=str(data["op"]), value=value)
 
@@ -466,7 +461,9 @@ class Script:
             )
         events = [event_from_dict(item) for item in data.get("events", [])]
         labels = {str(key): int(value) for key, value in data.get("labels", {}).items()}
-        return cls(events=events, labels=labels, script_schema_version=str(found_version))
+        return cls(
+            events=events, labels=labels, script_schema_version=str(found_version)
+        )
 
     @classmethod
     def from_json(cls, raw: str) -> "Script":
@@ -525,7 +522,9 @@ def normalize_choice_options(
 
 
 def normalize_characters(
-    characters: Iterable[Union[CharacterPlacement, Tuple[str, Optional[str], Optional[str]]]],
+    characters: Iterable[
+        Union[CharacterPlacement, Tuple[str, Optional[str], Optional[str]]]
+    ],
 ) -> List[CharacterPlacement]:
     normalized: List[CharacterPlacement] = []
     for character in characters:
@@ -534,15 +533,15 @@ def normalize_characters(
         else:
             name, expression, position = character
             normalized.append(
-                CharacterPlacement(
-                    name=name, expression=expression, position=position
-                )
+                CharacterPlacement(name=name, expression=expression, position=position)
             )
     return normalized
 
 
 def normalize_character_patches(
-    characters: Iterable[Union[CharacterPatch, Tuple[str, Optional[str], Optional[str]]]],
+    characters: Iterable[
+        Union[CharacterPatch, Tuple[str, Optional[str], Optional[str]]]
+    ],
 ) -> List[CharacterPatch]:
     normalized: List[CharacterPatch] = []
     for character in characters:
@@ -551,8 +550,6 @@ def normalize_character_patches(
         else:
             name, expression, position = character
             normalized.append(
-                CharacterPatch(
-                    name=name, expression=expression, position=position
-                )
+                CharacterPatch(name=name, expression=expression, position=position)
             )
     return normalized

@@ -59,7 +59,9 @@ class TypesTests(unittest.TestCase):
 
     def test_jump_if_requires_cond(self):
         with self.assertRaises(ValueError):
-            JumpIf.from_dict({"type": "jump_if", "cond": {"kind": "unknown"}, "target": "end"})
+            JumpIf.from_dict(
+                {"type": "jump_if", "cond": {"kind": "unknown"}, "target": "end"}
+            )
 
     def test_audio_transition_and_position_roundtrip(self):
         events = [
@@ -86,7 +88,9 @@ class BuilderTests(unittest.TestCase):
         builder.set_flag("done", True)
         builder.set_var("counter", 3)
         builder.jump_if_var("counter", "gt", 1, target="end")
-        builder.patch(add=[("Ava", "happy", "left")], update=[("Ava", None, "center")], remove=[])
+        builder.patch(
+            add=[("Ava", "happy", "left")], update=[("Ava", None, "center")], remove=[]
+        )
         builder.audio_action("bgm", "play", asset="music/theme.ogg", loop_playback=True)
         builder.transition("fade", 250)
         builder.set_character_position("Ava", 32, 48, 1.1)
@@ -99,13 +103,21 @@ class BuilderTests(unittest.TestCase):
         payload = json.loads(results[0])
         self.assertEqual(payload["labels"], {"end": 2, "start": 0})
         self.assertEqual(payload["script_schema_version"], SCRIPT_SCHEMA_VERSION)
-        patch_events = [event for event in payload["events"] if event["type"] == "patch"]
+        patch_events = [
+            event for event in payload["events"] if event["type"] == "patch"
+        ]
         self.assertEqual(len(patch_events), 1)
         self.assertEqual(patch_events[0]["add"][0]["name"], "Ava")
-        self.assertTrue(any(event["type"] == "audio_action" for event in payload["events"]))
-        self.assertTrue(any(event["type"] == "transition" for event in payload["events"]))
         self.assertTrue(
-            any(event["type"] == "set_character_position" for event in payload["events"])
+            any(event["type"] == "audio_action" for event in payload["events"])
+        )
+        self.assertTrue(
+            any(event["type"] == "transition" for event in payload["events"])
+        )
+        self.assertTrue(
+            any(
+                event["type"] == "set_character_position" for event in payload["events"]
+            )
         )
         self.assertTrue(any(event["type"] == "ext_call" for event in payload["events"]))
 
@@ -145,7 +157,11 @@ class EngineWrapperTests(unittest.TestCase):
         sys.modules["visual_novel_engine"] = module
 
         engine = Engine.from_script(
-            {"script_schema_version": SCRIPT_SCHEMA_VERSION, "events": [], "labels": {"start": 0}}
+            {
+                "script_schema_version": SCRIPT_SCHEMA_VERSION,
+                "events": [],
+                "labels": {"start": 0},
+            }
         )
         self.assertIsInstance(engine.raw, FakeEngine)
         self.assertEqual(
@@ -167,7 +183,11 @@ class EngineWrapperTests(unittest.TestCase):
         sys.modules["visual_novel_engine"] = module
 
         engine = Engine.from_script(
-            {"script_schema_version": SCRIPT_SCHEMA_VERSION, "events": [], "labels": {"start": 0}}
+            {
+                "script_schema_version": SCRIPT_SCHEMA_VERSION,
+                "events": [],
+                "labels": {"start": 0},
+            }
         )
         self.assertEqual(
             engine.ui_state(),
@@ -185,7 +205,11 @@ class EngineWrapperTests(unittest.TestCase):
         sys.modules["visual_novel_engine"] = module
 
         engine = Engine.from_script(
-            {"script_schema_version": SCRIPT_SCHEMA_VERSION, "events": [], "labels": {"start": 0}}
+            {
+                "script_schema_version": SCRIPT_SCHEMA_VERSION,
+                "events": [],
+                "labels": {"start": 0},
+            }
         )
         with self.assertRaises(RuntimeError):
             engine.ui_state()
@@ -249,7 +273,9 @@ class NativeBindingsTests(unittest.TestCase):
 
     def test_resource_config_and_memory_usage(self):
         engine = self.native.Engine(self._sample_script_json())
-        config = self.native.ResourceConfig(max_texture_memory=123, max_script_bytes=456)
+        config = self.native.ResourceConfig(
+            max_texture_memory=123, max_script_bytes=456
+        )
         engine.set_resources(config)
         usage = engine.get_memory_usage()
         self.assertEqual(usage["max_texture_memory"], 123)
@@ -280,7 +306,7 @@ class NativeBindingsTests(unittest.TestCase):
 
         audio = engine.audio()
         audio.play_bgm("theme_song", loop=True, fade_in=0.5)
-        
+
         # Verify commands are returned explicitly (Transparency Criterio O)
         step_result = engine.step()
         commands = step_result.audio
@@ -289,7 +315,7 @@ class NativeBindingsTests(unittest.TestCase):
         # AssetId hashing makes resource checking hard without resolving, just check type
         self.assertTrue(commands[0]["loop"])
         self.assertEqual(commands[0]["fade_in"], 0.5)
-        
+
         audio.stop_all(fade_out=0.1)
         audio.play_sfx("click")
 
