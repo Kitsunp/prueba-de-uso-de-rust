@@ -6,9 +6,9 @@ use visual_novel_engine::{Engine, ScriptRaw};
 use crate::editor::{
     asset_browser::AssetBrowserPanel,
     diff_dialog::DiffDialog,
-    graph_panel::GraphPanel,
     inspector_panel::InspectorPanel,
     lint_panel::LintPanel,
+    node_editor::NodeEditorPanel,
     node_graph::NodeGraph,
     node_types::ToastState,
     timeline_panel::TimelinePanel,
@@ -243,7 +243,7 @@ impl EditorWorkbench {
                 }
             }
             Err(e) => {
-                self.toast = Some(crate::editor::node_types::ToastState::error(&format!(
+                self.toast = Some(crate::editor::node_types::ToastState::error(format!(
                     "Failed to load project: {}",
                     e
                 )));
@@ -258,7 +258,7 @@ impl EditorWorkbench {
                 self.apply_loaded_script(loaded_script, path);
             }
             Err(e) => {
-                self.toast = Some(crate::editor::node_types::ToastState::error(&format!(
+                self.toast = Some(crate::editor::node_types::ToastState::error(format!(
                     "Failed to load script: {}",
                     e
                 )));
@@ -293,7 +293,7 @@ impl EditorWorkbench {
     pub fn execute_save(&mut self, path: &std::path::Path, _content_unused: &str) {
         if let Err(e) = crate::editor::project_io::save_script(path, &self.node_graph) {
             tracing::error!("Failed to save: {}", e);
-            self.toast = Some(ToastState::error(&format!("Save failed: {}", e)));
+            self.toast = Some(ToastState::error(format!("Save failed: {}", e)));
         } else {
             self.saved_script_snapshot = Some(self.node_graph.to_script());
             self.node_graph.clear_modified();
@@ -378,7 +378,7 @@ impl EditorWorkbench {
         let compiled = match script.compile() {
             Ok(compiled) => compiled,
             Err(e) => {
-                self.toast = Some(ToastState::error(&format!("Compile failed: {}", e)));
+                self.toast = Some(ToastState::error(format!("Compile failed: {}", e)));
                 return;
             }
         };
@@ -386,7 +386,7 @@ impl EditorWorkbench {
         let bytes = match compiled.to_binary() {
             Ok(bytes) => bytes,
             Err(e) => {
-                self.toast = Some(ToastState::error(&format!("Binary export failed: {}", e)));
+                self.toast = Some(ToastState::error(format!("Binary export failed: {}", e)));
                 return;
             }
         };
@@ -402,7 +402,7 @@ impl EditorWorkbench {
                     self.toast = Some(ToastState::success("Exported .vnproject successfully"));
                 }
                 Err(e) => {
-                    self.toast = Some(ToastState::error(&format!("Export failed: {}", e)));
+                    self.toast = Some(ToastState::error(format!("Export failed: {}", e)));
                 }
             }
         } else {
@@ -483,6 +483,14 @@ impl EditorWorkbench {
                 if ui.button("Exportar .vnproject").clicked() {
                     self.export_compiled_project();
                 }
+                if ui.button("Reset Layout").clicked() {
+                    self.show_graph = true;
+                    self.show_inspector = true;
+                    self.show_timeline = true;
+                    self.show_asset_browser = true;
+                    self.node_editor_window_open = false;
+                    self.toast = Some(ToastState::success("Layout restablecido"));
+                }
             });
         });
 
@@ -552,24 +560,7 @@ impl EditorWorkbench {
                 });
         }
 
-        // 2. Right Panel (Inspector)
-        if self.show_inspector {
-            egui::SidePanel::right("inspector_panel")
-                .default_width(250.0)
-                .resizable(true)
-                .show(ctx, |ui| {
-                    let selected = self.node_graph.selected;
-                    InspectorPanel::new(
-                        &self.scene,
-                        &mut self.node_graph,
-                        selected,
-                        self.selected_entity,
-                    )
-                    .ui(ui);
-                });
-        }
-
-        // 3. Left Panel (Asset Browser)
+        // 2. Left Panel (Asset Browser)
         if self.show_asset_browser {
             egui::SidePanel::left("asset_browser_panel")
                 .resizable(true)
@@ -583,34 +574,99 @@ impl EditorWorkbench {
                 });
         }
 
-        // 4. Central Area (Docking Logic)
+        // 3. Central Area (Docking Logic)
 
         // Prepare Data for decoupled rendering to avoid simultaneous mutable borrows
         let entity_owners = self.build_entity_node_map();
         let mut composer_actions = Vec::new();
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
-                &mut self.scene,
-                &self.engine,
-                &mut self.selected_entity,
-            );
-
-            if self.node_editor_window_open {
-                // Detached Mode: Composer fills background
-                if let Some(act) = composer.ui(ui, &entity_owners) {
-                    composer_actions.push(act);
+            if self.node_editor_window_open || !self.show_graph {
+                // Detached graph mode: Composer + optional Inspector
+                if self.show_inspector {
+                    ui.columns(2, |columns| {
+                        columns[0].vertical(|ui| {
+                            let mut composer =
+                                crate::editor::visual_composer::VisualComposerPanel::new(
+                                    &mut self.scene,
+                                    &self.engine,
+                                    &mut self.selected_entity,
+                                );
+                            if let Some(act) = composer.ui(ui, &entity_owners) {
+                                composer_actions.push(act);
+                            }
+                        });
+                        columns[1].vertical(|ui| {
+                            ui.heading("Inspector");
+                            let selected = self.node_graph.selected;
+                            InspectorPanel::new(
+                                &self.scene,
+                                &mut self.node_graph,
+                                selected,
+                                self.selected_entity,
+                            )
+                            .ui(ui);
+                        });
+                    });
+                } else {
+                    let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
+                        &mut self.scene,
+                        &self.engine,
+                        &mut self.selected_entity,
+                    );
+                    if let Some(act) = composer.ui(ui, &entity_owners) {
+                        composer_actions.push(act);
+                    }
                 }
-            } else {
-                // Docked Mode: Split View (Graph | Composer)
-                ui.columns(2, |columns| {
+            } else if self.show_inspector {
+                // Docked graph mode: Graph | Composer | Inspector
+                ui.columns(3, |columns| {
                     columns[0].vertical(|ui| {
                         ui.heading("Logic Graph");
-                        let mut panel = GraphPanel::new(&mut self.node_graph);
+                        let mut panel =
+                            NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
                         panel.ui(ui);
                     });
 
                     columns[1].vertical(|ui| {
+                        let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
+                            &mut self.scene,
+                            &self.engine,
+                            &mut self.selected_entity,
+                        );
+                        if let Some(act) = composer.ui(ui, &entity_owners) {
+                            composer_actions.push(act);
+                        }
+                    });
+
+                    columns[2].vertical(|ui| {
+                        ui.heading("Inspector");
+                        let selected = self.node_graph.selected;
+                        InspectorPanel::new(
+                            &self.scene,
+                            &mut self.node_graph,
+                            selected,
+                            self.selected_entity,
+                        )
+                        .ui(ui);
+                    });
+                });
+            } else {
+                // Docked graph mode without inspector: Graph | Composer
+                ui.columns(2, |columns| {
+                    columns[0].vertical(|ui| {
+                        ui.heading("Logic Graph");
+                        let mut panel =
+                            NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
+                        panel.ui(ui);
+                    });
+
+                    columns[1].vertical(|ui| {
+                        let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
+                            &mut self.scene,
+                            &self.engine,
+                            &mut self.selected_entity,
+                        );
                         if let Some(act) = composer.ui(ui, &entity_owners) {
                             composer_actions.push(act);
                         }
@@ -652,7 +708,7 @@ impl EditorWorkbench {
         }
 
         // 6. Floating/Detached Node Editor
-        if self.node_editor_window_open {
+        if self.node_editor_window_open && self.show_graph {
             let mut embedded_open = self.node_editor_window_open;
             let mut detached_closed = false;
             ctx.show_viewport_immediate(
@@ -666,13 +722,17 @@ impl EditorWorkbench {
                             .open(&mut embedded_open)
                             .resizable(true)
                             .show(viewport_ctx, |ui| {
-                                let mut panel = GraphPanel::new(&mut self.node_graph);
+                                let mut panel = NodeEditorPanel::new(
+                                    &mut self.node_graph,
+                                    &mut self.undo_stack,
+                                );
                                 panel.ui(ui);
                             });
                     }
                     egui::ViewportClass::Immediate | egui::ViewportClass::Root => {
                         egui::CentralPanel::default().show(viewport_ctx, |ui| {
-                            let mut panel = GraphPanel::new(&mut self.node_graph);
+                            let mut panel =
+                                NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
                             panel.ui(ui);
                         });
                         if viewport_ctx.input(|i| i.viewport().close_requested()) {
@@ -762,5 +822,3 @@ mod tests {
         );
     }
 }
-
-

@@ -103,10 +103,7 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
                     phase_trace.push(PhaseTrace {
                         phase: CompilationPhase::DryRun,
                         ok: dry_run_errors == 0,
-                        detail: format!(
-                            "Dry run complete ({} dry-run error(s))",
-                            dry_run_errors
-                        ),
+                        detail: format!("Dry run complete ({} dry-run error(s))", dry_run_errors),
                     });
 
                     Ok(engine)

@@ -37,7 +37,10 @@ pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
             ui.checkbox(&mut workbench.show_inspector, "Inspector");
             ui.checkbox(&mut workbench.show_timeline, "Timeline");
             ui.separator();
-            ui.checkbox(&mut workbench.node_editor_window_open, "Floating Node Editor");
+            ui.checkbox(
+                &mut workbench.node_editor_window_open,
+                "Floating Node Editor",
+            );
         });
     });
 }

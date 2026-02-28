@@ -348,7 +348,8 @@ fn collect_raw_sequence(script: &ScriptRaw, choices: &[usize]) -> Vec<String> {
             | EventRaw::Patch(_)
             | EventRaw::ExtCall { .. }
             | EventRaw::AudioAction(_)
-            | EventRaw::Transition(_) => {
+            | EventRaw::Transition(_)
+            | EventRaw::SetCharacterPosition(_) => {
                 position += 1;
             }
             EventRaw::JumpIf { .. } => {

@@ -145,6 +145,9 @@ fn build_scene_update(count: usize) -> SceneUpdateCompiled {
             name,
             expression: Some(Arc::from("happy")),
             position: Some(Arc::from("center")),
+            x: None,
+            y: None,
+            scale: None,
         });
     }
     SceneUpdateCompiled {

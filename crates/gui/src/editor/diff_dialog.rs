@@ -87,7 +87,10 @@ impl DiffDialog {
                     if self.previous_script.is_none() {
                         ui.label("Archivo nuevo (sin snapshot previo).");
                     } else {
-                        ui.label(format!("Eventos actuales: {}", self.current_script.events.len()));
+                        ui.label(format!(
+                            "Eventos actuales: {}",
+                            self.current_script.events.len()
+                        ));
                     }
 
                     ui.separator();

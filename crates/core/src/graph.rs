@@ -577,7 +577,10 @@ impl StoryGraph {
                     format!("[{}] Transition: {}", node.id, kind)
                 }
                 NodeType::CharacterPlacement { name, x, y, scale } => {
-                    format!("[{}] Placement: {} ({}, {}) s={:?}", node.id, name, x, y, scale)
+                    format!(
+                        "[{}] Placement: {} ({}, {}) s={:?}",
+                        node.id, name, x, y, scale
+                    )
                 }
             };
 

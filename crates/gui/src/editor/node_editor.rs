@@ -525,7 +525,7 @@ impl<'a> NodeEditorPanel<'a> {
                         let hover_radius = 8.0 * self.graph.zoom();
                         let is_hovered = response
                             .hover_pos()
-                            .map_or(false, |p| p.distance(socket_center) < hover_radius);
+                            .is_some_and(|p| p.distance(socket_center) < hover_radius);
 
                         let mut color = egui::Color32::WHITE;
                         let mut radius = 4.0 * self.graph.zoom();
@@ -561,7 +561,7 @@ impl<'a> NodeEditorPanel<'a> {
                         let hover_radius = 8.0 * self.graph.zoom();
                         let is_hovered = response
                             .hover_pos()
-                            .map_or(false, |p| p.distance(socket_center) < hover_radius);
+                            .is_some_and(|p| p.distance(socket_center) < hover_radius);
 
                         let mut color = egui::Color32::WHITE;
                         let mut radius = 4.0 * self.graph.zoom();

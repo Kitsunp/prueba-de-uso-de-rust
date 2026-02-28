@@ -39,7 +39,9 @@ pub use node_graph::NodeGraph;
 pub use node_types::{ContextMenu, StoryNode, ToastKind, ToastState};
 pub use timeline_panel::TimelinePanel;
 pub use undo::UndoStack;
-pub use validator::{validate as validate_graph, LintCode, LintIssue, LintSeverity, ValidationPhase};
+pub use validator::{
+    validate as validate_graph, LintCode, LintIssue, LintSeverity, ValidationPhase,
+};
 pub use viewport_panel::ViewportPanel;
 pub use visual_composer::VisualComposerPanel;
 pub use workbench::EditorWorkbench;

@@ -54,6 +54,9 @@ fn peek_next_assets_collects_scene_assets() {
             name: "Ava".to_string(),
             expression: Some("smile".to_string()),
             position: Some("center".to_string()),
+            x: None,
+            y: None,
+            scale: None,
         }],
     })];
     let mut labels = BTreeMap::new();

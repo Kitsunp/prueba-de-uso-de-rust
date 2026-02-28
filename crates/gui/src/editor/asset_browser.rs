@@ -36,7 +36,7 @@ impl<'a> AssetBrowserPanel<'a> {
                     ui.label("No audio in manifest");
                 } else {
                     // List view for audio
-                    for (name, _) in &self.manifest.assets.audio {
+                    for name in self.manifest.assets.audio.keys() {
                         ui.label(format!("🎵 {}", name));
                     }
                 }

@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::event::{
-    CharacterPlacementCompiled, ScenePatchCompiled, SceneUpdateCompiled, SetCharacterPositionCompiled,
-    SharedStr,
+    CharacterPlacementCompiled, ScenePatchCompiled, SceneUpdateCompiled,
+    SetCharacterPositionCompiled, SharedStr,
 };
 
 /// Current visual state for rendering.

@@ -328,10 +328,6 @@ impl NodeGraph {
     ///
     /// # Precondition
     /// - `target_id` should exist in the graph (silent no-op if not)
-    /// Inserts a new node before the target node, re-routing connections.
-    ///
-    /// # Precondition
-    /// - `target_id` should exist in the graph (silent no-op if not)
     pub fn insert_before(&mut self, target_id: u32, node: StoryNode) {
         let Some((_, _, pos)) = self.nodes.iter().find(|(id, _, _)| *id == target_id) else {
             debug_assert!(

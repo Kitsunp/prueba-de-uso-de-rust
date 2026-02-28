@@ -59,6 +59,9 @@ fn ui_state_maps_scene_description() {
             name: shared("Ava"),
             expression: Some(shared("smile")),
             position: Some(shared("center")),
+            x: None,
+            y: None,
+            scale: None,
         }],
     });
     let ui = UiState::from_event(&event, &VisualState::default());
