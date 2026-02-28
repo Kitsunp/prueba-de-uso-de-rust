@@ -9,12 +9,8 @@ from vnengine.builder import ScriptBuilder
 from vnengine.engine import Engine, _load_native_engine
 from vnengine.types import (
     CharacterPlacement,
-    Choice,
-    ChoiceOption,
     Dialogue,
-    Jump,
     JumpIf,
-    Scene,
     Script,
     SCRIPT_SCHEMA_VERSION,
     SetFlag,

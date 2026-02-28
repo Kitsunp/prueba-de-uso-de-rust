@@ -104,43 +104,12 @@ impl EventRaw {
 impl EventCompiled {
     /// Serializes the compiled event to JSON.
     pub fn to_json_value(&self) -> serde_json::Value {
-        match self {
-            // ...
-            EventCompiled::Transition(trans) => serde_json::json!({
-                "type": "transition",
-                "kind": trans.kind,
-                "duration_ms": trans.duration_ms,
-                "color": trans.color.as_deref(),
-            }),
-            EventCompiled::SetCharacterPosition(pos) => serde_json::json!({
-                "type": "set_character_position",
-                "name": pos.name.as_ref(),
-                "x": pos.x,
-                "y": pos.y,
-                "scale": pos.scale,
-            }),
-        }
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
 
     /// Serializes the compiled event to a JSON string.
     pub fn to_json_string(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "null".to_string())
-    }
-}
-
-fn cond_to_json(cond: &CondCompiled) -> serde_json::Value {
-    match cond {
-        CondCompiled::Flag { flag_id, is_set } => serde_json::json!({
-            "kind": "flag",
-            "flag_id": flag_id,
-            "is_set": is_set,
-        }),
-        CondCompiled::VarCmp { var_id, op, value } => serde_json::json!({
-            "kind": "var_cmp",
-            "var_id": var_id,
-            "op": op,
-            "value": value,
-        }),
     }
 }
 

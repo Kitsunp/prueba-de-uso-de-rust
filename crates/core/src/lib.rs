@@ -28,7 +28,8 @@ pub use event::{
     CharacterPlacementCompiled, CharacterPlacementRaw, ChoiceCompiled, ChoiceOptionCompiled,
     ChoiceOptionRaw, ChoiceRaw, CmpOp, CondCompiled, CondRaw, DialogueCompiled, DialogueRaw,
     EventCompiled, EventRaw, ScenePatchCompiled, ScenePatchRaw, SceneTransitionCompiled,
-    SceneTransitionRaw, SceneUpdateCompiled, SceneUpdateRaw, SharedStr,
+    SceneTransitionRaw, SceneUpdateCompiled, SceneUpdateRaw, SetCharacterPositionCompiled,
+    SetCharacterPositionRaw, SharedStr,
 };
 pub use render::{RenderBackend, RenderOutput, TextRenderer};
 pub use resource::{LruCache, ResourceLimiter};

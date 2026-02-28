@@ -1,4 +1,6 @@
+use directories::ProjectDirs;
 use eframe::egui;
+use serde::{Deserialize, Serialize};
 use visual_novel_engine::{Engine, ScriptRaw};
 
 use crate::editor::{
@@ -12,10 +14,21 @@ use crate::editor::{
     timeline_panel::TimelinePanel,
     undo::UndoStack,
     EditorMode,
+    LintCode,
     LintIssue,
     LintSeverity, // Imported from mod.rs export
+    ValidationPhase,
 };
 use crate::VnConfig;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct LayoutPreferences {
+    show_graph: bool,
+    show_inspector: bool,
+    show_timeline: bool,
+    show_asset_browser: bool,
+    node_editor_window_open: bool,
+}
 
 /// Main editor workbench state and UI.
 pub struct EditorWorkbench {
@@ -24,6 +37,7 @@ pub struct EditorWorkbench {
     pub undo_stack: UndoStack,
     pub manifest: Option<visual_novel_engine::manifest::ProjectManifest>,
     pub current_script: Option<ScriptRaw>,
+    pub saved_script_snapshot: Option<ScriptRaw>,
     pub pending_save_path: Option<std::path::PathBuf>,
 
     // UI State
@@ -60,9 +74,47 @@ pub struct EditorWorkbench {
 
     // New layout flags
     pub node_editor_window_open: bool,
+    layout_prefs_path: std::path::PathBuf,
+    last_layout_prefs: LayoutPreferences,
 }
 
 impl EditorWorkbench {
+    fn append_phase_trace_issues(
+        issues: &mut Vec<LintIssue>,
+        traces: &[crate::editor::compiler::PhaseTrace],
+    ) {
+        for trace in traces {
+            let phase = match trace.phase {
+                crate::editor::compiler::CompilationPhase::GraphSync => ValidationPhase::Graph,
+                crate::editor::compiler::CompilationPhase::GraphValidation => {
+                    ValidationPhase::Graph
+                }
+                crate::editor::compiler::CompilationPhase::ScriptCompile => {
+                    ValidationPhase::Compile
+                }
+                crate::editor::compiler::CompilationPhase::RuntimeInit => ValidationPhase::Runtime,
+                crate::editor::compiler::CompilationPhase::DryRun => ValidationPhase::DryRun,
+            };
+
+            let entry = if trace.ok {
+                LintIssue::info(
+                    None,
+                    phase,
+                    LintCode::DryRunFinished,
+                    format!("Phase {} OK: {}", trace.phase.label(), trace.detail),
+                )
+            } else {
+                LintIssue::warning(
+                    None,
+                    phase,
+                    LintCode::RuntimeInitError,
+                    format!("Phase {} FAILED: {}", trace.phase.label(), trace.detail),
+                )
+            };
+            issues.push(entry);
+        }
+    }
+
     pub fn new(config: VnConfig) -> Self {
         // Initialize with default/empty state
         let graph = NodeGraph::default();
@@ -73,12 +125,16 @@ impl EditorWorkbench {
         let mut undo_stack = UndoStack::new();
         undo_stack.push(graph.clone());
 
-        Self {
+        let layout_prefs_path = Self::layout_prefs_path();
+        let loaded_prefs = Self::load_layout_prefs(&layout_prefs_path);
+
+        let mut workbench = Self {
             config,
             node_graph: graph,
             undo_stack,
             manifest: None,
             current_script: None,
+            saved_script_snapshot: None,
             pending_save_path: None,
             mode: EditorMode::Editor,
             show_graph: true,
@@ -99,7 +155,22 @@ impl EditorWorkbench {
             toast: None,
             diff_dialog: None,
             node_editor_window_open: false,
+            layout_prefs_path,
+            last_layout_prefs: LayoutPreferences {
+                show_graph: true,
+                show_inspector: true,
+                show_timeline: true,
+                show_asset_browser: true,
+                node_editor_window_open: false,
+            },
+        };
+
+        if let Some(prefs) = loaded_prefs {
+            workbench.apply_layout_prefs(&prefs);
         }
+        workbench.last_layout_prefs = workbench.collect_layout_prefs();
+
+        workbench
     }
 
     pub fn update(&mut self, _dt: usize) {
@@ -110,6 +181,52 @@ impl EditorWorkbench {
                 self.current_time = 0.0;
                 self.is_playing = false;
             }
+        }
+    }
+
+    fn layout_prefs_path() -> std::path::PathBuf {
+        if let Some(project_dirs) = ProjectDirs::from("com", "vnengine", "editor") {
+            project_dirs.config_dir().join("layout.json")
+        } else {
+            std::path::PathBuf::from("editor_layout.json")
+        }
+    }
+
+    fn load_layout_prefs(path: &std::path::Path) -> Option<LayoutPreferences> {
+        let raw = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&raw).ok()
+    }
+
+    fn apply_layout_prefs(&mut self, prefs: &LayoutPreferences) {
+        self.show_graph = prefs.show_graph;
+        self.show_inspector = prefs.show_inspector;
+        self.show_timeline = prefs.show_timeline;
+        self.show_asset_browser = prefs.show_asset_browser;
+        self.node_editor_window_open = prefs.node_editor_window_open;
+    }
+
+    fn collect_layout_prefs(&self) -> LayoutPreferences {
+        LayoutPreferences {
+            show_graph: self.show_graph,
+            show_inspector: self.show_inspector,
+            show_timeline: self.show_timeline,
+            show_asset_browser: self.show_asset_browser,
+            node_editor_window_open: self.node_editor_window_open,
+        }
+    }
+
+    fn persist_layout_prefs_if_changed(&mut self) {
+        let now = self.collect_layout_prefs();
+        if now == self.last_layout_prefs {
+            return;
+        }
+        self.last_layout_prefs = now.clone();
+
+        if let Some(parent) = self.layout_prefs_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(payload) = serde_json::to_string_pretty(&now) {
+            let _ = std::fs::write(&self.layout_prefs_path, payload);
         }
     }
 
@@ -160,6 +277,7 @@ impl EditorWorkbench {
         stack.push(self.node_graph.clone());
         self.undo_stack = stack;
         self.pending_save_path = Some(path);
+        self.saved_script_snapshot = Some(self.node_graph.to_script());
 
         let msg = if loaded_script.was_imported {
             "Imported script"
@@ -177,7 +295,118 @@ impl EditorWorkbench {
             tracing::error!("Failed to save: {}", e);
             self.toast = Some(ToastState::error(&format!("Save failed: {}", e)));
         } else {
-            // Success
+            self.saved_script_snapshot = Some(self.node_graph.to_script());
+            self.node_graph.clear_modified();
+        }
+    }
+
+    pub fn prepare_save_confirmation(&mut self) {
+        let maybe_path = self.pending_save_path.clone().or_else(|| {
+            rfd::FileDialog::new()
+                .add_filter("Script JSON", &["json"])
+                .set_file_name("script.json")
+                .save_file()
+        });
+
+        if let Some(path) = maybe_path {
+            self.pending_save_path = Some(path);
+            let new_script = self.node_graph.to_script();
+            self.show_save_confirm = true;
+            self.diff_dialog = Some(DiffDialog::new(
+                self.saved_script_snapshot.as_ref(),
+                &new_script,
+            ));
+        } else {
+            self.toast = Some(ToastState::warning("Save cancelled"));
+        }
+    }
+
+    pub fn run_dry_validation(&mut self) -> bool {
+        let result = crate::editor::compiler::compile_project(&self.node_graph);
+        self.current_script = Some(result.script);
+        self.validation_issues = result.issues;
+        Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
+        self.show_validation = !self.validation_issues.is_empty();
+
+        let has_errors = self
+            .validation_issues
+            .iter()
+            .any(|issue| issue.severity == LintSeverity::Error);
+        if has_errors {
+            self.toast = Some(ToastState::error("Validation found blocking errors"));
+            return false;
+        }
+
+        match result.engine_result {
+            Ok(engine) => {
+                self.engine = Some(engine);
+                self.toast = Some(ToastState::success("Dry Run completed"));
+                true
+            }
+            Err(e) => {
+                self.validation_issues.push(LintIssue::error(
+                    None,
+                    ValidationPhase::Runtime,
+                    LintCode::RuntimeInitError,
+                    format!("Runtime initialization failed: {}", e),
+                ));
+                self.show_validation = true;
+                self.toast = Some(ToastState::error("Validation failed at runtime init"));
+                false
+            }
+        }
+    }
+
+    pub fn compile_preview(&mut self) -> bool {
+        let ok = self.run_dry_validation();
+        if ok {
+            self.toast = Some(ToastState::success("Compilation preview successful"));
+        }
+        ok
+    }
+
+    pub fn export_compiled_project(&mut self) {
+        if !self.run_dry_validation() {
+            return;
+        }
+
+        let Some(script) = self.current_script.as_ref() else {
+            self.toast = Some(ToastState::error("No script to export"));
+            return;
+        };
+
+        let compiled = match script.compile() {
+            Ok(compiled) => compiled,
+            Err(e) => {
+                self.toast = Some(ToastState::error(&format!("Compile failed: {}", e)));
+                return;
+            }
+        };
+
+        let bytes = match compiled.to_binary() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.toast = Some(ToastState::error(&format!("Binary export failed: {}", e)));
+                return;
+            }
+        };
+
+        let path = rfd::FileDialog::new()
+            .add_filter("VN Project", &["vnproject"])
+            .set_file_name("game.vnproject")
+            .save_file();
+
+        if let Some(path) = path {
+            match std::fs::write(&path, bytes) {
+                Ok(_) => {
+                    self.toast = Some(ToastState::success("Exported .vnproject successfully"));
+                }
+                Err(e) => {
+                    self.toast = Some(ToastState::error(&format!("Export failed: {}", e)));
+                }
+            }
+        } else {
+            self.toast = Some(ToastState::warning("Export cancelled"));
         }
     }
 
@@ -187,6 +416,7 @@ impl EditorWorkbench {
         // Update State
         self.current_script = Some(result.script);
         self.validation_issues = result.issues;
+        Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
         self.show_validation = !self.validation_issues.is_empty();
 
         match result.engine_result {
@@ -195,11 +425,12 @@ impl EditorWorkbench {
                 Ok(())
             }
             Err(e) => {
-                self.validation_issues.push(LintIssue {
-                    node_id: None,
-                    severity: LintSeverity::Error,
-                    message: format!("Engine Error: {}", e),
-                });
+                self.validation_issues.push(LintIssue::error(
+                    None,
+                    ValidationPhase::Runtime,
+                    LintCode::RuntimeInitError,
+                    format!("Engine Error: {}", e),
+                ));
                 self.show_validation = true;
                 Err(e)
             }
@@ -215,8 +446,43 @@ impl EditorWorkbench {
         // Mode Switching
         egui::TopBottomPanel::top("mode_switcher").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.mode, EditorMode::Editor, "🛠 Editor");
-                ui.selectable_value(&mut self.mode, EditorMode::Player, "▶ Player");
+                let (label, color) = match self.mode {
+                    EditorMode::Editor => ("EDITOR", egui::Color32::from_rgb(70, 130, 220)),
+                    EditorMode::Player => ("PLAYER", egui::Color32::from_rgb(230, 140, 50)),
+                };
+                ui.label(
+                    egui::RichText::new(format!("Modo: {}", label))
+                        .strong()
+                        .color(color),
+                );
+                ui.separator();
+
+                if ui
+                    .selectable_label(self.mode == EditorMode::Editor, "Edit")
+                    .clicked()
+                {
+                    self.mode = EditorMode::Editor;
+                }
+                if ui
+                    .selectable_label(self.mode == EditorMode::Player, "Play")
+                    .clicked()
+                {
+                    self.mode = EditorMode::Player;
+                }
+
+                ui.separator();
+                if ui.button("Validar (Dry Run)").clicked() {
+                    self.run_dry_validation();
+                }
+                if ui.button("Compilar").clicked() {
+                    self.compile_preview();
+                }
+                if ui.button("Guardar").clicked() {
+                    self.prepare_save_confirmation();
+                }
+                if ui.button("Exportar .vnproject").clicked() {
+                    self.export_compiled_project();
+                }
             });
         });
 
@@ -237,13 +503,21 @@ impl EditorWorkbench {
         }
 
         if should_save {
-            if let Some(path) = self.pending_save_path.clone() {
-                self.execute_save(&path, "");
-                self.toast = Some(ToastState::success("Saved successfully"));
+            if self.run_dry_validation() {
+                if let Some(path) = self.pending_save_path.clone() {
+                    self.execute_save(&path, "");
+                    self.toast = Some(ToastState::success("Saved successfully"));
+                }
+            } else {
+                self.toast = Some(ToastState::error(
+                    "Save blocked: fix validation errors first",
+                ));
             }
             self.diff_dialog = None;
             self.show_save_confirm = false;
         }
+
+        self.persist_layout_prefs_if_changed();
     }
 
     fn render_player_mode(&mut self, ctx: &egui::Context) {
@@ -377,17 +651,38 @@ impl EditorWorkbench {
             let _ = self.sync_graph_to_script();
         }
 
-        // 6. Floating Window (Detached Node Editor)
+        // 6. Floating/Detached Node Editor
         if self.node_editor_window_open {
-            let mut open = self.node_editor_window_open;
-            egui::Window::new("Node Editor")
-                .open(&mut open)
-                .resizable(true)
-                .show(ctx, |ui| {
-                    let mut panel = GraphPanel::new(&mut self.node_graph);
-                    panel.ui(ui);
-                });
-            self.node_editor_window_open = open;
+            let mut embedded_open = self.node_editor_window_open;
+            let mut detached_closed = false;
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("node_editor_detached"),
+                egui::ViewportBuilder::default()
+                    .with_title("Node Editor")
+                    .with_inner_size([1000.0, 700.0]),
+                |viewport_ctx, class| match class {
+                    egui::ViewportClass::Embedded => {
+                        egui::Window::new("Node Editor")
+                            .open(&mut embedded_open)
+                            .resizable(true)
+                            .show(viewport_ctx, |ui| {
+                                let mut panel = GraphPanel::new(&mut self.node_graph);
+                                panel.ui(ui);
+                            });
+                    }
+                    egui::ViewportClass::Immediate | egui::ViewportClass::Root => {
+                        egui::CentralPanel::default().show(viewport_ctx, |ui| {
+                            let mut panel = GraphPanel::new(&mut self.node_graph);
+                            panel.ui(ui);
+                        });
+                        if viewport_ctx.input(|i| i.viewport().close_requested()) {
+                            detached_closed = true;
+                        }
+                    }
+                    egui::ViewportClass::Deferred => {}
+                },
+            );
+            self.node_editor_window_open = embedded_open && !detached_closed;
 
             if self.node_graph.is_modified() {
                 let _ = self.sync_graph_to_script();
@@ -467,3 +762,5 @@ mod tests {
         );
     }
 }
+
+

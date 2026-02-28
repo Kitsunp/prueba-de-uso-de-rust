@@ -11,7 +11,7 @@ Usage:
 
 from visual_novel_engine import (
     NodeGraph, StoryNode, 
-    py_validate_graph, LintSeverity
+    py_validate_graph
 )
 
 

@@ -35,6 +35,9 @@ pub fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObje
                 character_dict.set_item("name", character.name.as_ref())?;
                 character_dict.set_item("expression", character.expression.as_deref())?;
                 character_dict.set_item("position", character.position.as_deref())?;
+                character_dict.set_item("x", character.x)?;
+                character_dict.set_item("y", character.y)?;
+                character_dict.set_item("scale", character.scale)?;
                 characters.append(character_dict)?;
             }
             dict.set_item("characters", characters)?;
@@ -91,6 +94,13 @@ pub fn event_to_python(event: &EventCompiled, py: Python<'_>) -> PyResult<PyObje
             dict.set_item("duration_ms", trans.duration_ms)?;
             dict.set_item("color", trans.color.as_deref())?;
         }
+        EventCompiled::SetCharacterPosition(pos) => {
+            dict.set_item("type", "set_character_position")?;
+            dict.set_item("name", pos.name.as_ref())?;
+            dict.set_item("x", pos.x)?;
+            dict.set_item("y", pos.y)?;
+            dict.set_item("scale", pos.scale)?;
+        }
     }
     Ok(dict.into())
 }
@@ -105,6 +115,9 @@ pub fn characters_to_python(
         character_dict.set_item("name", character.name.as_ref())?;
         character_dict.set_item("expression", character.expression.as_deref())?;
         character_dict.set_item("position", character.position.as_deref())?;
+        character_dict.set_item("x", character.x)?;
+        character_dict.set_item("y", character.y)?;
+        character_dict.set_item("scale", character.scale)?;
         list.append(character_dict)?;
     }
     Ok(list.into())

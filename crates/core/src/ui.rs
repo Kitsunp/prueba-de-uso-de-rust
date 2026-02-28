@@ -78,6 +78,12 @@ impl UiState {
             EventCompiled::Transition(_) => UiView::System {
                 message: "Transition".to_string(),
             },
+            EventCompiled::SetCharacterPosition(pos) => UiView::System {
+                message: format!(
+                    "SetCharacterPosition {} ({}, {}) scale={:?}",
+                    pos.name, pos.x, pos.y, pos.scale
+                ),
+            },
         };
         Self { view }
     }
@@ -103,6 +109,12 @@ fn summarize_scene(visual: &VisualState) -> String {
             if let Some(position) = &character.position {
                 entry.push_str(" @ ");
                 entry.push_str(position.as_ref());
+            }
+            if character.x.is_some() || character.y.is_some() || character.scale.is_some() {
+                entry.push_str(&format!(
+                    " [x={:?}, y={:?}, scale={:?}]",
+                    character.x, character.y, character.scale
+                ));
             }
             roster.push(entry);
         }

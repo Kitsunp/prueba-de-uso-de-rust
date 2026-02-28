@@ -36,10 +36,15 @@ impl<'a> LintPanel<'a> {
             .iter()
             .filter(|i| i.severity == LintSeverity::Warning)
             .count();
+        let info_count = self
+            .issues
+            .iter()
+            .filter(|i| i.severity == LintSeverity::Info)
+            .count();
 
         ui.label(format!(
-            "Found {} errors, {} warnings.",
-            error_count, warning_count
+            "Found {} errors, {} warnings, {} infos.",
+            error_count, warning_count, info_count
         ));
         ui.separator();
 
@@ -57,7 +62,14 @@ impl<'a> LintPanel<'a> {
                     LintSeverity::Info => egui::Color32::LIGHT_BLUE,
                 };
 
-                let text = egui::RichText::new(format!("{} {}", icon, issue.message)).color(color);
+                let text = egui::RichText::new(format!(
+                    "{} [{}:{}] {}",
+                    icon,
+                    issue.phase.label(),
+                    issue.code.label(),
+                    issue.message
+                ))
+                .color(color);
 
                 let resp = ui.selectable_label(false, text);
 
@@ -65,10 +77,6 @@ impl<'a> LintPanel<'a> {
                     if let Some(node_id) = issue.node_id {
                         *self.selected_node = Some(node_id);
                     }
-                }
-
-                if resp.hovered() {
-                    ui.close_menu(); // Hack to close tooltips if any? No.
                 }
 
                 ui.separator();

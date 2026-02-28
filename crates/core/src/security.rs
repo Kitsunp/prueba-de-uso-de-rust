@@ -186,6 +186,16 @@ impl SecurityPolicy {
                     }
                 }
                 EventRaw::Transition(_) => {}
+                EventRaw::SetCharacterPosition(pos) => {
+                    validate_path(&pos.name, "character name", limits)?;
+                    if let Some(scale) = pos.scale {
+                        if !scale.is_finite() || scale <= 0.0 {
+                            return Err(VnError::InvalidScript(
+                                "set_character_position scale must be > 0".to_string(),
+                            ));
+                        }
+                    }
+                }
             }
         }
         Ok(())

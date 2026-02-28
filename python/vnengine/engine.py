@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Mapping, Optional, Union
+from typing import Any, Dict, Mapping, Union
 
 from .types import Script
 

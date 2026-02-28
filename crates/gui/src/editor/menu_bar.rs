@@ -1,4 +1,4 @@
-use crate::editor::{DiffDialog, EditorWorkbench};
+use crate::editor::EditorWorkbench;
 use eframe::egui;
 
 pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
@@ -14,11 +14,21 @@ pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
                 }
             }
             if ui.button("Save").clicked() {
-                workbench.show_save_confirm = true;
-                // Generate diff
-                let new_script = workbench.node_graph.to_script();
-                workbench.diff_dialog =
-                    Some(DiffDialog::new(&workbench.node_graph, Some(&new_script)));
+                workbench.prepare_save_confirmation();
+                ui.close_menu();
+            }
+            if ui.button("Export Game (.vnproject)").clicked() {
+                workbench.export_compiled_project();
+                ui.close_menu();
+            }
+        });
+        ui.menu_button("Tools", |ui| {
+            if ui.button("Validate / Dry Run").clicked() {
+                workbench.run_dry_validation();
+                ui.close_menu();
+            }
+            if ui.button("Compile Preview").clicked() {
+                workbench.compile_preview();
                 ui.close_menu();
             }
         });
@@ -27,7 +37,7 @@ pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
             ui.checkbox(&mut workbench.show_inspector, "Inspector");
             ui.checkbox(&mut workbench.show_timeline, "Timeline");
             ui.separator();
-            ui.checkbox(&mut workbench.show_node_editor, "Floating Node Editor");
+            ui.checkbox(&mut workbench.node_editor_window_open, "Floating Node Editor");
         });
     });
 }

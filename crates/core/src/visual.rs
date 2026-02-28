@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::event::{
-    CharacterPlacementCompiled, ScenePatchCompiled, SceneUpdateCompiled, SharedStr,
+    CharacterPlacementCompiled, ScenePatchCompiled, SceneUpdateCompiled, SetCharacterPositionCompiled,
+    SharedStr,
 };
 
 /// Current visual state for rendering.
@@ -73,6 +74,9 @@ impl VisualState {
                     Some(existing) => {
                         existing.expression = new_character.expression.clone();
                         existing.position = new_character.position.clone();
+                        existing.x = new_character.x;
+                        existing.y = new_character.y;
+                        existing.scale = new_character.scale;
                     }
                     None => self.characters.push(new_character.clone()),
                 }
@@ -81,34 +85,25 @@ impl VisualState {
     }
 
     /// Sets a character's absolute position and scale.
-    pub fn set_character_position(&mut self, pos: &crate::event::SetCharacterPositionCompiled) {
-        // Find existing character or add new one?
-        // Typically SetCharacterPosition implies the character should be visible.
-        // If not found, we should probably add it with default expression?
-        // Or maybe just update if exists?
-        // For Visual Composer, it likely means ensuring it exists.
+    pub fn set_character_position(&mut self, pos: &SetCharacterPositionCompiled) {
+        if let Some(existing) = self
+            .characters
+            .iter_mut()
+            .find(|entry| entry.name.as_ref() == pos.name.as_ref())
+        {
+            existing.x = Some(pos.x);
+            existing.y = Some(pos.y);
+            existing.scale = pos.scale;
+            return;
+        }
 
-        // We need to coordinate with how `position` string equates to x,y.
-        // If `CharacterPlacementCompiled` has string position, we might be introducing a dual system.
-        // Let's assume for now we update if exists, or do nothing?
-        // No, if I drag a character in editor, I expect it to appear.
-
-        // However, `CharacterPlacementCompiled` has `position: Option<SharedStr>`.
-        // The core engine seems to use string-based positions ("left", "center", etc).
-        // My new event `SetCharacterPosition` uses x,y (i32).
-        // This suggests I should update `CharacterPlacementCompiled` to also support stored transforms, or store this in `VisualState` separately.
-        // Given I modified `StoryNode` to have x,y, I should likely update `CharacterPlacementCompiled` to support x/y/scale overrides.
-
-        // BUT, redefining `CharacterPlacementCompiled` is a breaking change for existing `Scene` events.
-        // Alternative: Format x,y into the position string? e.g. "x:100,y:200"?
-        // Or add separate fields to `VisualState` or `CharacterPlacementCompiled`.
-
-        // Let's look at `CharacterPlacementCompiled` first.
-
-        // FOR NOW (Safe): update matching character, ignore if not found (safer than spawning phantom chars).
-        // AND, since I don't know if `CharacterPlacementCompiled` has x/y, I'll assume I need to handle that.
-        // Actually, I'll view `scene.rs` to see what I can work with.
-        // The safest approach without viewing is to wait, but the prompt says "ReplaceFileContent".
-        // I will cancel this tool call and View `scene.rs` first.
+        self.characters.push(CharacterPlacementCompiled {
+            name: pos.name.clone(),
+            expression: None,
+            position: None,
+            x: Some(pos.x),
+            y: Some(pos.y),
+            scale: pos.scale,
+        });
     }
 }

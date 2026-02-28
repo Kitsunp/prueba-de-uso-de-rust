@@ -181,6 +181,10 @@ impl PyStoryGraph {
                         "transition".to_string(),
                         format!("Kind: {}, Duration: {}", kind, duration),
                     ),
+                    visual_novel_engine::NodeType::CharacterPlacement { name, x, y, scale } => (
+                        "character_placement".to_string(),
+                        format!("Name: {}, x: {}, y: {}, scale: {:?}", name, x, y, scale),
+                    ),
                 };
                 PyGraphNode {
                     id: n.id,

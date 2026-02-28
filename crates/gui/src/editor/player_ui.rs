@@ -92,6 +92,10 @@ fn render_event_ui(ui: &mut egui::Ui, engine: &mut Engine, toast: &mut Option<To
                     // Transition effect would be rendered here in a real engine
                     let _ = engine.step();
                 }
+                EventCompiled::SetCharacterPosition(_) => {
+                    ui.label("🧍 Processing Character Placement...");
+                    let _ = engine.step();
+                }
             }
         }
         Err(e) => {

@@ -25,7 +25,7 @@ use crate::script::ScriptCompiled;
 pub type NodeId = u32;
 
 /// Type of node in the story graph.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeType {
     /// A dialogue event.
@@ -55,6 +55,13 @@ pub enum NodeType {
     },
     /// A scene transition.
     Transition { kind: String, duration: u64 },
+    /// Explicit character placement with coordinates.
+    CharacterPlacement {
+        name: String,
+        x: i32,
+        y: i32,
+        scale: Option<f32>,
+    },
 }
 
 /// A node in the story graph.
@@ -389,6 +396,25 @@ impl StoryGraph {
                 };
                 (node_type, edges)
             }
+            EventCompiled::SetCharacterPosition(pos) => {
+                let node_type = NodeType::CharacterPlacement {
+                    name: pos.name.to_string(),
+                    x: pos.x,
+                    y: pos.y,
+                    scale: pos.scale,
+                };
+                let edges = if has_next {
+                    vec![GraphEdge {
+                        from: ip,
+                        to: next_ip,
+                        edge_type: EdgeType::Sequential,
+                        label: None,
+                    }]
+                } else {
+                    vec![]
+                };
+                (node_type, edges)
+            }
         }
     }
 
@@ -549,6 +575,9 @@ impl StoryGraph {
                 }
                 NodeType::Transition { kind, .. } => {
                     format!("[{}] Transition: {}", node.id, kind)
+                }
+                NodeType::CharacterPlacement { name, x, y, scale } => {
+                    format!("[{}] Placement: {} ({}, {}) s={:?}", node.id, name, x, y, scale)
                 }
             };
 

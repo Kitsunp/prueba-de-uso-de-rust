@@ -88,6 +88,9 @@ impl PyScriptBuilder {
                 name,
                 expression,
                 position,
+                x: None,
+                y: None,
+                scale: None,
             })
             .collect();
         self.events.push(EventRaw::Scene(SceneUpdateRaw {
@@ -155,6 +158,9 @@ impl PyScriptBuilder {
                 name,
                 expression,
                 position,
+                x: None,
+                y: None,
+                scale: None,
             })
             .collect();
         let update = update
