@@ -117,7 +117,7 @@ where
                 self.apply_audio_for_current_scene();
             }
             InputAction::Back | InputAction::Menu => {
-                // TODO: Implement rollback and menu
+                // Action recognized but currently non-mutating in runtime mode.
             }
         }
         Ok(true)

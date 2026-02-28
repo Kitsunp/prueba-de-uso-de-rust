@@ -8,13 +8,16 @@ from vnengine.app import EngineApp
 from vnengine.builder import ScriptBuilder
 from vnengine.engine import Engine, _load_native_engine
 from vnengine.types import (
+    AudioAction,
     CharacterPlacement,
     Dialogue,
     JumpIf,
     Script,
     SCRIPT_SCHEMA_VERSION,
+    SetCharacterPosition,
     SetFlag,
     SetVar,
+    Transition,
     event_from_dict,
 )
 
@@ -58,6 +61,20 @@ class TypesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             JumpIf.from_dict({"type": "jump_if", "cond": {"kind": "unknown"}, "target": "end"})
 
+    def test_audio_transition_and_position_roundtrip(self):
+        events = [
+            AudioAction(channel="bgm", action="play", asset="music.ogg"),
+            Transition(kind="fade", duration_ms=300),
+            SetCharacterPosition(name="Ava", x=10, y=20, scale=1.0),
+        ]
+        script = Script(events=events, labels={"start": 0})
+        parsed = Script.from_json(script.to_json())
+
+        self.assertEqual(len(parsed.events), 3)
+        self.assertEqual(parsed.events[0].to_dict()["type"], "audio_action")
+        self.assertEqual(parsed.events[1].to_dict()["type"], "transition")
+        self.assertEqual(parsed.events[2].to_dict()["type"], "set_character_position")
+
 
 class BuilderTests(unittest.TestCase):
     def test_builder_json_is_stable_across_threads(self):
@@ -70,6 +87,10 @@ class BuilderTests(unittest.TestCase):
         builder.set_var("counter", 3)
         builder.jump_if_var("counter", "gt", 1, target="end")
         builder.patch(add=[("Ava", "happy", "left")], update=[("Ava", None, "center")], remove=[])
+        builder.audio_action("bgm", "play", asset="music/theme.ogg", loop_playback=True)
+        builder.transition("fade", 250)
+        builder.set_character_position("Ava", 32, 48, 1.1)
+        builder.ext_call("open_minigame", ["cards"])
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(lambda _: builder.to_json(), range(8)))
@@ -81,6 +102,12 @@ class BuilderTests(unittest.TestCase):
         patch_events = [event for event in payload["events"] if event["type"] == "patch"]
         self.assertEqual(len(patch_events), 1)
         self.assertEqual(patch_events[0]["add"][0]["name"], "Ava")
+        self.assertTrue(any(event["type"] == "audio_action" for event in payload["events"]))
+        self.assertTrue(any(event["type"] == "transition" for event in payload["events"]))
+        self.assertTrue(
+            any(event["type"] == "set_character_position" for event in payload["events"])
+        )
+        self.assertTrue(any(event["type"] == "ext_call" for event in payload["events"]))
 
 
 class EngineWrapperTests(unittest.TestCase):

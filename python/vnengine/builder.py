@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 from .types import (
+    AudioAction,
     CharacterPatch,
     CharacterPlacement,
     Choice,
@@ -13,13 +14,16 @@ from .types import (
     CondVarCmp,
     Dialogue,
     Event,
+    ExtCall,
     Jump,
     JumpIf,
     Patch,
     Scene,
+    SetCharacterPosition,
     Script,
     SetFlag,
     SetVar,
+    Transition,
     normalize_character_patches,
     normalize_characters,
     normalize_choice_options,
@@ -135,6 +139,47 @@ class ScriptBuilder:
                 remove=list(remove),
             )
         )
+
+    def audio_action(
+        self,
+        channel: str,
+        action: str,
+        asset: Optional[str] = None,
+        volume: Optional[float] = None,
+        fade_duration_ms: Optional[int] = None,
+        loop_playback: Optional[bool] = None,
+    ) -> None:
+        """Append an audio action event."""
+
+        self._events.append(
+            AudioAction(
+                channel=channel,
+                action=action,
+                asset=asset,
+                volume=volume,
+                fade_duration_ms=fade_duration_ms,
+                loop_playback=loop_playback,
+            )
+        )
+
+    def transition(self, kind: str, duration_ms: int, color: Optional[str] = None) -> None:
+        """Append a transition event."""
+
+        self._events.append(
+            Transition(kind=kind, duration_ms=duration_ms, color=color)
+        )
+
+    def set_character_position(
+        self, name: str, x: int, y: int, scale: Optional[float] = None
+    ) -> None:
+        """Append an absolute character position event."""
+
+        self._events.append(SetCharacterPosition(name=name, x=x, y=y, scale=scale))
+
+    def ext_call(self, command: str, args: Iterable[str] = ()) -> None:
+        """Append an external call event."""
+
+        self._events.append(ExtCall(command=command, args=[str(arg) for arg in args]))
 
     def build(self) -> Script:
         """Finalize and return a Script object."""

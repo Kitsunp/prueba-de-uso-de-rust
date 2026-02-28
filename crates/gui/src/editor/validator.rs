@@ -262,27 +262,67 @@ where
                     ));
                 }
             }
-            StoryNode::Scene { background } => {
-                if background.trim().is_empty() {
-                    issues.push(LintIssue::warning(
-                        Some(*id),
-                        ValidationPhase::Graph,
-                        LintCode::SceneBackgroundEmpty,
-                        "Scene background path is empty",
-                    ));
-                } else if is_unsafe_asset_ref(background) {
+            StoryNode::Scene {
+                background,
+                music,
+                characters,
+            } => {
+                if let Some(background) = background {
+                    if background.trim().is_empty() {
+                        issues.push(LintIssue::warning(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::SceneBackgroundEmpty,
+                            "Scene background path is empty",
+                        ));
+                    } else if is_unsafe_asset_ref(background) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::UnsafeAssetPath,
+                            format!("Unsafe background path: '{}'", background),
+                        ));
+                    } else if should_probe_asset_exists(background) && !asset_exists(background) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::AssetReferenceMissing,
+                            format!("Background asset does not exist: '{}'", background),
+                        ));
+                    }
+                }
+
+                if let Some(music) = music {
+                    if music.trim().is_empty() {
+                        issues.push(LintIssue::warning(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::AudioAssetEmpty,
+                            "Scene music path is empty",
+                        ));
+                    } else if is_unsafe_asset_ref(music) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::UnsafeAssetPath,
+                            format!("Unsafe music path: '{}'", music),
+                        ));
+                    } else if should_probe_asset_exists(music) && !asset_exists(music) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::AssetReferenceMissing,
+                            format!("Music asset does not exist: '{}'", music),
+                        ));
+                    }
+                }
+
+                if characters.iter().any(|c| c.name.trim().is_empty()) {
                     issues.push(LintIssue::error(
                         Some(*id),
                         ValidationPhase::Graph,
-                        LintCode::UnsafeAssetPath,
-                        format!("Unsafe background path: '{}'", background),
-                    ));
-                } else if should_probe_asset_exists(background) && !asset_exists(background) {
-                    issues.push(LintIssue::error(
-                        Some(*id),
-                        ValidationPhase::Graph,
-                        LintCode::AssetReferenceMissing,
-                        format!("Background asset does not exist: '{}'", background),
+                        LintCode::EmptyCharacterName,
+                        "Scene has character entry with empty name",
                     ));
                 }
             }
@@ -681,7 +721,9 @@ mod tests {
         let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
         let scene = graph.add_node(
             StoryNode::Scene {
-                background: "../secrets/bg.png".to_string(),
+                background: Some("../secrets/bg.png".to_string()),
+                music: None,
+                characters: Vec::new(),
             },
             p(0.0, 80.0),
         );
@@ -737,7 +779,9 @@ mod tests {
         let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
         let scene = graph.add_node(
             StoryNode::Scene {
-                background: "assets/bg_forest.png".to_string(),
+                background: Some("assets/bg_forest.png".to_string()),
+                music: None,
+                characters: Vec::new(),
             },
             p(0.0, 100.0),
         );
@@ -817,5 +861,8 @@ mod tests {
         assert!(issues
             .iter()
             .any(|i| i.code == LintCode::GenericEventUnchecked));
+        assert!(issues
+            .iter()
+            .any(|i| i.code == LintCode::ContractUnsupportedExport));
     }
 }

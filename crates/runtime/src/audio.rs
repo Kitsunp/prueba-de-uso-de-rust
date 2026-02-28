@@ -5,7 +5,7 @@ use rodio::{Decoder, OutputStream, Sink, Source};
 
 use crate::AssetStore;
 
-/// Audio trait stub for runtime audio playback.
+/// Audio trait for runtime playback backends.
 pub trait Audio {
     fn play_music(&mut self, id: &str);
     fn stop_music(&mut self);
@@ -66,13 +66,14 @@ impl RodioBackend {
             self.bgm_sink.append(source);
             self.bgm_sink.play();
         } else {
-            // SFX - Fire and forget
-            let sink = Sink::try_new(&self.stream_handle).unwrap_or_else(|e| {
-                eprintln!("Failed to create SFX sink: {}", e);
-                // Return a dummy sink or handle error? For now just log.
-                // We can't return from here easily as we are in a helper.
-                Sink::try_new(&self.stream_handle).expect("critical audio failure")
-            });
+            // SFX - fire and forget, fail-soft on sink creation errors.
+            let sink = match Sink::try_new(&self.stream_handle) {
+                Ok(sink) => sink,
+                Err(e) => {
+                    eprintln!("Failed to create SFX sink: {}", e);
+                    return;
+                }
+            };
             sink.append(source);
             sink.detach(); // Let it play to completion
         }
@@ -123,7 +124,7 @@ impl Audio for RodioBackend {
     }
 }
 
-/// Minimal audio backend placeholder.
+/// No-op audio backend for environments where sound output is disabled/unavailable.
 #[derive(Default)]
 pub struct SilentAudio;
 

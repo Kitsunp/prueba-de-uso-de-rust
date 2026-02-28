@@ -11,6 +11,23 @@ const DRY_RUN_MAX_STEPS: usize = 2048;
 const REPRO_DEFAULT_RADIUS: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChoiceStrategy {
+    First,
+    Last,
+    Alternating,
+}
+
+impl ChoiceStrategy {
+    fn label(self) -> &'static str {
+        match self {
+            ChoiceStrategy::First => "first",
+            ChoiceStrategy::Last => "last",
+            ChoiceStrategy::Alternating => "alternating",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompilationPhase {
     GraphSync,
     GraphValidation,
@@ -155,10 +172,75 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
                         detail: "Engine initialized".to_string(),
                     });
 
-                    let outcome = run_dry_run(engine.clone());
+                    let outcome = run_dry_run(engine.clone(), ChoiceStrategy::First);
                     dry_run_report = Some(outcome.report.clone());
                     issues.extend(outcome.issues);
-                    issues.extend(check_preview_runtime_parity(&script, &outcome.report));
+
+                    let parity_issues = check_preview_runtime_parity(
+                        &script,
+                        &outcome.report,
+                        ChoiceStrategy::First,
+                    );
+                    if let Some(report) = dry_run_report.as_mut() {
+                        report.failing_event_ip = report
+                            .failing_event_ip
+                            .or_else(|| parity_issues.iter().find_map(|issue| issue.event_ip));
+                    }
+                    issues.extend(parity_issues);
+
+                    for strategy in [ChoiceStrategy::Last, ChoiceStrategy::Alternating] {
+                        match Engine::from_compiled(
+                            compiled.clone(),
+                            visual_novel_engine::SecurityPolicy::default(),
+                            visual_novel_engine::ResourceLimiter::default(),
+                        ) {
+                            Ok(route_engine) => {
+                                let route_outcome = run_dry_run(route_engine, strategy);
+                                let mut route_issues = check_preview_runtime_parity(
+                                    &script,
+                                    &route_outcome.report,
+                                    strategy,
+                                );
+                                if route_outcome.report.stop_reason
+                                    == DryRunStopReason::RuntimeError
+                                {
+                                    route_issues.push(
+                                        LintIssue::error(
+                                            None,
+                                            ValidationPhase::DryRun,
+                                            LintCode::DryRunRuntimeError,
+                                            format!(
+                                                "Dry Run route '{}' runtime error: {}",
+                                                strategy.label(),
+                                                route_outcome.report.stop_message
+                                            ),
+                                        )
+                                        .with_event_ip(route_outcome.report.failing_event_ip),
+                                    );
+                                }
+
+                                if let Some(report) = dry_run_report.as_mut() {
+                                    report.failing_event_ip =
+                                        report.failing_event_ip.or_else(|| {
+                                            route_issues.iter().find_map(|issue| issue.event_ip)
+                                        });
+                                }
+                                issues.extend(route_issues);
+                            }
+                            Err(err) => {
+                                issues.push(LintIssue::error(
+                                    None,
+                                    ValidationPhase::Runtime,
+                                    LintCode::RuntimeInitError,
+                                    format!(
+                                        "Runtime initialization failed for route '{}': {}",
+                                        strategy.label(),
+                                        err
+                                    ),
+                                ));
+                            }
+                        }
+                    }
 
                     let dry_run_errors = issues
                         .iter()
@@ -221,7 +303,7 @@ struct DryRunOutcome {
     report: DryRunReport,
 }
 
-fn run_dry_run(mut engine: Engine) -> DryRunOutcome {
+fn run_dry_run(mut engine: Engine, strategy: ChoiceStrategy) -> DryRunOutcome {
     let mut issues = Vec::new();
     let mut traces = Vec::new();
     let mut steps = 0usize;
@@ -285,7 +367,8 @@ fn run_dry_run(mut engine: Engine) -> DryRunOutcome {
                 if choice.options.is_empty() {
                     Err(visual_novel_engine::VnError::InvalidChoice)
                 } else {
-                    engine.choose(0).map(|_| ())
+                    let idx = select_choice_index(strategy, steps, choice.options.len());
+                    engine.choose(idx).map(|_| ())
                 }
             }
             EventCompiled::ExtCall { .. } => engine.resume(),
@@ -540,6 +623,17 @@ fn fmt_opt_f32(value: Option<f32>) -> String {
     }
 }
 
+fn select_choice_index(strategy: ChoiceStrategy, step: usize, option_len: usize) -> usize {
+    if option_len == 0 {
+        return 0;
+    }
+    match strategy {
+        ChoiceStrategy::First => 0,
+        ChoiceStrategy::Last => option_len.saturating_sub(1),
+        ChoiceStrategy::Alternating => step % option_len,
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct RawVisualState {
     background: Option<String>,
@@ -564,7 +658,11 @@ struct RawStepTrace {
     character_count: usize,
 }
 
-fn simulate_raw_sequence(script: &ScriptRaw, max_steps: usize) -> Vec<RawStepTrace> {
+fn simulate_raw_sequence(
+    script: &ScriptRaw,
+    max_steps: usize,
+    strategy: ChoiceStrategy,
+) -> Vec<RawStepTrace> {
     let mut out = Vec::new();
     let mut state = RawSimulationState::default();
     let mut steps = 0usize;
@@ -630,7 +728,11 @@ fn simulate_raw_sequence(script: &ScriptRaw, max_steps: usize) -> Vec<RawStepTra
                 next_ip = target_ip;
             }
             EventRaw::Choice(choice) => {
-                let Some(target_label) = choice.options.first().map(|opt| opt.target.as_str())
+                let choice_idx = select_choice_index(strategy, steps, choice.options.len());
+                let Some(target_label) = choice
+                    .options
+                    .get(choice_idx)
+                    .map(|opt| opt.target.as_str())
                 else {
                     break;
                 };
@@ -677,10 +779,14 @@ fn eval_cond_raw(cond: &CondRaw, state: &RawSimulationState) -> bool {
     }
 }
 
-fn check_preview_runtime_parity(script: &ScriptRaw, report: &DryRunReport) -> Vec<LintIssue> {
+fn check_preview_runtime_parity(
+    script: &ScriptRaw,
+    report: &DryRunReport,
+    strategy: ChoiceStrategy,
+) -> Vec<LintIssue> {
     let mut issues = Vec::new();
     let runtime_steps = &report.steps;
-    let raw_steps = simulate_raw_sequence(script, report.max_steps);
+    let raw_steps = simulate_raw_sequence(script, report.max_steps, strategy);
     let overlap = runtime_steps.len().min(raw_steps.len());
 
     for idx in 0..overlap {
@@ -694,8 +800,13 @@ fn check_preview_runtime_parity(script: &ScriptRaw, report: &DryRunReport) -> Ve
                     ValidationPhase::DryRun,
                     LintCode::DryRunParityMismatch,
                     format!(
-                        "Parity mismatch at step {}: preview {}@{} vs runtime {}@{}",
-                        idx, raw.event_kind, raw.event_ip, runtime.event_kind, runtime.event_ip
+                        "Parity mismatch [route={}] at step {}: preview {}@{} vs runtime {}@{}",
+                        strategy.label(),
+                        idx,
+                        raw.event_kind,
+                        raw.event_ip,
+                        runtime.event_kind,
+                        runtime.event_ip
                     ),
                 )
                 .with_event_ip(Some(runtime.event_ip)),
@@ -710,8 +821,11 @@ fn check_preview_runtime_parity(script: &ScriptRaw, report: &DryRunReport) -> Ve
                     ValidationPhase::DryRun,
                     LintCode::DryRunParityMismatch,
                     format!(
-                        "Parity payload mismatch at step {}: preview '{}' vs runtime '{}'",
-                        idx, raw.event_signature, runtime.event_signature
+                        "Parity payload mismatch [route={}] at step {}: preview '{}' vs runtime '{}'",
+                        strategy.label(),
+                        idx,
+                        raw.event_signature,
+                        runtime.event_signature
                     ),
                 )
                 .with_event_ip(Some(runtime.event_ip)),
@@ -729,7 +843,8 @@ fn check_preview_runtime_parity(script: &ScriptRaw, report: &DryRunReport) -> Ve
                     ValidationPhase::DryRun,
                     LintCode::DryRunParityMismatch,
                     format!(
-                        "Parity visual mismatch at step {}: preview bg={:?}, music={:?}, chars={} vs runtime bg={:?}, music={:?}, chars={}",
+                        "Parity visual mismatch [route={}] at step {}: preview bg={:?}, music={:?}, chars={} vs runtime bg={:?}, music={:?}, chars={}",
+                        strategy.label(),
                         idx,
                         raw.visual_background,
                         raw.visual_music,
@@ -757,7 +872,8 @@ fn check_preview_runtime_parity(script: &ScriptRaw, report: &DryRunReport) -> Ve
                 ValidationPhase::DryRun,
                 LintCode::DryRunParityMismatch,
                 format!(
-                    "Parity length mismatch: preview={} runtime={}",
+                    "Parity length mismatch [route={}]: preview={} runtime={}",
+                    strategy.label(),
                     raw_steps.len(),
                     runtime_steps.len()
                 ),
@@ -945,7 +1061,7 @@ mod tests {
             .iter()
             .map(|step| step.event_signature.clone())
             .collect();
-        let raw_seq: Vec<String> = simulate_raw_sequence(&result.script, 32)
+        let raw_seq: Vec<String> = simulate_raw_sequence(&result.script, 32, ChoiceStrategy::First)
             .into_iter()
             .map(|step| step.event_signature)
             .collect();
@@ -954,6 +1070,24 @@ mod tests {
             .issues
             .iter()
             .any(|issue| issue.code == LintCode::DryRunParityMismatch));
+    }
+
+    #[test]
+    fn raw_simulation_supports_multiple_choice_routes() {
+        let graph = build_branching_graph();
+        let script = crate::editor::script_sync::to_script(&graph);
+
+        let first = simulate_raw_sequence(&script, 32, ChoiceStrategy::First);
+        let last = simulate_raw_sequence(&script, 32, ChoiceStrategy::Last);
+        let alternating = simulate_raw_sequence(&script, 32, ChoiceStrategy::Alternating);
+
+        assert!(!first.is_empty());
+        assert!(!last.is_empty());
+        assert!(!alternating.is_empty());
+        assert_ne!(
+            first.iter().map(|s| &s.event_signature).collect::<Vec<_>>(),
+            last.iter().map(|s| &s.event_signature).collect::<Vec<_>>()
+        );
     }
 
     #[test]

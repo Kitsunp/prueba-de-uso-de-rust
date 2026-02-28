@@ -261,18 +261,8 @@ impl ScriptRaw {
                 },
                 EventRaw::AudioAction(action) => {
                     EventCompiled::AudioAction(crate::event::AudioActionCompiled {
-                        channel: match action.channel.as_str() {
-                            "bgm" => 0,
-                            "sfx" => 1,
-                            "voice" => 2,
-                            _ => 1,
-                        },
-                        action: match action.action.as_str() {
-                            "play" => 0,
-                            "stop" => 1,
-                            "fade_out" => 2,
-                            _ => 0,
-                        }, // Simple mapping
+                        channel: compile_audio_channel(&action.channel)?,
+                        action: compile_audio_action(&action.action)?,
                         asset: action.asset.as_deref().map(|s| pool.intern(s)),
                         volume: action.volume,
                         fade_duration_ms: action.fade_duration_ms,
@@ -281,12 +271,7 @@ impl ScriptRaw {
                 }
                 EventRaw::Transition(transition) => {
                     EventCompiled::Transition(crate::event::SceneTransitionCompiled {
-                        kind: match transition.kind.as_str() {
-                            "fade" | "fade_black" => 0,
-                            "dissolve" => 1,
-                            "cut" => 2,
-                            _ => 0,
-                        },
+                        kind: compile_transition_kind(&transition.kind)?,
                         duration_ms: transition.duration_ms,
                         color: transition.color.as_deref().map(|s| pool.intern(s)),
                     })
@@ -416,5 +401,91 @@ fn compile_cond(
                 value: *value,
             })
         }
+    }
+}
+
+fn compile_audio_channel(channel: &str) -> VnResult<u8> {
+    let normalized = channel.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "bgm" => Ok(0),
+        "sfx" => Ok(1),
+        "voice" => Ok(2),
+        _ => Err(VnError::InvalidScript(format!(
+            "invalid audio channel '{channel}' (expected bgm|sfx|voice)"
+        ))),
+    }
+}
+
+fn compile_audio_action(action: &str) -> VnResult<u8> {
+    let normalized = action.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "play" => Ok(0),
+        "stop" => Ok(1),
+        "fade_out" => Ok(2),
+        _ => Err(VnError::InvalidScript(format!(
+            "invalid audio action '{action}' (expected play|stop|fade_out)"
+        ))),
+    }
+}
+
+fn compile_transition_kind(kind: &str) -> VnResult<u8> {
+    let normalized = kind.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "fade" | "fade_black" => Ok(0),
+        "dissolve" => Ok(1),
+        "cut" => Ok(2),
+        _ => Err(VnError::InvalidScript(format!(
+            "invalid transition kind '{kind}' (expected fade|fade_black|dissolve|cut)"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::{AudioActionRaw, SceneTransitionRaw};
+
+    #[test]
+    fn compile_rejects_invalid_audio_channel_and_action() {
+        let mut labels = BTreeMap::new();
+        labels.insert("start".to_string(), 0);
+        let script = ScriptRaw::new(
+            vec![EventRaw::AudioAction(AudioActionRaw {
+                channel: "music".to_string(),
+                action: "explode".to_string(),
+                asset: Some("assets/bgm.ogg".to_string()),
+                volume: Some(0.5),
+                fade_duration_ms: Some(250),
+                loop_playback: Some(true),
+            })],
+            labels,
+        );
+
+        let err = script
+            .compile()
+            .expect_err("invalid audio mapping must fail");
+        assert!(
+            err.to_string().contains("invalid audio channel")
+                || err.to_string().contains("invalid audio action")
+        );
+    }
+
+    #[test]
+    fn compile_rejects_invalid_transition_kind() {
+        let mut labels = BTreeMap::new();
+        labels.insert("start".to_string(), 0);
+        let script = ScriptRaw::new(
+            vec![EventRaw::Transition(SceneTransitionRaw {
+                kind: "warp".to_string(),
+                duration_ms: 100,
+                color: None,
+            })],
+            labels,
+        );
+
+        let err = script
+            .compile()
+            .expect_err("invalid transition kind must fail");
+        assert!(err.to_string().contains("invalid transition kind"));
     }
 }

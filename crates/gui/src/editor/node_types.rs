@@ -51,8 +51,12 @@ pub enum StoryNode {
         prompt: String,
         options: Vec<String>,
     },
-    /// Scene change node.
-    Scene { background: String },
+    /// Scene change node (full state update).
+    Scene {
+        background: Option<String>,
+        music: Option<String>,
+        characters: Vec<visual_novel_engine::CharacterPlacementRaw>,
+    },
     /// Jump to label.
     Jump { target: String },
     /// Set a variable.

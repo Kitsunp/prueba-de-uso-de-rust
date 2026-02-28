@@ -817,7 +817,10 @@ impl EditorWorkbench {
                         }
                     }
                 }
-                StoryNode::Scene { background } => {
+                StoryNode::Scene {
+                    background: Some(background),
+                    ..
+                } => {
                     for entity in self.scene.iter() {
                         if let visual_novel_engine::EntityKind::Image(img) = &entity.kind {
                             if img.path.as_ref() == background.as_str() {

@@ -71,12 +71,18 @@ class CharacterPlacement:
     name: str
     expression: Optional[str] = None
     position: Optional[str] = None
+    x: Optional[int] = None
+    y: Optional[int] = None
+    scale: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
             "expression": self.expression,
             "position": self.position,
+            "x": self.x,
+            "y": self.y,
+            "scale": self.scale,
         }
 
     @classmethod
@@ -87,6 +93,9 @@ class CharacterPlacement:
             name=str(data["name"]),
             expression=str(expression) if expression is not None else None,
             position=str(position) if position is not None else None,
+            x=int(data["x"]) if data.get("x") is not None else None,
+            y=int(data["y"]) if data.get("y") is not None else None,
+            scale=float(data["scale"]) if data.get("scale") is not None else None,
         ) 
 
 
@@ -175,6 +184,119 @@ class Patch:
             add=add,
             update=update,
             remove=remove,
+        )
+
+
+@dataclass(frozen=True)
+class AudioAction:
+    """Audio action event."""
+
+    channel: str
+    action: str
+    asset: Optional[str] = None
+    volume: Optional[float] = None
+    fade_duration_ms: Optional[int] = None
+    loop_playback: Optional[bool] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": "audio_action",
+            "channel": self.channel,
+            "action": self.action,
+            "asset": self.asset,
+            "volume": self.volume,
+            "fade_duration_ms": self.fade_duration_ms,
+            "loop_playback": self.loop_playback,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "AudioAction":
+        return cls(
+            channel=str(data["channel"]),
+            action=str(data["action"]),
+            asset=str(data["asset"]) if data.get("asset") is not None else None,
+            volume=float(data["volume"]) if data.get("volume") is not None else None,
+            fade_duration_ms=(
+                int(data["fade_duration_ms"])
+                if data.get("fade_duration_ms") is not None
+                else None
+            ),
+            loop_playback=(
+                bool(data["loop_playback"])
+                if data.get("loop_playback") is not None
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class Transition:
+    """Scene transition event."""
+
+    kind: str
+    duration_ms: int
+    color: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": "transition",
+            "kind": self.kind,
+            "duration_ms": self.duration_ms,
+            "color": self.color,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "Transition":
+        return cls(
+            kind=str(data["kind"]),
+            duration_ms=int(data["duration_ms"]),
+            color=str(data["color"]) if data.get("color") is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class SetCharacterPosition:
+    """Absolute character position event."""
+
+    name: str
+    x: int
+    y: int
+    scale: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": "set_character_position",
+            "name": self.name,
+            "x": self.x,
+            "y": self.y,
+            "scale": self.scale,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "SetCharacterPosition":
+        return cls(
+            name=str(data["name"]),
+            x=int(data["x"]),
+            y=int(data["y"]),
+            scale=float(data["scale"]) if data.get("scale") is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class ExtCall:
+    """External call event."""
+
+    command: str
+    args: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"type": "ext_call", "command": self.command, "args": list(self.args)}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ExtCall":
+        return cls(
+            command=str(data["command"]),
+            args=[str(item) for item in data.get("args", [])],
         )
 
 
@@ -291,7 +413,20 @@ class JumpIf:
         return cls(cond=cond, target=str(data["target"]))
 
 
-Event = Union[Dialogue, Choice, Scene, Jump, SetFlag, SetVar, JumpIf, Patch]
+Event = Union[
+    Dialogue,
+    Choice,
+    Scene,
+    Jump,
+    SetFlag,
+    SetVar,
+    JumpIf,
+    Patch,
+    AudioAction,
+    Transition,
+    SetCharacterPosition,
+    ExtCall,
+]
 
 
 @dataclass(frozen=True)
@@ -356,6 +491,14 @@ def event_from_dict(data: Mapping[str, Any]) -> Event:
         return JumpIf.from_dict(data)
     if event_type == "patch":
         return Patch.from_dict(data)
+    if event_type == "audio_action":
+        return AudioAction.from_dict(data)
+    if event_type == "transition":
+        return Transition.from_dict(data)
+    if event_type == "set_character_position":
+        return SetCharacterPosition.from_dict(data)
+    if event_type == "ext_call":
+        return ExtCall.from_dict(data)
     raise ValueError(f"Unknown event type: {event_type}")
 
 

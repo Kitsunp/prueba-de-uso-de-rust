@@ -91,9 +91,64 @@ impl<'a> InspectorPanel<'a> {
                             add_option_req = true;
                         }
                     }
-                    StoryNode::Scene { background } => {
+                    StoryNode::Scene {
+                        background,
+                        music,
+                        characters,
+                    } => {
+                        let mut bg = background.clone().unwrap_or_default();
                         ui.label("Background Image:");
-                        standard_changed |= ui.text_edit_singleline(background).changed();
+                        if ui.text_edit_singleline(&mut bg).changed() {
+                            *background = if bg.trim().is_empty() { None } else { Some(bg) };
+                            standard_changed = true;
+                        }
+
+                        let mut bgm = music.clone().unwrap_or_default();
+                        ui.label("Background Music:");
+                        if ui.text_edit_singleline(&mut bgm).changed() {
+                            *music = if bgm.trim().is_empty() {
+                                None
+                            } else {
+                                Some(bgm)
+                            };
+                            standard_changed = true;
+                        }
+
+                        ui.separator();
+                        ui.label(format!("Characters in Scene: {}", characters.len()));
+                        for character in characters.iter_mut() {
+                            ui.group(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Name:");
+                                    standard_changed |=
+                                        ui.text_edit_singleline(&mut character.name).changed();
+                                });
+                                let mut expr = character.expression.clone().unwrap_or_default();
+                                ui.horizontal(|ui| {
+                                    ui.label("Expr:");
+                                    if ui.text_edit_singleline(&mut expr).changed() {
+                                        character.expression = if expr.trim().is_empty() {
+                                            None
+                                        } else {
+                                            Some(expr)
+                                        };
+                                        standard_changed = true;
+                                    }
+                                });
+                                let mut pos = character.position.clone().unwrap_or_default();
+                                ui.horizontal(|ui| {
+                                    ui.label("Pos:");
+                                    if ui.text_edit_singleline(&mut pos).changed() {
+                                        character.position = if pos.trim().is_empty() {
+                                            None
+                                        } else {
+                                            Some(pos)
+                                        };
+                                        standard_changed = true;
+                                    }
+                                });
+                            });
+                        }
                     }
                     StoryNode::Jump { target } => {
                         ui.label("Jump Target (Label):");
@@ -371,10 +426,12 @@ impl<'a> InspectorPanel<'a> {
                                     );
 
                                     if ui.input(|i| i.pointer.any_released()) {
-                                        let filename =
-                                            payload.strip_prefix("asset://audio/").unwrap();
-                                        *asset = Some(filename.to_string());
-                                        standard_changed = true;
+                                        if let Some(filename) =
+                                            payload.strip_prefix("asset://audio/")
+                                        {
+                                            *asset = Some(filename.to_string());
+                                            standard_changed = true;
+                                        }
                                     }
                                 }
                             }

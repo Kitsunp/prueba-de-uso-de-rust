@@ -2,8 +2,9 @@ use pyo3::prelude::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use visual_novel_engine::{
-    CharacterPatchRaw, CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, CmpOp, CondRaw,
-    DialogueRaw, EventRaw, ScenePatchRaw, SceneUpdateRaw, SCRIPT_SCHEMA_VERSION,
+    AudioActionRaw, CharacterPatchRaw, CharacterPlacementRaw, ChoiceOptionRaw, ChoiceRaw, CmpOp,
+    CondRaw, DialogueRaw, EventRaw, ScenePatchRaw, SceneTransitionRaw, SceneUpdateRaw,
+    SetCharacterPositionRaw, SCRIPT_SCHEMA_VERSION,
 };
 
 #[pyclass(name = "ScriptBuilder")]
@@ -178,6 +179,46 @@ impl PyScriptBuilder {
             update,
             remove,
         }));
+    }
+
+    #[pyo3(signature = (channel, action, asset=None, volume=None, fade_duration_ms=None, loop_playback=None))]
+    fn audio_action(
+        &mut self,
+        channel: &str,
+        action: &str,
+        asset: Option<String>,
+        volume: Option<f32>,
+        fade_duration_ms: Option<u64>,
+        loop_playback: Option<bool>,
+    ) {
+        self.events.push(EventRaw::AudioAction(AudioActionRaw {
+            channel: channel.to_string(),
+            action: action.to_string(),
+            asset,
+            volume,
+            fade_duration_ms,
+            loop_playback,
+        }));
+    }
+
+    #[pyo3(signature = (kind, duration_ms, color=None))]
+    fn transition(&mut self, kind: &str, duration_ms: u32, color: Option<String>) {
+        self.events.push(EventRaw::Transition(SceneTransitionRaw {
+            kind: kind.to_string(),
+            duration_ms,
+            color,
+        }));
+    }
+
+    #[pyo3(signature = (name, x, y, scale=None))]
+    fn set_character_position(&mut self, name: &str, x: i32, y: i32, scale: Option<f32>) {
+        self.events
+            .push(EventRaw::SetCharacterPosition(SetCharacterPositionRaw {
+                name: name.to_string(),
+                x,
+                y,
+                scale,
+            }));
     }
 
     fn ext_call(&mut self, command: &str, args: Vec<String>) {

@@ -50,7 +50,9 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
                 options: c.options.iter().map(|o| o.text.clone()).collect(),
             },
             EventRaw::Scene(s) => StoryNode::Scene {
-                background: s.background.clone().unwrap_or_default(),
+                background: s.background.clone(),
+                music: s.music.clone(),
+                characters: s.characters.clone(),
             },
             EventRaw::Jump { target } => StoryNode::Jump {
                 target: target.clone(),
@@ -244,8 +246,16 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
                             .map(|c| c.to);
 
                         let target = target_node
-                            .map(|tid| format!("node_{}", tid))
-                            .unwrap_or_else(|| "start".to_string()); // Default fallback
+                            .and_then(|tid| {
+                                let node = graph.get_node(tid)?;
+                                let label = match node {
+                                    StoryNode::Start => "start".to_string(),
+                                    StoryNode::End => "__end".to_string(),
+                                    _ => format!("node_{}", tid),
+                                };
+                                Some(label)
+                            })
+                            .unwrap_or_else(|| format!("__unlinked_node_{}_option_{}", id, i));
 
                         ChoiceOptionRaw {
                             text: text.clone(),
@@ -279,11 +289,15 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
             StoryNode::ScenePatch(patch) => {
                 events.push(EventRaw::Patch(patch.clone()));
             }
-            StoryNode::Scene { background } => {
+            StoryNode::Scene {
+                background,
+                music,
+                characters,
+            } => {
                 events.push(EventRaw::Scene(SceneUpdateRaw {
-                    background: Some(background.clone()),
-                    music: None,
-                    characters: vec![],
+                    background: background.clone(),
+                    music: music.clone(),
+                    characters: characters.clone(),
                 }));
             }
             StoryNode::AudioAction {
@@ -336,6 +350,16 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
         }
     }
 
+    // Add synthetic end label when at least one edge explicitly targets End marker.
+    if events.iter().any(|event| match event {
+        EventRaw::Jump { target } => target == "__end",
+        EventRaw::JumpIf { target, .. } => target == "__end",
+        EventRaw::Choice(choice) => choice.options.iter().any(|option| option.target == "__end"),
+        _ => false,
+    }) {
+        labels.insert("__end".to_string(), events.len());
+    }
+
     // Add start label
     if !labels.contains_key("start") && !events.is_empty() {
         labels.insert("start".to_string(), 0);
@@ -351,6 +375,7 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use visual_novel_engine::CharacterPlacementRaw;
 
     #[test]
     fn test_roundtrip_empty_script() {
@@ -379,5 +404,58 @@ mod tests {
         // Should have at least one dialogue event
         assert!(!roundtrip.events.is_empty());
         assert!(roundtrip.labels.contains_key("start"));
+    }
+
+    #[test]
+    fn test_roundtrip_scene_preserves_music_and_characters() {
+        let mut labels = BTreeMap::new();
+        labels.insert("start".to_string(), 0);
+
+        let events = vec![EventRaw::Scene(SceneUpdateRaw {
+            background: Some("bg/room.png".to_string()),
+            music: Some("bgm/theme.ogg".to_string()),
+            characters: vec![CharacterPlacementRaw {
+                name: "Ava".to_string(),
+                expression: Some("smile".to_string()),
+                position: Some("left".to_string()),
+                x: Some(10),
+                y: Some(20),
+                scale: Some(1.2),
+            }],
+        })];
+
+        let original = ScriptRaw::new(events, labels);
+        let graph = from_script(&original);
+        let roundtrip = to_script(&graph);
+
+        let Some(EventRaw::Scene(scene)) = roundtrip.events.first() else {
+            panic!("Expected first event to be scene");
+        };
+        assert_eq!(scene.background.as_deref(), Some("bg/room.png"));
+        assert_eq!(scene.music.as_deref(), Some("bgm/theme.ogg"));
+        assert_eq!(scene.characters.len(), 1);
+        assert_eq!(scene.characters[0].name, "Ava");
+    }
+
+    #[test]
+    fn test_unlinked_choice_option_is_explicitly_marked() {
+        let mut graph = NodeGraph::new();
+        let start_id = graph.add_node(StoryNode::Start, egui::pos2(50.0, 30.0));
+        let choice_id = graph.add_node(
+            StoryNode::Choice {
+                prompt: "Elige".to_string(),
+                options: vec!["A".to_string(), "B".to_string()],
+            },
+            egui::pos2(100.0, 120.0),
+        );
+        graph.connect(start_id, choice_id);
+
+        let script = to_script(&graph);
+        let Some(EventRaw::Choice(choice)) = script.events.first() else {
+            panic!("Expected first event to be choice");
+        };
+        assert_eq!(choice.options.len(), 2);
+        assert!(choice.options[0].target.starts_with("__unlinked_node_"));
+        assert!(choice.options[1].target.starts_with("__unlinked_node_"));
     }
 }

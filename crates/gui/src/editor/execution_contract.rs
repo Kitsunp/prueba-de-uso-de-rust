@@ -129,8 +129,8 @@ const CHARACTER_PLACEMENT: EventExecutionContract = EventExecutionContract {
     fidelity: FidelityClass::RuntimeReal,
 };
 
-const GENERIC_EVENT: EventExecutionContract = EventExecutionContract {
-    event_name: "Generic/EventRaw",
+const EXT_CALL: EventExecutionContract = EventExecutionContract {
+    event_name: "ExtCall",
     editor_supported: true,
     preview_supported: true,
     runtime_supported: true,
@@ -138,7 +138,16 @@ const GENERIC_EVENT: EventExecutionContract = EventExecutionContract {
     fidelity: FidelityClass::RuntimeReal,
 };
 
-const CONTRACT_MATRIX: [EventExecutionContract; 12] = [
+const GENERIC_EVENT: EventExecutionContract = EventExecutionContract {
+    event_name: "Generic/EventRaw",
+    editor_supported: true,
+    preview_supported: true,
+    runtime_supported: false,
+    export_supported: false,
+    fidelity: FidelityClass::PreviewOnly,
+};
+
+const CONTRACT_MATRIX: [EventExecutionContract; 14] = [
     DIALOGUE,
     CHOICE,
     SCENE,
@@ -149,6 +158,8 @@ const CONTRACT_MATRIX: [EventExecutionContract; 12] = [
     AUDIO_ACTION,
     TRANSITION,
     CHARACTER_PLACEMENT,
+    EXT_CALL,
+    GENERIC_EVENT,
     START_MARKER,
     END_MARKER,
 ];
@@ -187,7 +198,7 @@ pub fn contract_for_event_raw(event: &EventRaw) -> EventExecutionContract {
         EventRaw::SetFlag { .. } | EventRaw::SetVar { .. } => SET_VAR,
         EventRaw::JumpIf { .. } => JUMP_IF,
         EventRaw::Patch(_) => SCENE_PATCH,
-        EventRaw::ExtCall { .. } => GENERIC_EVENT,
+        EventRaw::ExtCall { .. } => EXT_CALL,
         EventRaw::AudioAction(_) => AUDIO_ACTION,
         EventRaw::Transition(_) => TRANSITION,
         EventRaw::SetCharacterPosition(_) => CHARACTER_PLACEMENT,
@@ -230,5 +241,15 @@ mod tests {
         assert_eq!(c.event_name, "Dialogue");
         assert_eq!(c.fidelity, FidelityClass::RuntimeReal);
         assert!(c.export_supported);
+    }
+
+    #[test]
+    fn generic_node_is_not_export_supported() {
+        let contract = contract_for_node(&StoryNode::Generic(EventRaw::ExtCall {
+            command: "hook".to_string(),
+            args: vec!["x".to_string()],
+        }));
+        assert!(!contract.export_supported);
+        assert_eq!(contract.fidelity, FidelityClass::PreviewOnly);
     }
 }

@@ -24,19 +24,20 @@ pub fn load_project(path: PathBuf) -> Result<LoadedProject, EditorError> {
     })?;
 
     // 2. Load Entry Point Script if exists
-    let entry_point_script = if let Ok(entry_rel) =
-        std::path::Path::new(&manifest.settings.entry_point).strip_prefix("")
-    {
-        // Simple path join, assuming relative to manifest
+    let entry_point_script = {
+        let entry = std::path::PathBuf::from(&manifest.settings.entry_point);
         let parent = path.parent().unwrap_or(&path);
-        let script_path = parent.join(entry_rel);
+        let script_path = if entry.is_absolute() {
+            entry
+        } else {
+            parent.join(entry)
+        };
+
         if script_path.exists() {
             Some((script_path.clone(), load_script(script_path)?))
         } else {
             None
         }
-    } else {
-        None
     };
 
     Ok(LoadedProject {

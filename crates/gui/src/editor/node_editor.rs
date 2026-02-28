@@ -90,7 +90,9 @@ impl<'a> NodeEditorPanel<'a> {
                 if ui.button("🎬 Scene").clicked() {
                     let id = self.graph.add_node(
                         StoryNode::Scene {
-                            background: "bg.png".to_string(),
+                            background: Some("bg.png".to_string()),
+                            music: None,
+                            characters: Vec::new(),
                         },
                         pos,
                     );
@@ -638,7 +640,17 @@ impl<'a> NodeEditorPanel<'a> {
         match node {
             StoryNode::Dialogue { speaker, .. } => speaker.chars().take(15).collect(),
             StoryNode::Choice { prompt, .. } => prompt.chars().take(15).collect(),
-            StoryNode::Scene { background } => background.chars().take(15).collect(),
+            StoryNode::Scene {
+                background, music, ..
+            } => {
+                let bg = background.as_deref().unwrap_or("<none>");
+                let bgm = music.as_deref().unwrap_or("<none>");
+                format!(
+                    "bg:{} bgm:{}",
+                    bg.chars().take(8).collect::<String>(),
+                    bgm.chars().take(8).collect::<String>()
+                )
+            }
             StoryNode::Jump { target } => {
                 format!("→ {}", target.chars().take(10).collect::<String>())
             }

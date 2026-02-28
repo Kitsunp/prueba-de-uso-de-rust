@@ -181,10 +181,28 @@ pub fn render_inline_editor(graph: &mut NodeGraph, ui: &egui::Ui) {
                         changed = true;
                     }
                 }
-                StoryNode::Scene { background } => {
+                StoryNode::Scene {
+                    background, music, ..
+                } => {
+                    let mut bg = background.clone().unwrap_or_default();
                     ui.horizontal(|ui| {
                         ui.label("Background:");
-                        changed |= ui.text_edit_singleline(background).changed();
+                        if ui.text_edit_singleline(&mut bg).changed() {
+                            *background = if bg.trim().is_empty() { None } else { Some(bg) };
+                            changed = true;
+                        }
+                    });
+                    let mut bgm = music.clone().unwrap_or_default();
+                    ui.horizontal(|ui| {
+                        ui.label("Music:");
+                        if ui.text_edit_singleline(&mut bgm).changed() {
+                            *music = if bgm.trim().is_empty() {
+                                None
+                            } else {
+                                Some(bgm)
+                            };
+                            changed = true;
+                        }
                     });
                 }
                 StoryNode::Jump { target } => {

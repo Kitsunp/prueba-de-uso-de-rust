@@ -62,13 +62,9 @@ impl<'a> VisualComposerPanel<'a> {
                         let asset_type = parts[0];
                         let asset_name = parts[1];
 
-                        // Heuristic Position: Center of viewport or cursor?
-                        // If we use cursor, it might be relative to screen.
-                        // visual_composer doesn't know graph scroll/pan.
-                        // We will return screen pos, workbench converts it if possible,
-                        // or just creates it at a default location.
-                        // Let's assume (0,0) for now or use a fixed offset in workbench.
-                        let pos = egui::pos2(100.0, 100.0);
+                        let drop_pos = response.hover_pos().unwrap_or(viewport_rect.center());
+                        let local = drop_pos - viewport_rect.min;
+                        let pos = egui::pos2(local.x.max(0.0), local.y.max(0.0));
 
                         let node = match asset_type {
                             "char" => Some(StoryNode::Dialogue {
@@ -76,7 +72,9 @@ impl<'a> VisualComposerPanel<'a> {
                                 text: "...".to_string(),
                             }),
                             "bg" => Some(StoryNode::Scene {
-                                background: asset_name.to_string(),
+                                background: Some(asset_name.to_string()),
+                                music: None,
+                                characters: Vec::new(),
                             }),
                             _ => None,
                         };

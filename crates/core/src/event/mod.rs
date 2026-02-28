@@ -134,13 +134,8 @@ impl StringBudget for AudioActionRaw {
 /// Compiled definition for audio actions.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AudioActionCompiled {
-    pub channel: u8, // Enum mapped to u8? Or just String? String for now to match raw if not optimizing yet.
-    // But compiled usually means optimized.
-    // For MVP, let's keep it simple: use u8 constants or just string if lazy.
-    // User wants "Optimization". I should map to enum.
-    // But I don't have the Enums defined.
-    // I will use u8. 0=BGM, 1=SFX, 2=Voice.
-    pub action: u8, // 0=Play, 1=Stop, 2=FadeOut
+    pub channel: u8, // 0=BGM, 1=SFX, 2=Voice.
+    pub action: u8,  // 0=Play, 1=Stop, 2=FadeOut.
     pub asset: Option<SharedStr>,
     pub volume: Option<f32>,
     pub fade_duration_ms: Option<u64>,
