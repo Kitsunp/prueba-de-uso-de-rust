@@ -165,7 +165,8 @@ impl Engine {
             EventCompiled::ExtCall { .. } => Ok(()),
             EventCompiled::AudioAction(action) => {
                 use crate::audio::AudioCommand;
-                // Simple mapping: 0=BGM, others=SFX. 0=Play, 1=Stop.
+                // Mapping: channel 0=BGM, 1=SFX, 2=Voice (currently routed to SFX backend).
+                // Action: 0=Play, 1=Stop, 2=FadeOut.
                 let cmd = match action.action {
                     0 => {
                         // Play
@@ -189,8 +190,8 @@ impl Engine {
                             None
                         }
                     }
-                    1 => {
-                        // Stop
+                    1 | 2 => {
+                        // Stop/FadeOut (for BGM, both map to stop with fade_out duration)
                         if action.channel == 0 {
                             Some(AudioCommand::StopBgm {
                                 fade_out: Duration::from_millis(
@@ -529,5 +530,36 @@ mod tests {
         assert_eq!(audio_step0, audio2_0, "Run 1 step 0 == Run 2 step 0");
         assert_eq!(audio_step1, audio2_1, "Run 1 step 1 == Run 2 step 1");
         assert_eq!(audio_step2, audio2_2, "Run 1 step 2 == Run 2 step 2");
+    }
+
+    #[test]
+    fn audio_action_fade_out_emits_stop_bgm() {
+        let json = r#"{
+            "script_schema_version": "1.0",
+            "events": [
+                {
+                    "type": "audio_action",
+                    "channel": "bgm",
+                    "action": "fade_out",
+                    "fade_duration_ms": 900
+                }
+            ],
+            "labels": { "start": 0 }
+        }"#;
+
+        let script = ScriptRaw::from_json(json).unwrap();
+        let mut engine = Engine::new(
+            script,
+            SecurityPolicy::default(),
+            ResourceLimiter::default(),
+        )
+        .unwrap();
+
+        let (audio, _) = engine.step().unwrap();
+        assert_eq!(audio.len(), 1);
+        assert!(matches!(
+            audio[0],
+            AudioCommand::StopBgm { fade_out } if fade_out.as_millis() == 900
+        ));
     }
 }

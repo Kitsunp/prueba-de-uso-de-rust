@@ -31,6 +31,10 @@ pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
                 workbench.compile_preview();
                 ui.close_menu();
             }
+            if ui.button("Export Dry Run Repro").clicked() {
+                workbench.export_dry_run_repro();
+                ui.close_menu();
+            }
         });
         ui.menu_button("View", |ui| {
             ui.checkbox(&mut workbench.show_graph, "Graph Panel");

@@ -282,8 +282,9 @@ impl ScriptRaw {
                 EventRaw::Transition(transition) => {
                     EventCompiled::Transition(crate::event::SceneTransitionCompiled {
                         kind: match transition.kind.as_str() {
-                            "fade_black" => 0,
+                            "fade" | "fade_black" => 0,
                             "dissolve" => 1,
+                            "cut" => 2,
                             _ => 0,
                         },
                         duration_ms: transition.duration_ms,

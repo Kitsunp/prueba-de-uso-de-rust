@@ -56,6 +56,7 @@ pub enum LintCode {
     EmptySpeakerName,
     EmptyJumpTarget,
     ContractUnsupportedExport,
+    GenericEventUnchecked,
     CompileError,
     RuntimeInitError,
     DryRunUnreachableCompiled,
@@ -91,6 +92,7 @@ impl LintCode {
             LintCode::EmptySpeakerName => "VAL_SPEAKER_EMPTY",
             LintCode::EmptyJumpTarget => "VAL_JUMP_EMPTY",
             LintCode::ContractUnsupportedExport => "VAL_CONTRACT_EXPORT_UNSUPPORTED",
+            LintCode::GenericEventUnchecked => "VAL_GENERIC_UNCHECKED",
             LintCode::CompileError => "CMP_SCRIPT_ERROR",
             LintCode::RuntimeInitError => "CMP_RUNTIME_INIT",
             LintCode::DryRunUnreachableCompiled => "DRY_UNREACHABLE",
@@ -284,7 +286,77 @@ where
                     ));
                 }
             }
-            StoryNode::SetVariable { .. } | StoryNode::ScenePatch(_) | StoryNode::Generic(_) => {}
+            StoryNode::SetVariable { .. } => {}
+            StoryNode::ScenePatch(patch) => {
+                if let Some(bg) = &patch.background {
+                    if is_unsafe_asset_ref(bg) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::UnsafeAssetPath,
+                            format!("Unsafe scene patch background path: '{}'", bg),
+                        ));
+                    } else if should_probe_asset_exists(bg) && !asset_exists(bg) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::AssetReferenceMissing,
+                            format!("Scene patch background does not exist: '{}'", bg),
+                        ));
+                    }
+                }
+
+                if let Some(music) = &patch.music {
+                    if is_unsafe_asset_ref(music) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::UnsafeAssetPath,
+                            format!("Unsafe scene patch music path: '{}'", music),
+                        ));
+                    } else if should_probe_asset_exists(music) && !asset_exists(music) {
+                        issues.push(LintIssue::error(
+                            Some(*id),
+                            ValidationPhase::Graph,
+                            LintCode::AssetReferenceMissing,
+                            format!("Scene patch music does not exist: '{}'", music),
+                        ));
+                    }
+                }
+
+                if patch.add.iter().any(|c| c.name.trim().is_empty()) {
+                    issues.push(LintIssue::error(
+                        Some(*id),
+                        ValidationPhase::Graph,
+                        LintCode::EmptyCharacterName,
+                        "Scene patch has add-entry with empty character name",
+                    ));
+                }
+                if patch.update.iter().any(|c| c.name.trim().is_empty()) {
+                    issues.push(LintIssue::error(
+                        Some(*id),
+                        ValidationPhase::Graph,
+                        LintCode::EmptyCharacterName,
+                        "Scene patch has update-entry with empty character name",
+                    ));
+                }
+                if patch.remove.iter().any(|name| name.trim().is_empty()) {
+                    issues.push(LintIssue::warning(
+                        Some(*id),
+                        ValidationPhase::Graph,
+                        LintCode::EmptyCharacterName,
+                        "Scene patch has empty character name in remove-list",
+                    ));
+                }
+            }
+            StoryNode::Generic(_) => {
+                issues.push(LintIssue::warning(
+                    Some(*id),
+                    ValidationPhase::Graph,
+                    LintCode::GenericEventUnchecked,
+                    "Generic event has limited semantic validation",
+                ));
+            }
             StoryNode::Transition {
                 kind, duration_ms, ..
             } => {
@@ -708,5 +780,42 @@ mod tests {
         assert!(issues
             .iter()
             .any(|i| i.code == LintCode::InvalidAudioVolume));
+    }
+
+    #[test]
+    fn validate_reports_scene_patch_and_generic_limits() {
+        let mut graph = NodeGraph::new();
+        let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
+        let patch = graph.add_node(
+            StoryNode::ScenePatch(visual_novel_engine::ScenePatchRaw {
+                background: Some("../unsafe/bg.png".to_string()),
+                music: None,
+                add: vec![visual_novel_engine::CharacterPlacementRaw {
+                    name: "".to_string(),
+                    ..Default::default()
+                }],
+                update: Vec::new(),
+                remove: Vec::new(),
+            }),
+            p(0.0, 100.0),
+        );
+        let generic = graph.add_node(
+            StoryNode::Generic(visual_novel_engine::EventRaw::ExtCall {
+                command: "mod_hook".to_string(),
+                args: vec!["x".to_string()],
+            }),
+            p(0.0, 200.0),
+        );
+        let end = graph.add_node(StoryNode::End, p(0.0, 300.0));
+
+        graph.connect(start, patch);
+        graph.connect(patch, generic);
+        graph.connect(generic, end);
+
+        let issues = validate_with_asset_probe(&graph, |_asset| true);
+        assert!(issues.iter().any(|i| i.code == LintCode::UnsafeAssetPath));
+        assert!(issues
+            .iter()
+            .any(|i| i.code == LintCode::GenericEventUnchecked));
     }
 }

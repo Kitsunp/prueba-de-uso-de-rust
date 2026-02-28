@@ -377,11 +377,12 @@ impl StoryGraph {
 
             EventCompiled::Transition(transition) => {
                 let node_type = NodeType::Transition {
-                    kind: if transition.kind == 0 {
-                        "fade".to_string()
-                    } else {
-                        "dissolve".to_string()
-                    }, // simplistic mapping for now
+                    kind: match transition.kind {
+                        0 => "fade".to_string(),
+                        1 => "dissolve".to_string(),
+                        2 => "cut".to_string(),
+                        _ => "unknown".to_string(),
+                    },
                     duration: transition.duration_ms.into(),
                 };
                 let edges = if has_next {

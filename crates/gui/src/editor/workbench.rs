@@ -413,6 +413,47 @@ impl EditorWorkbench {
         }
     }
 
+    pub fn export_dry_run_repro(&mut self) {
+        let result = crate::editor::compiler::compile_project(&self.node_graph);
+        let repro = result.minimal_repro_script();
+        let script = result.script.clone();
+        self.current_script = Some(script);
+        self.last_dry_run_report = result.dry_run_report.clone();
+        self.validation_issues = result.issues;
+        Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
+        self.show_validation = !self.validation_issues.is_empty();
+
+        let Some(repro) = repro else {
+            self.toast = Some(ToastState::warning(
+                "No se pudo generar un repro fiel para el Dry Run actual",
+            ));
+            return;
+        };
+
+        let Ok(payload) = repro.to_json() else {
+            self.toast = Some(ToastState::error("Failed to serialize dry-run repro"));
+            return;
+        };
+
+        let path = rfd::FileDialog::new()
+            .add_filter("Script JSON", &["json"])
+            .set_file_name("dry_run_repro.json")
+            .save_file();
+
+        if let Some(path) = path {
+            match std::fs::write(&path, payload) {
+                Ok(_) => {
+                    self.toast = Some(ToastState::success("Dry-run repro exported"));
+                }
+                Err(e) => {
+                    self.toast = Some(ToastState::error(format!("Repro export failed: {}", e)));
+                }
+            }
+        } else {
+            self.toast = Some(ToastState::warning("Repro export cancelled"));
+        }
+    }
+
     pub fn sync_graph_to_script(&mut self) -> Result<(), String> {
         let result = crate::editor::compiler::compile_project(&self.node_graph);
 
@@ -486,6 +527,9 @@ impl EditorWorkbench {
                 }
                 if ui.button("Exportar .vnproject").clicked() {
                     self.export_compiled_project();
+                }
+                if ui.button("Exportar Repro Dry Run").clicked() {
+                    self.export_dry_run_repro();
                 }
                 if ui.button("Reset Layout").clicked() {
                     self.show_graph = true;

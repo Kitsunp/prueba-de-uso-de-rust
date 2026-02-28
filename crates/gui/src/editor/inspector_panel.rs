@@ -418,7 +418,7 @@ impl<'a> InspectorPanel<'a> {
                         ui.label("⏳ Transition");
                         ui.separator();
 
-                        ui.label("Kind (fade/dissolve):");
+                        ui.label("Kind (fade/dissolve/cut):");
                         standard_changed |= ui.text_edit_singleline(kind).changed();
 
                         ui.label("Duration (ms):");
