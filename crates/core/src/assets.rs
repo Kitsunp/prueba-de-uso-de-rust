@@ -3,12 +3,17 @@ use std::hash::{Hash, Hasher};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Opaque asset identifier. Implementation uses u64 hash for collision resistance.
+/// Opaque asset identifier.
+///
+/// Uses a deterministic non-cryptographic u64 hash for stable IDs across runs.
+/// This is not collision-resistant in the cryptographic sense.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AssetId(u64);
 
 impl AssetId {
-    /// Creates an AssetId from a path string using a deterministic Fnv-1a hash.
+    /// Creates an `AssetId` from a path string using deterministic FNV-1a 64-bit.
+    ///
+    /// Intended for stable lookup keys, not for security decisions.
     pub fn from_path(path: &str) -> Self {
         let mut hasher = FnvHasher64::default();
         path.hash(&mut hasher);

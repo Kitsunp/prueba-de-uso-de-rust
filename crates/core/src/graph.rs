@@ -205,11 +205,7 @@ impl StoryGraph {
 
         match event {
             EventCompiled::Dialogue(dialogue) => {
-                let text_preview = if dialogue.text.len() > 50 {
-                    format!("{}...", &dialogue.text[..47])
-                } else {
-                    dialogue.text.to_string()
-                };
+                let text_preview = preview_text(&dialogue.text, 50);
                 let node_type = NodeType::Dialogue {
                     speaker: dialogue.speaker.to_string(),
                     text_preview,
@@ -419,7 +415,6 @@ impl StoryGraph {
         }
     }
 
-    /// Formats a condition for display.
     fn compute_reachability(&mut self) {
         let mut visited: HashSet<NodeId> = HashSet::new();
         let mut queue: VecDeque<NodeId> = VecDeque::new();
@@ -501,6 +496,20 @@ impl StoryGraph {
     pub fn find_by_label(&self, label: &str) -> Option<NodeId> {
         self.label_map.get(label).copied()
     }
+}
+
+fn preview_text(text: &str, max_chars: usize) -> String {
+    let text_len = text.chars().count();
+    if text_len <= max_chars {
+        return text.to_string();
+    }
+
+    if max_chars <= 3 {
+        return ".".repeat(max_chars);
+    }
+
+    let head: String = text.chars().take(max_chars - 3).collect();
+    format!("{head}...")
 }
 
 // =============================================================================

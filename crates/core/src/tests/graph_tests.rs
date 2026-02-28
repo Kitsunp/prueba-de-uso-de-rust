@@ -140,3 +140,23 @@ fn test_find_by_label() {
     assert_eq!(graph.find_by_label("end"), Some(2));
     assert_eq!(graph.find_by_label("nonexistent"), None);
 }
+
+#[test]
+fn test_dialogue_preview_handles_utf8_boundaries() {
+    let long_utf8 = "🙂".repeat(80);
+    let script = ScriptCompiled {
+        events: vec![make_dialogue("Narrador", &long_utf8)],
+        labels: [("start".to_string(), 0)].into_iter().collect(),
+        start_ip: 0,
+        flag_count: 0,
+    };
+
+    let graph = StoryGraph::from_script(&script);
+    let node = graph.get_node(0).expect("node 0 must exist");
+    let NodeType::Dialogue { text_preview, .. } = &node.node_type else {
+        panic!("expected dialogue node");
+    };
+
+    assert!(text_preview.ends_with("..."));
+    assert!(text_preview.chars().count() <= 50);
+}

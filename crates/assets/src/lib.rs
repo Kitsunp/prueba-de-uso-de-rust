@@ -80,7 +80,7 @@ pub enum AssetError {
 pub struct AssetStore {
     root: PathBuf,
     mode: SecurityMode,
-    allowed_extensions: HashSet<String>,
+    allowed_image_extensions: HashSet<String>,
     limits: AssetLimits,
     manifest: Option<AssetManifest>,
     require_manifest: bool,
@@ -105,14 +105,14 @@ impl AssetStore {
             }
             None => None,
         };
-        let allowed_extensions = ["png", "jpg", "jpeg", "ogg", "mp3", "wav"]
+        let allowed_image_extensions = ["png", "jpg", "jpeg"]
             .into_iter()
             .map(|ext| ext.to_string())
             .collect();
         Ok(Self {
             root,
             mode,
-            allowed_extensions,
+            allowed_image_extensions,
             limits: AssetLimits::default(),
             manifest,
             require_manifest,
@@ -148,9 +148,8 @@ impl AssetStore {
             .and_then(|ext| ext.to_str())
             .map(|value| value.to_lowercase())
             .ok_or_else(|| AssetError::UnsupportedExtension(asset_path.to_string()))?;
-        if !self.allowed_extensions.contains(&extension) {
-            // Note: We might want separate allowed sets for audio vs images?
-            // For now, checks extension.
+        if !self.allowed_image_extensions.contains(&extension) {
+            return Err(AssetError::UnsupportedExtension(asset_path.to_string()));
         }
 
         let bytes = self.load_bytes(asset_path)?;
@@ -222,4 +221,22 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     let digest = hasher.finalize();
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_image_rejects_unsupported_extension_before_io() {
+        let store = AssetStore::new(PathBuf::from("."), SecurityMode::Trusted, None, false)
+            .expect("asset store should initialize");
+
+        let err = match store.load_image("assets/theme.ogg") {
+            Ok(_) => panic!("non-image extension must be rejected"),
+            Err(err) => err,
+        };
+
+        assert!(matches!(err, AssetError::UnsupportedExtension(_)));
+    }
 }
