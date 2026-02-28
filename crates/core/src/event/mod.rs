@@ -115,6 +115,7 @@ impl EventCompiled {
 
 /// Raw definition for audio actions.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AudioActionRaw {
     pub channel: String, // "bgm", "sfx", "voice"
     pub action: String,  // "play", "stop", "fade_out"
@@ -148,6 +149,7 @@ pub struct AudioActionCompiled {
 
 /// Raw definition for scene transitions.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SceneTransitionRaw {
     pub kind: String, // "fade_black", "dissolve"
     pub duration_ms: u32,
