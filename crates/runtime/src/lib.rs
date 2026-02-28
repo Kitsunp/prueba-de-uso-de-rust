@@ -37,6 +37,7 @@ pub struct RuntimeApp<I, A, S> {
     audio: A,
     assets: S,
     ui: UiState,
+    last_bgm_path: Option<String>,
 }
 
 impl<I, A, S> RuntimeApp<I, A, S>
@@ -61,6 +62,7 @@ where
             audio,
             assets,
             ui,
+            last_bgm_path: None,
         };
         let audio_commands = app.engine.take_audio_commands();
         app.apply_audio_commands(&audio_commands);
@@ -134,7 +136,10 @@ where
     fn apply_audio_for_current_scene(&mut self) {
         if let Ok(EventCompiled::Scene(scene)) = self.engine.current_event() {
             if let Some(music) = &scene.music {
-                self.audio.play_music(music);
+                if self.last_bgm_path.as_deref() != Some(music.as_ref()) {
+                    self.audio.play_music(music);
+                    self.last_bgm_path = Some(music.to_string());
+                }
             }
         }
     }
@@ -153,9 +158,11 @@ where
                 AudioCommand::PlayBgm { path, .. } => {
                     // Use path directly from the command (no workaround needed)
                     self.audio.play_music(path.as_ref());
+                    self.last_bgm_path = Some(path.as_ref().to_string());
                 }
                 AudioCommand::StopBgm { .. } => {
                     self.audio.stop_music();
+                    self.last_bgm_path = None;
                 }
                 AudioCommand::PlaySfx { path, .. } => {
                     self.audio.play_sfx(path.as_ref());

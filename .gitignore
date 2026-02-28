@@ -8,3 +8,5 @@ test_fail.log
 test_output.txt
 test_output.txt
 *.log
+docs/integrity_threat_model.md
+docs/phase9_authoring_acceptance.md

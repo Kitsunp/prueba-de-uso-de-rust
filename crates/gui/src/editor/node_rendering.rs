@@ -87,7 +87,7 @@ pub fn render_context_menu(graph: &mut NodeGraph, ui: &egui::Ui) {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.set_min_width(160.0);
 
-                ui.menu_button("➕ Insert Node", |ui| {
+                ui.menu_button("Insert Node", |ui| {
                     if ui.button("Before").clicked() {
                         graph.insert_before(node_id, StoryNode::default());
                         graph.context_menu = None;
@@ -102,32 +102,36 @@ pub fn render_context_menu(graph: &mut NodeGraph, ui: &egui::Ui) {
 
                 ui.separator();
 
-                if ui.button("🔀 Convert to Choice").clicked() {
+                if ui.button("Convert to Choice").clicked() {
                     graph.convert_to_choice(node_id);
                     graph.context_menu = None;
                 }
 
-                if ui.button("↗️ Create Branch").clicked() {
+                if ui.button("Create Branch").clicked() {
                     graph.create_branch(node_id);
                     graph.context_menu = None;
                 }
 
                 ui.separator();
 
-                if ui.button("🔗 Connect To...").clicked() {
+                if ui.button("Connect To...").clicked() {
                     graph.connecting_from = Some((node_id, 0));
+                    graph.context_menu = None;
+                }
+                if ui.button("Disconnect Outputs").clicked() {
+                    graph.disconnect_all_from(node_id);
                     graph.context_menu = None;
                 }
 
                 ui.separator();
 
-                if ui.button("✏️ Edit").clicked() {
+                if ui.button("Edit").clicked() {
                     graph.editing = Some(node_id);
                     graph.context_menu = None;
                 }
 
                 if ui
-                    .button(egui::RichText::new("🗑️ Delete").color(egui::Color32::RED))
+                    .button(egui::RichText::new("Delete").color(egui::Color32::RED))
                     .clicked()
                 {
                     graph.remove_node(node_id);

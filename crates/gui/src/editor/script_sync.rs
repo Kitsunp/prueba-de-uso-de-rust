@@ -50,6 +50,7 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
                 options: c.options.iter().map(|o| o.text.clone()).collect(),
             },
             EventRaw::Scene(s) => StoryNode::Scene {
+                profile: None,
                 background: s.background.clone(),
                 music: s.music.clone(),
                 characters: s.characters.clone(),
@@ -290,6 +291,7 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
                 events.push(EventRaw::Patch(patch.clone()));
             }
             StoryNode::Scene {
+                profile: _,
                 background,
                 music,
                 characters,

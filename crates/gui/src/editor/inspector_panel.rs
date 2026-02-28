@@ -56,7 +56,10 @@ impl<'a> InspectorPanel<'a> {
     fn render_node_editor(&mut self, ui: &mut egui::Ui) {
         let mut delete_option_idx = None;
         let mut add_option_req = false;
+        let mut save_scene_profile_req: Option<String> = None;
+        let mut apply_scene_profile_req: Option<String> = None;
         let mut standard_changed = false;
+        let scene_profile_names = self.graph.scene_profile_names();
 
         if let Some(node_id) = self.selected_node {
             if let Some(node) = self.graph.get_node_mut(node_id) {
@@ -92,10 +95,50 @@ impl<'a> InspectorPanel<'a> {
                         }
                     }
                     StoryNode::Scene {
+                        profile,
                         background,
                         music,
                         characters,
                     } => {
+                        let mut profile_id = profile.clone().unwrap_or_default();
+                        ui.horizontal(|ui| {
+                            ui.label("Scene Profile:");
+                            if ui.text_edit_singleline(&mut profile_id).changed() {
+                                *profile = if profile_id.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(profile_id.clone())
+                                };
+                                standard_changed = true;
+                            }
+                        });
+
+                        if !scene_profile_names.is_empty() {
+                            let selected_text = profile
+                                .clone()
+                                .unwrap_or_else(|| "<select profile>".to_string());
+                            egui::ComboBox::from_label("Available Profiles")
+                                .selected_text(selected_text)
+                                .show_ui(ui, |ui| {
+                                    for name in &scene_profile_names {
+                                        if ui.selectable_label(false, name).clicked() {
+                                            *profile = Some(name.clone());
+                                            standard_changed = true;
+                                        }
+                                    }
+                                });
+                        }
+
+                        ui.horizontal(|ui| {
+                            if ui.button("Save Profile").clicked() {
+                                save_scene_profile_req = profile.clone();
+                            }
+                            if ui.button("Apply Profile").clicked() {
+                                apply_scene_profile_req = profile.clone();
+                            }
+                        });
+
+                        ui.separator();
                         let mut bg = background.clone().unwrap_or_default();
                         ui.label("Background Image:");
                         if ui.text_edit_singleline(&mut bg).changed() {
@@ -536,6 +579,13 @@ impl<'a> InspectorPanel<'a> {
                     options.push("New Option".to_string());
                     self.graph.mark_modified();
                 }
+            }
+
+            if let Some(profile_id) = save_scene_profile_req {
+                let _ = self.graph.save_scene_profile(profile_id, node_id);
+            }
+            if let Some(profile_id) = apply_scene_profile_req {
+                let _ = self.graph.apply_scene_profile(&profile_id, node_id);
             }
         } else {
             ui.label("No node selected");

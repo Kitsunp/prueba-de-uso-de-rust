@@ -19,8 +19,8 @@ impl<'a> NodeEditorPanel<'a> {
                 // Check ports first (priority over node move)
                 for (id, node, n_pos) in nodes.iter().rev() {
                     if let StoryNode::Choice { options, .. } = node {
-                        // Check option ports
-                        for (i, _) in options.iter().enumerate() {
+                        // Check option ports + one extra "new option" port.
+                        for i in 0..=options.len() {
                             let port_pos = self.calculate_port_pos(*n_pos, node, i);
                             let screen_pos = self.graph_to_screen(rect, port_pos);
                             if screen_pos.distance(pos) < 10.0 * self.graph.zoom() {
@@ -68,6 +68,7 @@ impl<'a> NodeEditorPanel<'a> {
         if response.drag_stopped() {
             self.graph.dragging_node = None;
             if let Some((from, _)) = self.graph.connecting_from {
+                let mut dropped_on_node = false;
                 if let Some(pos) = response.interact_pointer_pos() {
                     for (to_id, _, to_pos) in nodes.iter().rev() {
                         let screen_pos = self.graph_to_screen(rect, *to_pos);
@@ -81,9 +82,14 @@ impl<'a> NodeEditorPanel<'a> {
                                 let port = self.graph.connecting_from.unwrap().1;
                                 self.graph.connect_port(from, port, *to_id);
                             }
+                            dropped_on_node = true;
                             break;
                         }
                     }
+                }
+                if !dropped_on_node {
+                    let port = self.graph.connecting_from.unwrap().1;
+                    self.graph.disconnect_port(from, port);
                 }
                 self.graph.connecting_from = None;
             }
@@ -200,6 +206,43 @@ impl<'a> NodeEditorPanel<'a> {
 
                         painter.circle_filled(socket_center, radius, color);
                     }
+
+                    // "New option" row/socket for fast branching.
+                    let add_idx = options.len();
+                    let add_y_off = header_height + (add_idx as f32 * option_h);
+                    let add_rect = egui::Rect::from_min_size(
+                        node_rect.min + egui::vec2(0.0, add_y_off),
+                        egui::vec2(node_rect.width(), option_h),
+                    );
+                    painter.line_segment(
+                        [add_rect.left_top(), add_rect.right_top()],
+                        egui::Stroke::new(1.0, egui::Color32::BLACK),
+                    );
+                    painter.text(
+                        add_rect.left_center() + egui::vec2(5.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        "+ New Option",
+                        egui::FontId::proportional(11.0 * self.graph.zoom()),
+                        egui::Color32::from_rgb(180, 220, 180),
+                    );
+                    let add_socket =
+                        self.graph_to_screen(rect, self.calculate_port_pos(*pos, node, add_idx));
+                    let add_hovered = response
+                        .hover_pos()
+                        .is_some_and(|p| p.distance(add_socket) < 8.0 * self.graph.zoom());
+                    painter.circle_filled(
+                        add_socket,
+                        if add_hovered {
+                            6.0 * self.graph.zoom()
+                        } else {
+                            4.0 * self.graph.zoom()
+                        },
+                        if add_hovered {
+                            egui::Color32::YELLOW
+                        } else {
+                            egui::Color32::LIGHT_GREEN
+                        },
+                    );
                 }
                 _ => {
                     painter.text(
@@ -283,7 +326,7 @@ impl<'a> NodeEditorPanel<'a> {
             StoryNode::Choice { options, .. } => {
                 let header = 40.0;
                 let option_h = 30.0;
-                header + (options.len().max(1) as f32 * option_h) + 10.0
+                header + ((options.len() + 1).max(1) as f32 * option_h) + 10.0
             }
             _ => NODE_HEIGHT,
         }
@@ -375,9 +418,9 @@ impl<'a> NodeEditorPanel<'a> {
 
     pub(super) fn render_status_bar(&self, painter: &egui::Painter, rect: egui::Rect) {
         let hint = if self.graph.connecting_from.is_some() {
-            "🔗 Drag to target node to connect • Esc to cancel"
+            "Drag to node to connect - drag to empty space to disconnect - Esc cancels"
         } else {
-            "Drag from socket to connect • Double-click to edit"
+            "Drag from socket to connect - Double-click to edit"
         };
         painter.text(
             rect.max - egui::vec2(10.0, 10.0),

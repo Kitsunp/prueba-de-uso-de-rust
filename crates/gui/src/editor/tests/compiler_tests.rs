@@ -172,12 +172,12 @@ fn minimal_repro_script_is_compileable() {
 }
 
 #[test]
-fn dry_run_runtime_error_includes_event_ip() {
+fn choice_connection_auto_creates_option_and_avoids_dry_run_runtime_error() {
     let mut graph = NodeGraph::new();
     let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
     let choice = graph.add_node(
         StoryNode::Choice {
-            prompt: "No options".to_string(),
+            prompt: "Auto options".to_string(),
             options: Vec::new(),
         },
         p(0.0, 100.0),
@@ -191,6 +191,10 @@ fn dry_run_runtime_error_includes_event_ip() {
         .issues
         .iter()
         .find(|issue| issue.code == LintCode::DryRunRuntimeError);
-    assert!(dry_error.is_some());
-    assert!(dry_error.and_then(|issue| issue.event_ip).is_some());
+    assert!(dry_error.is_none());
+
+    let Some(StoryNode::Choice { options, .. }) = graph.get_node(choice) else {
+        panic!("choice node should exist");
+    };
+    assert_eq!(options.len(), 1);
 }

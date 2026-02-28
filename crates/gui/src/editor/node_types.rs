@@ -53,6 +53,7 @@ pub enum StoryNode {
     },
     /// Scene change node (full state update).
     Scene {
+        profile: Option<String>,
         background: Option<String>,
         music: Option<String>,
         characters: Vec<visual_novel_engine::CharacterPlacementRaw>,

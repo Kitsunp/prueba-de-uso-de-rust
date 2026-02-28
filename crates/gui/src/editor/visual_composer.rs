@@ -72,6 +72,7 @@ impl<'a> VisualComposerPanel<'a> {
                                 text: "...".to_string(),
                             }),
                             "bg" => Some(StoryNode::Scene {
+                                profile: None,
                                 background: Some(asset_name.to_string()),
                                 music: None,
                                 characters: Vec::new(),

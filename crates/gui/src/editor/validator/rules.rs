@@ -84,6 +84,7 @@ where
                 background,
                 music,
                 characters,
+                ..
             } => {
                 if let Some(background) = background {
                     if background.trim().is_empty() {

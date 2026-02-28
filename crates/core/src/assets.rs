@@ -2,6 +2,7 @@ use std::hash::{Hash, Hasher};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Opaque asset identifier.
 ///
@@ -23,6 +24,33 @@ impl AssetId {
     /// Returns the raw u64 value for serialization purposes only.
     pub fn as_u64(&self) -> u64 {
         self.0
+    }
+
+    /// Returns an upgraded 128-bit deterministic identifier derived from the same path.
+    ///
+    /// This supports incremental migration away from 64-bit IDs while preserving
+    /// backward compatibility in existing save formats and bindings.
+    pub fn strong_id_from_path(path: &str) -> AssetId128 {
+        AssetId128::from_path(path)
+    }
+}
+
+/// Strong deterministic 128-bit asset identifier (SHA-256 truncated to 16 bytes).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AssetId128([u8; 16]);
+
+impl AssetId128 {
+    pub fn from_path(path: &str) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(path.as_bytes());
+        let digest = hasher.finalize();
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&digest[..16]);
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        &self.0
     }
 }
 
@@ -56,4 +84,23 @@ impl Hasher for FnvHasher64 {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct AssetManifest {
     pub entries: std::collections::BTreeMap<String, String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asset_id_128_is_deterministic() {
+        let a = AssetId128::from_path("bg/room.png");
+        let b = AssetId128::from_path("bg/room.png");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn asset_id_128_distinguishes_different_paths() {
+        let a = AssetId128::from_path("bg/room.png");
+        let b = AssetId128::from_path("bg/forest.png");
+        assert_ne!(a, b);
+    }
 }

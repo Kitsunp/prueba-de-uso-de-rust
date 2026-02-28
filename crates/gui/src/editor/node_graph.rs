@@ -9,8 +9,10 @@
 //! - **Invariant Preservation**: All mutations maintain graph consistency
 //! - **Modularity**: Under 500 lines per Criterio J
 
+use std::collections::BTreeMap;
+
 use eframe::egui;
-use visual_novel_engine::ScriptRaw;
+use visual_novel_engine::{CharacterPlacementRaw, ScriptRaw};
 
 use super::node_types::{
     ContextMenu, StoryNode, NODE_HEIGHT, NODE_VERTICAL_SPACING, NODE_WIDTH, ZOOM_DEFAULT, ZOOM_MAX,
@@ -30,6 +32,13 @@ pub struct GraphConnection {
     // to_port is implicitly 0 (top/input) for VN flow
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SceneProfile {
+    pub background: Option<String>,
+    pub music: Option<String>,
+    pub characters: Vec<CharacterPlacementRaw>,
+}
+
 // =============================================================================
 // NodeGraph - Main graph data structure
 // =============================================================================
@@ -45,6 +54,8 @@ pub struct NodeGraph {
     pub(crate) nodes: Vec<(u32, StoryNode, egui::Pos2)>,
     /// Connections: Structured connections with ports
     pub(crate) connections: Vec<GraphConnection>,
+    /// Reusable scene presets/environments.
+    pub(crate) scene_profiles: BTreeMap<String, SceneProfile>,
     /// Next available node ID
     next_id: u32,
     /// Currently selected node
@@ -76,6 +87,7 @@ impl Default for NodeGraph {
         Self {
             nodes: Vec::new(),
             connections: Vec::new(),
+            scene_profiles: BTreeMap::new(),
             next_id: 0,
             selected: None,
             pan: egui::Vec2::ZERO,
@@ -140,6 +152,22 @@ impl NodeGraph {
             return;
         }
 
+        let Some(from_node) = self.get_node(from).cloned() else {
+            return;
+        };
+        let Some(to_node) = self.get_node(to) else {
+            return;
+        };
+        if !from_node.can_connect_from() || !to_node.can_connect_to() {
+            return;
+        }
+
+        if matches!(from_node, StoryNode::Choice { .. }) {
+            self.ensure_choice_option(from, from_port);
+        } else if from_port != 0 {
+            return;
+        }
+
         // Check if connection exists
         if !self
             .connections
@@ -165,6 +193,25 @@ impl NodeGraph {
     pub fn disconnect(&mut self, from: u32, to: u32) {
         self.connections.retain(|c| !(c.from == from && c.to == to));
         self.modified = true;
+    }
+
+    /// Disconnects all outbound connections from a source node.
+    pub fn disconnect_all_from(&mut self, from: u32) {
+        let before = self.connections.len();
+        self.connections.retain(|c| c.from != from);
+        if self.connections.len() != before {
+            self.modified = true;
+        }
+    }
+
+    /// Disconnects all outbound connections from a specific source port.
+    pub fn disconnect_port(&mut self, from: u32, from_port: usize) {
+        let before = self.connections.len();
+        self.connections
+            .retain(|c| !(c.from == from && c.from_port == from_port));
+        if self.connections.len() != before {
+            self.modified = true;
+        }
     }
 
     /// Returns the number of nodes.
@@ -474,6 +521,84 @@ impl NodeGraph {
         }
 
         self.modified = true;
+    }
+
+    /// Saves the current Scene node fields into a reusable profile.
+    pub fn save_scene_profile(&mut self, profile_id: impl Into<String>, node_id: u32) -> bool {
+        let profile_id = profile_id.into().trim().to_string();
+        if profile_id.is_empty() {
+            return false;
+        }
+
+        let Some(StoryNode::Scene {
+            background,
+            music,
+            characters,
+            ..
+        }) = self.get_node(node_id)
+        else {
+            return false;
+        };
+
+        self.scene_profiles.insert(
+            profile_id.clone(),
+            SceneProfile {
+                background: background.clone(),
+                music: music.clone(),
+                characters: characters.clone(),
+            },
+        );
+
+        if let Some(StoryNode::Scene { profile, .. }) = self.get_node_mut(node_id) {
+            *profile = Some(profile_id);
+        }
+        self.modified = true;
+        true
+    }
+
+    /// Applies a saved Scene profile to an existing Scene node.
+    pub fn apply_scene_profile(&mut self, profile_id: &str, node_id: u32) -> bool {
+        let Some(scene_profile) = self.scene_profiles.get(profile_id).cloned() else {
+            return false;
+        };
+
+        let Some(StoryNode::Scene {
+            background,
+            music,
+            characters,
+            profile,
+        }) = self.get_node_mut(node_id)
+        else {
+            return false;
+        };
+
+        *background = scene_profile.background;
+        *music = scene_profile.music;
+        *characters = scene_profile.characters;
+        *profile = Some(profile_id.to_string());
+        self.modified = true;
+        true
+    }
+
+    /// Returns available scene profile names.
+    pub fn scene_profile_names(&self) -> Vec<String> {
+        self.scene_profiles.keys().cloned().collect()
+    }
+
+    fn ensure_choice_option(&mut self, node_id: u32, option_idx: usize) {
+        let Some(StoryNode::Choice { options, .. }) = self.get_node_mut(node_id) else {
+            return;
+        };
+
+        let mut changed = false;
+        while options.len() <= option_idx {
+            let next = options.len() + 1;
+            options.push(format!("Option {}", next));
+            changed = true;
+        }
+        if changed {
+            self.modified = true;
+        }
     }
 
     // =========================================================================

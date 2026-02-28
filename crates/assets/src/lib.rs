@@ -1,7 +1,8 @@
 #![allow(unused_assignments)]
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -76,7 +77,7 @@ pub enum AssetError {
     BudgetExceeded { bytes: usize, budget: usize },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AssetStore {
     root: PathBuf,
     mode: SecurityMode,
@@ -84,6 +85,77 @@ pub struct AssetStore {
     limits: AssetLimits,
     manifest: Option<AssetManifest>,
     require_manifest: bool,
+    byte_cache: Mutex<ByteCache>,
+}
+
+#[derive(Debug)]
+struct CachedBytes {
+    data: Vec<u8>,
+    bytes: usize,
+    last_used: u64,
+}
+
+#[derive(Debug)]
+struct ByteCache {
+    entries: HashMap<String, CachedBytes>,
+    usage_counter: u64,
+    current_bytes: usize,
+    max_bytes: usize,
+}
+
+impl ByteCache {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            usage_counter: 0,
+            current_bytes: 0,
+            max_bytes,
+        }
+    }
+
+    fn get(&mut self, key: &str) -> Option<Vec<u8>> {
+        self.usage_counter = self.usage_counter.wrapping_add(1);
+        self.entries.get_mut(key).map(|entry| {
+            entry.last_used = self.usage_counter;
+            entry.data.clone()
+        })
+    }
+
+    fn insert(&mut self, key: String, data: Vec<u8>) {
+        let bytes = data.len();
+        if bytes > self.max_bytes {
+            return;
+        }
+
+        self.usage_counter = self.usage_counter.wrapping_add(1);
+
+        if let Some(old) = self.entries.remove(&key) {
+            self.current_bytes = self.current_bytes.saturating_sub(old.bytes);
+        }
+
+        while self.current_bytes + bytes > self.max_bytes {
+            let Some((evict_key, evict_bytes)) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(k, entry)| (k.clone(), entry.bytes))
+            else {
+                break;
+            };
+            self.entries.remove(&evict_key);
+            self.current_bytes = self.current_bytes.saturating_sub(evict_bytes);
+        }
+
+        self.entries.insert(
+            key,
+            CachedBytes {
+                data,
+                bytes,
+                last_used: self.usage_counter,
+            },
+        );
+        self.current_bytes = self.current_bytes.saturating_add(bytes);
+    }
 }
 
 impl AssetStore {
@@ -116,6 +188,7 @@ impl AssetStore {
             limits: AssetLimits::default(),
             manifest,
             require_manifest,
+            byte_cache: Mutex::new(ByteCache::new(64 * 1024 * 1024)),
         })
     }
 
@@ -124,9 +197,25 @@ impl AssetStore {
         self
     }
 
+    pub fn with_cache_budget(mut self, budget_bytes: usize) -> Self {
+        self.byte_cache = Mutex::new(ByteCache::new(budget_bytes));
+        self
+    }
+
     /// Loads raw bytes for an asset (e.g. for audio)
     pub fn load_bytes(&self, asset_path: &str) -> Result<Vec<u8>, AssetError> {
         let rel = sanitize_rel_path(Path::new(asset_path))?;
+        let cache_key = rel.to_string_lossy().replace('\\', "/");
+
+        if let Some(bytes) = self
+            .byte_cache
+            .lock()
+            .map_err(|_| std::io::Error::other("asset cache lock poisoned"))?
+            .get(&cache_key)
+        {
+            return Ok(bytes);
+        }
+
         let full_path = self.root.join(&rel); // sanitize_rel_path prevents traversal
 
         let bytes = fs::read(&full_path)?;
@@ -138,6 +227,10 @@ impl AssetStore {
             });
         }
         self.verify_manifest(asset_path, size, &bytes)?;
+        self.byte_cache
+            .lock()
+            .map_err(|_| std::io::Error::other("asset cache lock poisoned"))?
+            .insert(cache_key, bytes.clone());
         Ok(bytes)
     }
 
@@ -226,6 +319,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn load_image_rejects_unsupported_extension_before_io() {
@@ -238,5 +332,38 @@ mod tests {
         };
 
         assert!(matches!(err, AssetError::UnsupportedExtension(_)));
+    }
+
+    #[test]
+    fn load_bytes_uses_cache_for_repeated_reads() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock must be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("vn_assets_cache_{unique}"));
+        std::fs::create_dir_all(&root).expect("temp root should be created");
+        let asset_rel = PathBuf::from("audio").join("theme.ogg");
+        let asset_path = root.join(&asset_rel);
+        std::fs::create_dir_all(asset_path.parent().expect("parent path should exist"))
+            .expect("asset parent directory should be created");
+        std::fs::write(&asset_path, [1u8, 2, 3, 4]).expect("asset file should be written");
+
+        let store = AssetStore::new(root.clone(), SecurityMode::Trusted, None, false)
+            .expect("asset store should initialize")
+            .with_cache_budget(1024);
+
+        let first = store
+            .load_bytes("audio/theme.ogg")
+            .expect("first read should succeed");
+        assert_eq!(first, vec![1, 2, 3, 4]);
+
+        std::fs::remove_file(&asset_path).expect("asset file should be removed");
+
+        let second = store
+            .load_bytes("audio/theme.ogg")
+            .expect("second read should be served from cache");
+        assert_eq!(second, vec![1, 2, 3, 4]);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

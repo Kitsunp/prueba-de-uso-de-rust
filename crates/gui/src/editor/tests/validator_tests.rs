@@ -47,6 +47,7 @@ fn validate_reports_unsafe_asset_paths_and_transition_duration() {
     let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
     let scene = graph.add_node(
         StoryNode::Scene {
+            profile: None,
             background: Some("../secrets/bg.png".to_string()),
             music: None,
             characters: Vec::new(),
@@ -105,6 +106,7 @@ fn validate_reports_missing_assets_when_probe_fails() {
     let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
     let scene = graph.add_node(
         StoryNode::Scene {
+            profile: None,
             background: Some("assets/bg_forest.png".to_string()),
             music: None,
             characters: Vec::new(),

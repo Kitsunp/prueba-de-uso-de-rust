@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use rodio::{Decoder, OutputStream, Sink, Source};
+use visual_novel_engine::LruCache;
 
 use crate::AssetStore;
 
@@ -33,9 +34,13 @@ pub struct RodioBackend {
     stream_handle: rodio::OutputStreamHandle,
     bgm_sink: Sink,
     assets: Arc<dyn AssetStore + Send + Sync>,
+    audio_cache: LruCache<String>,
+    current_bgm: Option<String>,
 }
 
 impl RodioBackend {
+    const AUDIO_CACHE_BUDGET_BYTES: usize = 64 * 1024 * 1024;
+
     pub fn new(assets: Arc<dyn AssetStore + Send + Sync>) -> Result<Self, String> {
         let (stream, stream_handle) = OutputStream::try_default()
             .map_err(|e| format!("failed to initialize audio output stream: {}", e))?;
@@ -48,7 +53,20 @@ impl RodioBackend {
             stream_handle,
             bgm_sink,
             assets,
+            audio_cache: LruCache::new(Self::AUDIO_CACHE_BUDGET_BYTES),
+            current_bgm: None,
         })
+    }
+
+    fn load_audio_bytes_cached(&mut self, id: &str) -> Result<Vec<u8>, String> {
+        let key = id.to_string();
+        if let Some(cached) = self.audio_cache.get(&key) {
+            return Ok(cached.clone());
+        }
+
+        let bytes = self.assets.load_bytes(id)?;
+        self.audio_cache.insert(key, bytes.clone());
+        Ok(bytes)
     }
 
     fn play_source(&self, source: Box<dyn Source<Item = f32> + Send>, is_bgm: bool) {
@@ -82,7 +100,11 @@ impl RodioBackend {
 
 impl Audio for RodioBackend {
     fn play_music(&mut self, id: &str) {
-        let data = match self.assets.load_bytes(id) {
+        if self.current_bgm.as_deref() == Some(id) && !self.bgm_sink.empty() {
+            return;
+        }
+
+        let data = match self.load_audio_bytes_cached(id) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("Audio Error: {}", e);
@@ -95,6 +117,7 @@ impl Audio for RodioBackend {
             Ok(decoder) => {
                 let source = decoder.convert_samples::<f32>();
                 self.play_source(Box::new(source), true);
+                self.current_bgm = Some(id.to_string());
             }
             Err(e) => eprintln!("Failed to decode music '{}': {}", id, e),
         }
@@ -102,10 +125,11 @@ impl Audio for RodioBackend {
 
     fn stop_music(&mut self) {
         self.bgm_sink.stop();
+        self.current_bgm = None;
     }
 
     fn play_sfx(&mut self, id: &str) {
-        let data = match self.assets.load_bytes(id) {
+        let data = match self.load_audio_bytes_cached(id) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("Audio Error: {}", e);

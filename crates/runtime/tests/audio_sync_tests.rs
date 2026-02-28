@@ -154,3 +154,46 @@ fn audio_switches_music_for_scene_jump() {
     );
     assert_eq!(state.last_music.as_deref(), Some("music/new.ogg"));
 }
+
+#[test]
+fn audio_does_not_replay_same_music_when_choice_targets_same_track() {
+    let events = vec![
+        EventRaw::Scene(SceneUpdateRaw {
+            background: None,
+            music: Some("music/theme.ogg".to_string()),
+            characters: Vec::new(),
+        }),
+        EventRaw::Choice(ChoiceRaw {
+            prompt: "Pick".to_string(),
+            options: vec![ChoiceOptionRaw {
+                text: "Continue".to_string(),
+                target: "next_scene".to_string(),
+            }],
+        }),
+        EventRaw::Scene(SceneUpdateRaw {
+            background: None,
+            music: Some("music/theme.ogg".to_string()),
+            characters: Vec::new(),
+        }),
+    ];
+    let labels = BTreeMap::from([("start".to_string(), 0), ("next_scene".to_string(), 2)]);
+    let engine = build_engine(events, labels);
+    let audio_state = Rc::new(RefCell::new(AudioState::default()));
+
+    let mut app = RuntimeApp::new(
+        engine,
+        NullInput,
+        SharedAudio {
+            state: audio_state.clone(),
+        },
+        NullAssets,
+    )
+    .unwrap();
+
+    app.handle_action(InputAction::Advance).unwrap();
+    app.handle_action(InputAction::Choose(0)).unwrap();
+
+    let state = audio_state.borrow();
+    assert_eq!(state.play_calls, vec!["music/theme.ogg".to_string()]);
+    assert_eq!(state.last_music.as_deref(), Some("music/theme.ogg"));
+}

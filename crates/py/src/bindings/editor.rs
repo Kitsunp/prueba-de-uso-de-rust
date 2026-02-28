@@ -72,6 +72,7 @@ impl PyStoryNode {
 
         Self {
             inner: StoryNode::Scene {
+                profile: None,
                 background,
                 music,
                 characters,

@@ -90,6 +90,7 @@ impl<'a> NodeEditorPanel<'a> {
                 if ui.button("🎬 Scene").clicked() {
                     let id = self.graph.add_node(
                         StoryNode::Scene {
+                            profile: None,
                             background: Some("bg.png".to_string()),
                             music: None,
                             characters: Vec::new(),

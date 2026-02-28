@@ -18,7 +18,7 @@ mod ui;
 mod version;
 mod visual;
 
-pub use assets::{AssetId, AssetManifest};
+pub use assets::{AssetId, AssetId128, AssetManifest};
 pub use audio::AudioCommand;
 pub use engine::Engine;
 pub use engine::StateChange;
