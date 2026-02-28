@@ -10,6 +10,7 @@ mod asset_browser;
 pub mod compiler;
 mod diff_dialog;
 mod errors;
+pub mod execution_contract;
 mod graph_panel;
 mod inspector_panel;
 mod lint_panel;

@@ -63,10 +63,9 @@ impl<'a> LintPanel<'a> {
                 };
 
                 let text = egui::RichText::new(format!(
-                    "{} [{}:{}] {}",
+                    "{} [{}] {}",
                     icon,
-                    issue.phase.label(),
-                    issue.code.label(),
+                    issue.diagnostic_id(),
                     issue.message
                 ))
                 .color(color);

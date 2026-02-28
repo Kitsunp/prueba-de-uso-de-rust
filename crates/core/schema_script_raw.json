@@ -69,6 +69,30 @@
             "string",
             "null"
           ]
+        },
+        "scale": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "x": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "y": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
         }
       }
     },
@@ -395,6 +419,123 @@
               "enum": [
                 "ext_call"
               ]
+            }
+          }
+        },
+        {
+          "description": "Raw definition for audio actions.",
+          "type": "object",
+          "required": [
+            "action",
+            "channel",
+            "type"
+          ],
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "asset": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "channel": {
+              "type": "string"
+            },
+            "fade_duration_ms": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "loop_playback": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "audio_action"
+              ]
+            },
+            "volume": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            }
+          }
+        },
+        {
+          "description": "Raw definition for scene transitions.",
+          "type": "object",
+          "required": [
+            "duration_ms",
+            "kind",
+            "type"
+          ],
+          "properties": {
+            "color": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "duration_ms": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "kind": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "transition"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Precise character positioning for Visual Composer.",
+          "type": "object",
+          "required": [
+            "name",
+            "type",
+            "x",
+            "y"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "scale": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "set_character_position"
+              ]
+            },
+            "x": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "y": {
+              "type": "integer",
+              "format": "int32"
             }
           }
         }

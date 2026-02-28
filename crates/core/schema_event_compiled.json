@@ -178,9 +178,92 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "audio_action"
+      ],
+      "properties": {
+        "audio_action": {
+          "$ref": "#/definitions/AudioActionCompiled"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "transition"
+      ],
+      "properties": {
+        "transition": {
+          "$ref": "#/definitions/SceneTransitionCompiled"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_character_position"
+      ],
+      "properties": {
+        "set_character_position": {
+          "$ref": "#/definitions/SetCharacterPositionCompiled"
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
+    "AudioActionCompiled": {
+      "description": "Compiled definition for audio actions.",
+      "type": "object",
+      "required": [
+        "action",
+        "channel"
+      ],
+      "properties": {
+        "action": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        },
+        "asset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        },
+        "fade_duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "loop_playback": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "volume": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      }
+    },
     "CharacterPatchCompiled": {
       "description": "Character patch with interned strings.",
       "type": "object",
@@ -226,6 +309,27 @@
             "string",
             "null"
           ]
+        },
+        "scale": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "x": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "y": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
         }
       }
     },
@@ -397,6 +501,32 @@
         }
       }
     },
+    "SceneTransitionCompiled": {
+      "description": "Compiled definition for scene transitions.",
+      "type": "object",
+      "required": [
+        "duration_ms",
+        "kind"
+      ],
+      "properties": {
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "kind": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        }
+      }
+    },
     "SceneUpdateCompiled": {
       "description": "Scene update payload with interned strings.",
       "type": "object",
@@ -421,6 +551,35 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "SetCharacterPositionCompiled": {
+      "description": "Compiled precise character positioning.",
+      "type": "object",
+      "required": [
+        "name",
+        "x",
+        "y"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "scale": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
         }
       }
     }

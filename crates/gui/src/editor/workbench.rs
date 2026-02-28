@@ -67,6 +67,7 @@ pub struct EditorWorkbench {
 
     // Validation
     pub validation_issues: Vec<LintIssue>,
+    pub last_dry_run_report: Option<crate::editor::compiler::DryRunReport>,
 
     // Feedback
     pub toast: Option<ToastState>,
@@ -152,6 +153,7 @@ impl EditorWorkbench {
             is_playing: false,
             engine: None,
             validation_issues: Vec::new(),
+            last_dry_run_report: None,
             toast: None,
             diff_dialog: None,
             node_editor_window_open: false,
@@ -324,6 +326,7 @@ impl EditorWorkbench {
     pub fn run_dry_validation(&mut self) -> bool {
         let result = crate::editor::compiler::compile_project(&self.node_graph);
         self.current_script = Some(result.script);
+        self.last_dry_run_report = result.dry_run_report.clone();
         self.validation_issues = result.issues;
         Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
         self.show_validation = !self.validation_issues.is_empty();
@@ -415,6 +418,7 @@ impl EditorWorkbench {
 
         // Update State
         self.current_script = Some(result.script);
+        self.last_dry_run_report = result.dry_run_report.clone();
         self.validation_issues = result.issues;
         Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
         self.show_validation = !self.validation_issues.is_empty();
