@@ -36,7 +36,7 @@ impl SaveData {
     /// Serializes save data to binary format with magic bytes and version.
     pub fn to_binary(&self) -> Result<Vec<u8>, SaveError> {
         let payload =
-            bincode::serialize(self).map_err(|e| SaveError::Serialization(e.to_string()))?;
+            postcard::to_allocvec(self).map_err(|e| SaveError::Serialization(e.to_string()))?;
         let checksum = crc32fast::hash(&payload);
         let payload_len = u32::try_from(payload.len()).map_err(|_| SaveError::TooLarge)?;
 
@@ -73,7 +73,7 @@ impl SaveData {
         if crc32fast::hash(payload) != checksum {
             return Err(SaveError::ChecksumMismatch);
         }
-        bincode::deserialize(payload).map_err(|e| SaveError::Serialization(e.to_string()))
+        postcard::from_bytes(payload).map_err(|e| SaveError::Serialization(e.to_string()))
     }
 
     /// Validates that this save matches the given script_id.

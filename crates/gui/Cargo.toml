@@ -19,13 +19,11 @@ directories = "5.0"
 miette = { version = "7.0", features = ["fancy"] } # Nice error reporting
 uuid = { version = "1.0", features = ["v4", "serde"] } # For unique IDs
 
-# Optional dependencies for features
-reqwest = { version = "0.11", features = ["blocking", "json"], optional = true } 
 toml = "0.9.11"
 
 [features]
 default = []
-translation = ["dep:reqwest"] # Feature flag for automatic translation
+translation = [] # Reserved feature flag for automatic translation
 
 [dev-dependencies]
 tempfile = "3.10"
