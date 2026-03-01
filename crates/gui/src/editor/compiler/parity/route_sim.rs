@@ -70,12 +70,15 @@ pub(in crate::editor::compiler) fn enumerate_choice_routes(
         Err(_) => return routes,
     };
 
+    let mut initial_state = RawSimulationState::default();
+    bootstrap_initial_state(script, start_ip, &mut initial_state);
+
     let mut stack = vec![RawRouteFrame {
         ip: start_ip,
         steps: 0,
         choice_depth: 0,
         choices: Vec::new(),
-        state: RawSimulationState::default(),
+        state: initial_state,
     }];
 
     while let Some(frame) = stack.pop() {
@@ -179,6 +182,7 @@ pub(in crate::editor::compiler) fn simulate_raw_sequence(
         Ok(idx) => idx,
         Err(_) => return out,
     };
+    bootstrap_initial_state(script, ip, &mut state);
 
     while ip < script.events.len() && steps < max_steps {
         let event = &script.events[ip];
@@ -240,6 +244,12 @@ pub(in crate::editor::compiler) fn simulate_raw_sequence(
     }
 
     out
+}
+
+fn bootstrap_initial_state(script: &ScriptRaw, ip: usize, state: &mut RawSimulationState) {
+    if let Some(event @ EventRaw::Scene(_)) = script.events.get(ip) {
+        apply_state_mutations(event, state);
+    }
 }
 
 fn apply_state_mutations(event: &EventRaw, state: &mut RawSimulationState) {

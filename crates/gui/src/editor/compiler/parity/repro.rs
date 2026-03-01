@@ -140,7 +140,7 @@ pub(in crate::editor::compiler) fn build_minimal_repro_script(
         }
     }
 
-    labels.insert("start".to_string(), failure_idx - start_idx);
+    labels.insert("start".to_string(), 0);
 
     for event in &mut events {
         if !rewrite_event_targets(event, &old_to_new_label) {

@@ -66,6 +66,39 @@ fn build_branching_graph() -> NodeGraph {
     graph
 }
 
+fn build_scene_bootstrap_graph() -> NodeGraph {
+    let mut graph = NodeGraph::new();
+    let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
+    let scene = graph.add_node(
+        StoryNode::Scene {
+            profile: None,
+            background: Some("bg/classroom.png".to_string()),
+            music: Some("bgm/theme.ogg".to_string()),
+            characters: vec![visual_novel_engine::CharacterPlacementRaw {
+                name: "Ava".to_string(),
+                expression: Some("neutral".to_string()),
+                position: Some("center".to_string()),
+                x: Some(0),
+                y: Some(0),
+                scale: Some(1.0),
+            }],
+        },
+        p(0.0, 100.0),
+    );
+    let dialogue = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "Ava".to_string(),
+            text: "Inicio".to_string(),
+        },
+        p(0.0, 200.0),
+    );
+    let end = graph.add_node(StoryNode::End, p(0.0, 300.0));
+    graph.connect(start, scene);
+    graph.connect(scene, dialogue);
+    graph.connect(dialogue, end);
+    graph
+}
+
 #[test]
 fn compile_project_emits_expected_phase_trace_order() {
     let graph = build_linear_graph();
@@ -116,6 +149,23 @@ fn preview_runtime_sequence_matches_raw_sequence_for_default_route() {
         .issues
         .iter()
         .any(|issue| issue.code == LintCode::DryRunParityMismatch));
+}
+
+#[test]
+fn parity_uses_scene_bootstrap_state_like_runtime() {
+    let graph = build_scene_bootstrap_graph();
+    let result = compile_project(&graph);
+    let report = result.dry_run_report.expect("dry run report");
+
+    assert!(!result
+        .issues
+        .iter()
+        .any(|issue| issue.code == LintCode::DryRunParityMismatch));
+
+    let first = report.steps.first().expect("first dry-run step");
+    assert_eq!(first.visual_background.as_deref(), Some("bg/classroom.png"));
+    assert_eq!(first.visual_music.as_deref(), Some("bgm/theme.ogg"));
+    assert_eq!(first.character_count, 1);
 }
 
 #[test]

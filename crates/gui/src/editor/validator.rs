@@ -200,7 +200,7 @@ impl LintIssue {
 }
 
 pub fn validate(graph: &NodeGraph) -> Vec<LintIssue> {
-    validate_with_asset_probe(graph, rules::default_asset_exists)
+    validate_with_asset_probe(graph, helpers::default_asset_exists)
 }
 
 pub fn validate_with_asset_probe<F>(graph: &NodeGraph, asset_exists: F) -> Vec<LintIssue>
@@ -210,6 +210,7 @@ where
     rules::validate_with_asset_probe_impl(graph, asset_exists)
 }
 
+mod helpers;
 mod rules;
 
 #[cfg(test)]

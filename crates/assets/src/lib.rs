@@ -1,6 +1,7 @@
 #![allow(unused_assignments)]
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -288,11 +289,19 @@ impl AssetStore {
         let manifest = match manifest_path {
             Some(path) => {
                 let raw = fs::read_to_string(path)?;
-                let manifest: AssetManifest = serde_json::from_str(&raw)
+                let mut manifest: AssetManifest = serde_json::from_str(&raw)
                     .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
                 if manifest.manifest_version != 1 {
                     return Err(AssetError::ManifestVersion(manifest.manifest_version));
                 }
+                manifest.assets = manifest
+                    .assets
+                    .into_iter()
+                    .map(|(raw_key, entry)| {
+                        let rel = sanitize_rel_path(Path::new(&raw_key))?;
+                        Ok((normalize_asset_key(&rel), entry))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, AssetError>>()?;
                 Some(manifest)
             }
             None => None,
@@ -325,7 +334,7 @@ impl AssetStore {
     /// Loads raw bytes for an asset (e.g. for audio)
     pub fn load_bytes(&self, asset_path: &str) -> Result<Vec<u8>, AssetError> {
         let rel = sanitize_rel_path(Path::new(asset_path))?;
-        let cache_key = rel.to_string_lossy().replace('\\', "/");
+        let cache_key = normalize_asset_key(&rel);
 
         if let Some(bytes) = self
             .byte_cache
@@ -336,7 +345,7 @@ impl AssetStore {
             return Ok(bytes);
         }
 
-        let full_path = self.root.join(&rel); // sanitize_rel_path prevents traversal
+        let full_path = canonicalize_within_root(&self.root, &rel)?;
 
         let bytes = fs::read(&full_path)?;
         let size = bytes.len() as u64;
@@ -346,7 +355,7 @@ impl AssetStore {
                 max: self.limits.max_bytes,
             });
         }
-        self.verify_manifest(asset_path, size, &bytes)?;
+        self.verify_manifest(&cache_key, size, &bytes)?;
         self.byte_cache
             .lock()
             .map_err(|_| std::io::Error::other("asset cache lock poisoned"))?
@@ -386,7 +395,7 @@ impl AssetStore {
         })
     }
 
-    fn verify_manifest(&self, asset_path: &str, size: u64, bytes: &[u8]) -> Result<(), AssetError> {
+    fn verify_manifest(&self, asset_key: &str, size: u64, bytes: &[u8]) -> Result<(), AssetError> {
         if self.mode == SecurityMode::Untrusted && self.require_manifest && self.manifest.is_none()
         {
             return Err(AssetError::ManifestMissing);
@@ -396,15 +405,15 @@ impl AssetStore {
         };
         let entry = manifest
             .assets
-            .get(asset_path)
-            .ok_or_else(|| AssetError::ManifestEntryMissing(asset_path.to_string()))?;
+            .get(asset_key)
+            .ok_or_else(|| AssetError::ManifestEntryMissing(asset_key.to_string()))?;
         if entry.size != size {
-            return Err(AssetError::ManifestSizeMismatch(asset_path.to_string()));
+            return Err(AssetError::ManifestSizeMismatch(asset_key.to_string()));
         }
         let expected = entry.sha256.to_lowercase();
         let actual = sha256_hex(bytes);
         if expected != actual {
-            return Err(AssetError::ManifestHashMismatch(asset_path.to_string()));
+            return Err(AssetError::ManifestHashMismatch(asset_key.to_string()));
         }
         Ok(())
     }
@@ -436,11 +445,9 @@ impl AssetFingerprintCatalog {
                 let rel = path
                     .strip_prefix(root)
                     .map_err(|_| AssetError::Traversal)?
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                let bytes = fs::read(&path)?;
-                let size = bytes.len() as u64;
-                let sha256 = sha256_hex(&bytes);
+                    .to_path_buf();
+                let rel = normalize_asset_key(&rel);
+                let (sha256, size) = sha256_file_and_size(&path)?;
                 entries.insert(
                     rel.clone(),
                     AssetFingerprintEntry {
@@ -588,11 +595,45 @@ pub fn sanitize_rel_path(rel: &Path) -> Result<PathBuf, AssetError> {
     Ok(out)
 }
 
+fn normalize_asset_key(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn canonicalize_within_root(root: &Path, rel: &Path) -> Result<PathBuf, AssetError> {
+    let canonical_root = root.canonicalize()?;
+    let full_path = root.join(rel).canonicalize()?;
+    if !full_path.starts_with(&canonical_root) {
+        return Err(AssetError::Traversal);
+    }
+    Ok(full_path)
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let digest = hasher.finalize();
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn sha256_file_and_size(path: &Path) -> Result<(String, u64), AssetError> {
+    let file = fs::File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut total = 0u64;
+    let mut chunk = [0u8; 16 * 1024];
+
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read as u64);
+        hasher.update(&chunk[..read]);
+    }
+
+    let digest = hasher.finalize();
+    let hex = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok((hex, total))
 }
 
 fn is_allowed_by_extension(path: &Path, allowed: &HashSet<String>) -> bool {
@@ -618,211 +659,5 @@ fn infer_asset_kind(path: &str) -> AssetKind {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn load_image_rejects_unsupported_extension_before_io() {
-        let store = AssetStore::new(PathBuf::from("."), SecurityMode::Trusted, None, false)
-            .expect("asset store should initialize");
-
-        let err = match store.load_image("assets/theme.ogg") {
-            Ok(_) => panic!("non-image extension must be rejected"),
-            Err(err) => err,
-        };
-
-        assert!(matches!(err, AssetError::UnsupportedExtension(_)));
-    }
-
-    #[test]
-    fn load_bytes_uses_cache_for_repeated_reads() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock must be after unix epoch")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("vn_assets_cache_{unique}"));
-        std::fs::create_dir_all(&root).expect("temp root should be created");
-        let asset_rel = PathBuf::from("audio").join("theme.ogg");
-        let asset_path = root.join(&asset_rel);
-        std::fs::create_dir_all(asset_path.parent().expect("parent path should exist"))
-            .expect("asset parent directory should be created");
-        std::fs::write(&asset_path, [1u8, 2, 3, 4]).expect("asset file should be written");
-
-        let store = AssetStore::new(root.clone(), SecurityMode::Trusted, None, false)
-            .expect("asset store should initialize")
-            .with_cache_budget(1024);
-
-        let first = store
-            .load_bytes("audio/theme.ogg")
-            .expect("first read should succeed");
-        assert_eq!(first, vec![1, 2, 3, 4]);
-
-        std::fs::remove_file(&asset_path).expect("asset file should be removed");
-
-        let second = store
-            .load_bytes("audio/theme.ogg")
-            .expect("second read should be served from cache");
-        assert_eq!(second, vec![1, 2, 3, 4]);
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn fingerprint_catalog_detects_duplicate_blobs_and_budget() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock must be after unix epoch")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("vn_assets_fingerprint_{unique}"));
-        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
-        std::fs::create_dir_all(root.join("bg")).expect("bg dir");
-
-        std::fs::write(root.join("audio/a.ogg"), [1u8, 2, 3]).expect("write a");
-        std::fs::write(root.join("audio/b.ogg"), [1u8, 2, 3]).expect("write b duplicate");
-        std::fs::write(root.join("bg/c.png"), [9u8, 8, 7, 6]).expect("write c");
-
-        let catalog = AssetFingerprintCatalog::build(&root, &["ogg", "png"]).expect("catalog");
-        assert_eq!(catalog.entries.len(), 3);
-        assert_eq!(catalog.unique_blob_count(), 2);
-        assert_eq!(catalog.duplicate_blob_count(), 1);
-
-        let ok_budget = PlatformBudget {
-            max_total_bytes: 32,
-            max_assets: 8,
-        };
-        let report = catalog.budget_report(ok_budget);
-        assert!(report.within_budget);
-        assert_eq!(report.asset_count, 3);
-
-        let tight_budget = PlatformBudget {
-            max_total_bytes: 4,
-            max_assets: 2,
-        };
-        let report = catalog.budget_report(tight_budget);
-        assert!(!report.within_budget);
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn asset_fingerprint_stability() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock must be after unix epoch")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("vn_assets_stability_{unique}"));
-        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
-        std::fs::create_dir_all(root.join("bg")).expect("bg dir");
-        std::fs::write(root.join("audio/theme.ogg"), [1u8, 3, 5, 7]).expect("write audio");
-        std::fs::write(root.join("bg/room.png"), [9u8, 8, 7, 6]).expect("write image");
-
-        let first = AssetFingerprintCatalog::build(&root, &["ogg", "png"]).expect("catalog 1");
-        let second = AssetFingerprintCatalog::build(&root, &["ogg", "png"]).expect("catalog 2");
-
-        assert_eq!(first.entries, second.entries);
-        assert_eq!(first.dedup_groups, second.dedup_groups);
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn dedup_reduces_duplicate_load() {
-        let scenes = std::collections::BTreeMap::from([
-            (
-                "intro".to_string(),
-                vec![
-                    "bg/room.png".to_string(),
-                    "music/theme.ogg".to_string(),
-                    "bg/room.png".to_string(),
-                ],
-            ),
-            (
-                "choice_a".to_string(),
-                vec![
-                    "bg/room.png".to_string(),
-                    "music/theme.ogg".to_string(),
-                    "sfx/click.ogg".to_string(),
-                ],
-            ),
-        ]);
-
-        let plan = AssetFingerprintCatalog::scene_preload_plan(&scenes);
-        assert_eq!(plan.total_references, 6);
-        assert_eq!(plan.deduped_references, 3);
-        assert!(plan.cache_hit_rate > 0.4);
-    }
-
-    #[test]
-    fn platform_budget_enforcement() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock must be after unix epoch")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("vn_assets_budget_platform_{unique}"));
-        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
-        std::fs::write(root.join("audio/theme.ogg"), [1u8, 2, 3, 4, 5]).expect("write audio");
-        let catalog = AssetFingerprintCatalog::build(&root, &["ogg"]).expect("catalog");
-
-        let mobile_budget = PlatformTarget::Mobile.default_budget();
-        assert!(catalog.budget_report(mobile_budget).within_budget);
-
-        let tight = PlatformBudget {
-            max_total_bytes: 2,
-            max_assets: 1,
-        };
-        assert!(!catalog.budget_report(tight).within_budget);
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn scene_preload_hit_rate() {
-        let scenes = std::collections::BTreeMap::from([
-            (
-                "s1".to_string(),
-                vec!["bg/a.png".to_string(), "music/a.ogg".to_string()],
-            ),
-            (
-                "s2".to_string(),
-                vec!["bg/a.png".to_string(), "music/b.ogg".to_string()],
-            ),
-            (
-                "s3".to_string(),
-                vec!["bg/a.png".to_string(), "music/a.ogg".to_string()],
-            ),
-        ]);
-
-        let plan = AssetFingerprintCatalog::scene_preload_plan(&scenes);
-        assert_eq!(plan.total_references, 6);
-        assert_eq!(plan.deduped_references, 3);
-        assert!((plan.cache_hit_rate - 0.5).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn transcode_recommendations_follow_platform_presets() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock must be after unix epoch")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("vn_assets_transcode_{unique}"));
-        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
-        std::fs::create_dir_all(root.join("bg")).expect("bg dir");
-        std::fs::write(root.join("audio/theme.wav"), [1u8, 2, 3]).expect("write audio");
-        std::fs::write(root.join("bg/room.png"), [7u8, 8, 9]).expect("write image");
-        std::fs::write(root.join("bg/skip.webp"), [0u8, 1, 2]).expect("write webp");
-
-        let catalog =
-            AssetFingerprintCatalog::build(&root, &["wav", "png", "webp"]).expect("catalog");
-        let mobile = catalog.transcode_recommendations(PlatformTarget::Mobile);
-        assert!(mobile
-            .iter()
-            .any(|item| item.rel_path == "audio/theme.wav" && item.target_extension == "ogg"));
-        assert!(mobile
-            .iter()
-            .any(|item| item.rel_path == "bg/room.png" && item.target_extension == "webp"));
-        assert!(!mobile.iter().any(|item| item.rel_path == "bg/skip.webp"));
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-}
+#[path = "tests/lib_tests.rs"]
+mod tests;
