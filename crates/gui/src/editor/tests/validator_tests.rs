@@ -39,6 +39,12 @@ fn validate_reports_choice_unlinked_with_explicit_code() {
         .iter()
         .any(|i| i.code == LintCode::ChoiceOptionUnlinked));
     assert!(issues.iter().any(|i| i.phase == ValidationPhase::Graph));
+    let choice_issue = issues
+        .iter()
+        .find(|i| i.code == LintCode::ChoiceOptionUnlinked)
+        .expect("choice issue");
+    assert_eq!(choice_issue.edge_from, Some(choice));
+    assert_eq!(choice_issue.edge_to, None);
 }
 
 #[test]
@@ -68,7 +74,15 @@ fn validate_reports_unsafe_asset_paths_and_transition_duration() {
     graph.connect(transition, end);
 
     let issues = validate(&graph);
-    assert!(issues.iter().any(|i| i.code == LintCode::UnsafeAssetPath));
+    let unsafe_issue = issues
+        .iter()
+        .find(|i| i.code == LintCode::UnsafeAssetPath)
+        .expect("unsafe path issue");
+    assert_eq!(
+        unsafe_issue.asset_path.as_deref(),
+        Some("../secrets/bg.png"),
+        "unsafe issue should preserve exact asset path for traceability"
+    );
     assert!(issues
         .iter()
         .any(|i| i.code == LintCode::InvalidTransitionDuration));
@@ -118,9 +132,11 @@ fn validate_reports_missing_assets_when_probe_fails() {
     graph.connect(scene, end);
 
     let issues = validate_with_asset_probe(&graph, |_asset| false);
-    assert!(issues
+    let issue = issues
         .iter()
-        .any(|i| i.code == LintCode::AssetReferenceMissing));
+        .find(|i| i.code == LintCode::AssetReferenceMissing)
+        .expect("missing asset issue");
+    assert_eq!(issue.asset_path.as_deref(), Some("assets/bg_forest.png"));
 }
 
 #[test]
@@ -185,11 +201,57 @@ fn validate_reports_scene_patch_and_generic_limits() {
     graph.connect(generic, end);
 
     let issues = validate_with_asset_probe(&graph, |_asset| true);
-    assert!(issues.iter().any(|i| i.code == LintCode::UnsafeAssetPath));
+    let unsafe_issue = issues
+        .iter()
+        .find(|i| i.code == LintCode::UnsafeAssetPath)
+        .expect("unsafe path issue");
+    assert_eq!(
+        unsafe_issue.asset_path.as_deref(),
+        Some("../unsafe/bg.png"),
+        "unsafe scene patch issue should preserve asset path"
+    );
     assert!(issues
         .iter()
         .any(|i| i.code == LintCode::GenericEventUnchecked));
     assert!(issues
         .iter()
         .any(|i| i.code == LintCode::ContractUnsupportedExport));
+}
+
+#[test]
+fn dead_route_detection() {
+    let mut graph = NodeGraph::new();
+    let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
+    let a = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "A".to_string(),
+            text: "Loop A".to_string(),
+        },
+        p(0.0, 100.0),
+    );
+    let b = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "B".to_string(),
+            text: "Loop B".to_string(),
+        },
+        p(0.0, 200.0),
+    );
+    let unreachable = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "X".to_string(),
+            text: "Dead route".to_string(),
+        },
+        p(200.0, 100.0),
+    );
+    graph.connect(start, a);
+    graph.connect(a, b);
+    graph.connect(b, a);
+
+    let issues = validate(&graph);
+    assert!(issues
+        .iter()
+        .any(|i| i.code == LintCode::UnreachableNode && i.node_id == Some(unreachable)));
+    assert!(issues.iter().any(
+        |i| i.code == LintCode::PotentialLoop && (i.node_id == Some(a) || i.node_id == Some(b))
+    ));
 }

@@ -101,6 +101,23 @@ fn engine_records_dialogue_history() {
 }
 
 #[test]
+fn engine_marks_dialogue_as_read_by_ip() {
+    let script = sample_script();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
+
+    let _ = engine.step().unwrap(); // scene (ip 0)
+    assert!(!engine.is_current_dialogue_read());
+
+    let _ = engine.step().unwrap(); // dialogue (ip 1) -> marked as read
+    assert!(engine.is_dialogue_read(1));
+}
+
+#[test]
 fn engine_state_round_trip() {
     let script = sample_script();
     let mut engine = Engine::new(
@@ -136,6 +153,28 @@ fn engine_choice_jumps() {
     } else {
         panic!("expected dialogue");
     }
+}
+
+#[test]
+fn engine_records_choice_history() {
+    let script = sample_script();
+    let mut engine = Engine::new(
+        script,
+        SecurityPolicy::default(),
+        ResourceLimiter::default(),
+    )
+    .unwrap();
+
+    let _ = engine.step().unwrap(); // scene
+    let _ = engine.step().unwrap(); // dialogue
+    let _ = engine.choose(1).unwrap(); // choice -> start
+
+    let history = engine.choice_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].event_ip, 2);
+    assert_eq!(history[0].option_index, 1);
+    assert_eq!(history[0].option_text, "No");
+    assert_eq!(history[0].target_ip, 0);
 }
 
 #[test]

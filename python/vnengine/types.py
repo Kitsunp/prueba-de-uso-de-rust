@@ -453,8 +453,9 @@ class Script:
     def from_dict(cls, data: Mapping[str, Any]) -> "Script":
         found_version = data.get("script_schema_version")
         if found_version is None:
-            raise ValueError("schema incompatible: missing script_schema_version")
-        if str(found_version) != SCRIPT_SCHEMA_VERSION:
+            # Legacy scripts without explicit version are accepted.
+            found_version = SCRIPT_SCHEMA_VERSION
+        if not _is_compatible_schema_version(str(found_version), SCRIPT_SCHEMA_VERSION):
             raise ValueError(
                 "schema incompatible: found "
                 f"{found_version}, expected {SCRIPT_SCHEMA_VERSION}"
@@ -553,3 +554,16 @@ def normalize_character_patches(
                 CharacterPatch(name=name, expression=expression, position=position)
             )
     return normalized
+
+
+def _is_compatible_schema_version(found: str, expected: str) -> bool:
+    if found == expected:
+        return True
+    if "." not in found or "." not in expected:
+        return False
+    try:
+        found_major = int(found.split(".", 1)[0])
+        expected_major = int(expected.split(".", 1)[0])
+    except ValueError:
+        return False
+    return found_major <= expected_major

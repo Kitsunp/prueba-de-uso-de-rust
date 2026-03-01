@@ -55,6 +55,15 @@ where
         }
     }
 
+    for node_id in detect_reachable_cycle_nodes(graph, &start_nodes) {
+        issues.push(LintIssue::warning(
+            Some(node_id),
+            ValidationPhase::Graph,
+            LintCode::PotentialLoop,
+            "Potential execution loop detected on reachable route",
+        ));
+    }
+
     for (id, node, _) in &graph.nodes {
         let contract = execution_contract::contract_for_node(node);
         if !node.is_marker() && !contract.export_supported {
@@ -95,19 +104,25 @@ where
                             "Scene background path is empty",
                         ));
                     } else if is_unsafe_asset_ref(background) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::UnsafeAssetPath,
-                            format!("Unsafe background path: '{}'", background),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::UnsafeAssetPath,
+                                format!("Unsafe background path: '{}'", background),
+                            )
+                            .with_asset_path(Some(background.clone())),
+                        );
                     } else if should_probe_asset_exists(background) && !asset_exists(background) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::AssetReferenceMissing,
-                            format!("Background asset does not exist: '{}'", background),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::AssetReferenceMissing,
+                                format!("Background asset does not exist: '{}'", background),
+                            )
+                            .with_asset_path(Some(background.clone())),
+                        );
                     }
                 }
 
@@ -120,19 +135,25 @@ where
                             "Scene music path is empty",
                         ));
                     } else if is_unsafe_asset_ref(music) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::UnsafeAssetPath,
-                            format!("Unsafe music path: '{}'", music),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::UnsafeAssetPath,
+                                format!("Unsafe music path: '{}'", music),
+                            )
+                            .with_asset_path(Some(music.clone())),
+                        );
                     } else if should_probe_asset_exists(music) && !asset_exists(music) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::AssetReferenceMissing,
-                            format!("Music asset does not exist: '{}'", music),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::AssetReferenceMissing,
+                                format!("Music asset does not exist: '{}'", music),
+                            )
+                            .with_asset_path(Some(music.clone())),
+                        );
                     }
                 }
 
@@ -149,37 +170,49 @@ where
             StoryNode::ScenePatch(patch) => {
                 if let Some(bg) = &patch.background {
                     if is_unsafe_asset_ref(bg) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::UnsafeAssetPath,
-                            format!("Unsafe scene patch background path: '{}'", bg),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::UnsafeAssetPath,
+                                format!("Unsafe scene patch background path: '{}'", bg),
+                            )
+                            .with_asset_path(Some(bg.clone())),
+                        );
                     } else if should_probe_asset_exists(bg) && !asset_exists(bg) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::AssetReferenceMissing,
-                            format!("Scene patch background does not exist: '{}'", bg),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::AssetReferenceMissing,
+                                format!("Scene patch background does not exist: '{}'", bg),
+                            )
+                            .with_asset_path(Some(bg.clone())),
+                        );
                     }
                 }
 
                 if let Some(music) = &patch.music {
                     if is_unsafe_asset_ref(music) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::UnsafeAssetPath,
-                            format!("Unsafe scene patch music path: '{}'", music),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::UnsafeAssetPath,
+                                format!("Unsafe scene patch music path: '{}'", music),
+                            )
+                            .with_asset_path(Some(music.clone())),
+                        );
                     } else if should_probe_asset_exists(music) && !asset_exists(music) {
-                        issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::AssetReferenceMissing,
-                            format!("Scene patch music does not exist: '{}'", music),
-                        ));
+                        issues.push(
+                            LintIssue::error(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::AssetReferenceMissing,
+                                format!("Scene patch music does not exist: '{}'", music),
+                            )
+                            .with_asset_path(Some(music.clone())),
+                        );
                     }
                 }
 
@@ -262,27 +295,33 @@ where
                         .iter()
                         .any(|c| c.from == *id && c.from_port == idx)
                     {
-                        issues.push(LintIssue::warning(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::ChoiceOptionUnlinked,
-                            format!("Choice option {} has no outgoing connection", idx + 1),
-                        ));
+                        issues.push(
+                            LintIssue::warning(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::ChoiceOptionUnlinked,
+                                format!("Choice option {} has no outgoing connection", idx + 1),
+                            )
+                            .with_edge(Some(*id), None),
+                        );
                     }
                 }
 
                 for conn in graph.connections.iter().filter(|c| c.from == *id) {
                     if conn.from_port >= options.len() {
-                        issues.push(LintIssue::warning(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::ChoicePortOutOfRange,
-                            format!(
-                                "Connection from invalid option port {} (options: {})",
-                                conn.from_port,
-                                options.len()
-                            ),
-                        ));
+                        issues.push(
+                            LintIssue::warning(
+                                Some(*id),
+                                ValidationPhase::Graph,
+                                LintCode::ChoicePortOutOfRange,
+                                format!(
+                                    "Connection from invalid option port {} (options: {})",
+                                    conn.from_port,
+                                    options.len()
+                                ),
+                            )
+                            .with_edge(Some(conn.from), Some(conn.to)),
+                        );
                     }
                 }
             }
@@ -348,19 +387,25 @@ where
                             LintCode::AudioAssetEmpty,
                             "Audio asset path is empty",
                         )),
-                        Some(path) if is_unsafe_asset_ref(path) => issues.push(LintIssue::error(
-                            Some(*id),
-                            ValidationPhase::Graph,
-                            LintCode::UnsafeAssetPath,
-                            format!("Unsafe audio asset path: '{}'", path),
-                        )),
-                        Some(path) if should_probe_asset_exists(path) && !asset_exists(path) => {
-                            issues.push(LintIssue::error(
+                        Some(path) if is_unsafe_asset_ref(path) => issues.push(
+                            LintIssue::error(
                                 Some(*id),
                                 ValidationPhase::Graph,
-                                LintCode::AssetReferenceMissing,
-                                format!("Audio asset does not exist: '{}'", path),
-                            ));
+                                LintCode::UnsafeAssetPath,
+                                format!("Unsafe audio asset path: '{}'", path),
+                            )
+                            .with_asset_path(Some(path.clone())),
+                        ),
+                        Some(path) if should_probe_asset_exists(path) && !asset_exists(path) => {
+                            issues.push(
+                                LintIssue::error(
+                                    Some(*id),
+                                    ValidationPhase::Graph,
+                                    LintCode::AssetReferenceMissing,
+                                    format!("Audio asset does not exist: '{}'", path),
+                                )
+                                .with_asset_path(Some(path.clone())),
+                            );
                         }
                         Some(_) => {}
                     }
@@ -487,4 +532,53 @@ fn visit_node(graph: &NodeGraph, node_id: u32, visited: &mut HashSet<u32>) {
     for target in outgoing {
         visit_node(graph, target, visited);
     }
+}
+
+fn detect_reachable_cycle_nodes(graph: &NodeGraph, start_nodes: &[u32]) -> Vec<u32> {
+    let mut visited = HashSet::new();
+    let mut active = HashSet::new();
+    let mut cycle_nodes = HashSet::new();
+
+    for start in start_nodes {
+        detect_cycles_from(graph, *start, &mut visited, &mut active, &mut cycle_nodes);
+    }
+
+    let mut out: Vec<u32> = cycle_nodes.into_iter().collect();
+    out.sort_unstable();
+    out
+}
+
+fn detect_cycles_from(
+    graph: &NodeGraph,
+    node_id: u32,
+    visited: &mut HashSet<u32>,
+    active: &mut HashSet<u32>,
+    cycle_nodes: &mut HashSet<u32>,
+) {
+    if active.contains(&node_id) {
+        cycle_nodes.insert(node_id);
+        return;
+    }
+    if !visited.insert(node_id) {
+        return;
+    }
+
+    active.insert(node_id);
+    for target in graph
+        .connections
+        .iter()
+        .filter(|connection| connection.from == node_id)
+        .map(|connection| connection.to)
+    {
+        if active.contains(&target) {
+            cycle_nodes.insert(node_id);
+            cycle_nodes.insert(target);
+            continue;
+        }
+        detect_cycles_from(graph, target, visited, active, cycle_nodes);
+        if cycle_nodes.contains(&target) {
+            cycle_nodes.insert(node_id);
+        }
+    }
+    active.remove(&node_id);
 }

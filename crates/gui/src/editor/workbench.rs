@@ -1,10 +1,11 @@
 use directories::ProjectDirs;
 use eframe::egui;
 use serde::{Deserialize, Serialize};
-use visual_novel_engine::{Engine, ScriptRaw};
+use visual_novel_engine::{Engine, LocalizationCatalog, ScriptRaw};
 
 use crate::editor::{
     asset_browser::AssetBrowserPanel,
+    diagnostics::DiagnosticLanguage,
     diff_dialog::DiffDialog,
     inspector_panel::InspectorPanel,
     lint_panel::LintPanel,
@@ -30,12 +31,47 @@ struct LayoutPreferences {
     node_editor_window_open: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct QuickFixAuditEntry {
+    pub diagnostic_id: String,
+    pub fix_id: String,
+    pub node_id: Option<u32>,
+    pub event_ip: Option<u32>,
+    pub before_crc32: u32,
+    pub after_crc32: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct PendingStructuralFix {
+    pub issue_index: usize,
+    pub fix_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct PendingAutoFixOperation {
+    pub issue: LintIssue,
+    pub fix_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct PendingAutoFixBatch {
+    pub include_review: bool,
+    pub operations: Vec<PendingAutoFixOperation>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AutoFixBatchResult {
+    pub applied: usize,
+    pub skipped: usize,
+}
+
 /// Main editor workbench state and UI.
 pub struct EditorWorkbench {
     pub config: VnConfig,
     pub node_graph: NodeGraph,
     pub undo_stack: UndoStack,
     pub manifest: Option<visual_novel_engine::manifest::ProjectManifest>,
+    pub project_root: Option<std::path::PathBuf>,
     pub current_script: Option<ScriptRaw>,
     pub saved_script_snapshot: Option<ScriptRaw>,
     pub pending_save_path: Option<std::path::PathBuf>,
@@ -48,6 +84,7 @@ pub struct EditorWorkbench {
     pub show_node_editor: bool,
     pub show_asset_browser: bool,
     pub show_validation: bool,
+    pub validation_collapsed: bool,
     pub show_save_confirm: bool,
 
     // Selection
@@ -61,6 +98,7 @@ pub struct EditorWorkbench {
     pub timeline: visual_novel_engine::Timeline,
     pub current_time: f32,
     pub is_playing: bool,
+    pub player_state: crate::editor::player_ui::PlayerSessionState,
 
     // Engine Instance (for Player Mode)
     pub engine: Option<Engine>,
@@ -68,6 +106,16 @@ pub struct EditorWorkbench {
     // Validation
     pub validation_issues: Vec<LintIssue>,
     pub last_dry_run_report: Option<crate::editor::compiler::DryRunReport>,
+    pub diagnostic_language: DiagnosticLanguage,
+    pub player_locale: String,
+    pub localization_catalog: LocalizationCatalog,
+    pub selected_issue: Option<usize>,
+    pub last_fix_snapshot: Option<NodeGraph>,
+    pub quick_fix_audit: Vec<QuickFixAuditEntry>,
+    pub show_fix_confirm: bool,
+    pub fix_diff_dialog: Option<DiffDialog>,
+    pub pending_structural_fix: Option<PendingStructuralFix>,
+    pub pending_auto_fix_batch: Option<PendingAutoFixBatch>,
 
     // Feedback
     pub toast: Option<ToastState>,
@@ -134,6 +182,7 @@ impl EditorWorkbench {
             node_graph: graph,
             undo_stack,
             manifest: None,
+            project_root: None,
             current_script: None,
             saved_script_snapshot: None,
             pending_save_path: None,
@@ -144,6 +193,7 @@ impl EditorWorkbench {
             show_node_editor: false,
             show_asset_browser: true,
             show_validation: false,
+            validation_collapsed: false,
             show_save_confirm: false,
             selected_node: None,
             selected_entity: None,
@@ -151,9 +201,20 @@ impl EditorWorkbench {
             timeline: visual_novel_engine::Timeline::new(60), // 60 ticks per second
             current_time: 0.0,
             is_playing: false,
+            player_state: crate::editor::player_ui::PlayerSessionState::default(),
             engine: None,
             validation_issues: Vec::new(),
             last_dry_run_report: None,
+            diagnostic_language: DiagnosticLanguage::Es,
+            player_locale: "en".to_string(),
+            localization_catalog: LocalizationCatalog::default(),
+            selected_issue: None,
+            last_fix_snapshot: None,
+            quick_fix_audit: Vec::new(),
+            show_fix_confirm: false,
+            fix_diff_dialog: None,
+            pending_structural_fix: None,
+            pending_auto_fix_batch: None,
             toast: None,
             diff_dialog: None,
             node_editor_window_open: false,
@@ -235,13 +296,36 @@ impl EditorWorkbench {
     pub fn load_project(&mut self, path: std::path::PathBuf) {
         match crate::editor::project_io::load_project(path.clone()) {
             Ok(loaded_project) => {
+                let migrated_manifest = loaded_project
+                    .manifest_migration_report
+                    .as_ref()
+                    .map(|report| report.entries.len());
+                let project_root = path
+                    .parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or(path.clone());
+                self.project_root = Some(project_root.clone());
+                self.localization_catalog =
+                    Self::load_localization_catalog(&project_root, &loaded_project.manifest);
+                self.player_locale = loaded_project.manifest.settings.default_language.clone();
                 self.manifest = Some(loaded_project.manifest);
                 if let Some((script_path, loaded_script)) = loaded_project.entry_point_script {
                     self.apply_loaded_script(loaded_script, script_path);
+                    if let Some(steps) = migrated_manifest {
+                        self.toast = Some(crate::editor::node_types::ToastState::warning(format!(
+                            "Project loaded with manifest migration ({steps} step(s))"
+                        )));
+                    }
                 } else {
-                    self.toast = Some(crate::editor::node_types::ToastState::success(
-                        "Project loaded (No entry script)",
-                    ));
+                    self.toast = Some(if let Some(steps) = migrated_manifest {
+                        crate::editor::node_types::ToastState::warning(format!(
+                            "Project loaded without entry script (manifest migrated in {steps} step(s))"
+                        ))
+                    } else {
+                        crate::editor::node_types::ToastState::success(
+                            "Project loaded (No entry script)",
+                        )
+                    });
                 }
             }
             Err(e) => {
@@ -257,6 +341,15 @@ impl EditorWorkbench {
     pub fn load_script(&mut self, path: std::path::PathBuf) {
         match crate::editor::project_io::load_script(path.clone()) {
             Ok(loaded_script) => {
+                if self.project_root.is_none() {
+                    self.project_root = path.parent().map(std::path::Path::to_path_buf);
+                }
+                if let Some(root) = &self.project_root {
+                    self.localization_catalog = Self::discover_locales_without_manifest(root);
+                    if self.player_locale.trim().is_empty() {
+                        self.player_locale = self.localization_catalog.default_locale.clone();
+                    }
+                }
                 self.apply_loaded_script(loaded_script, path);
             }
             Err(e) => {
@@ -290,6 +383,65 @@ impl EditorWorkbench {
 
         // CRITICAL: Sync to engine
         let _ = self.sync_graph_to_script();
+    }
+
+    fn load_localization_catalog(
+        project_root: &std::path::Path,
+        manifest: &visual_novel_engine::manifest::ProjectManifest,
+    ) -> LocalizationCatalog {
+        let mut catalog = LocalizationCatalog::new(manifest.settings.default_language.clone());
+        for locale in &manifest.settings.supported_languages {
+            let path = project_root.join("locales").join(format!("{locale}.json"));
+            if !path.exists() {
+                continue;
+            }
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(parsed) =
+                serde_json::from_str::<std::collections::BTreeMap<String, String>>(&raw)
+            else {
+                continue;
+            };
+            catalog.insert_locale_table(locale.clone(), parsed);
+        }
+        catalog
+    }
+
+    fn discover_locales_without_manifest(project_root: &std::path::Path) -> LocalizationCatalog {
+        let mut catalog = LocalizationCatalog::default();
+        let locale_dir = project_root.join("locales");
+        if !locale_dir.exists() {
+            return catalog;
+        }
+
+        let Ok(entries) = std::fs::read_dir(locale_dir) else {
+            return catalog;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(parsed) =
+                serde_json::from_str::<std::collections::BTreeMap<String, String>>(&raw)
+            else {
+                continue;
+            };
+            catalog.insert_locale_table(stem.to_string(), parsed);
+        }
+
+        if let Some(first) = catalog.locale_codes().first() {
+            catalog.default_locale = first.clone();
+        }
+        catalog
     }
 
     pub fn execute_save(&mut self, path: &std::path::Path, _content_unused: &str) {
@@ -372,6 +524,12 @@ impl EditorWorkbench {
                 if ui.button("Exportar Repro Dry Run").clicked() {
                     self.export_dry_run_repro();
                 }
+                if ui.button("Exportar Reporte Diagnostico").clicked() {
+                    self.export_diagnostic_report();
+                }
+                if ui.button("Importar Reporte Diagnostico").clicked() {
+                    self.import_diagnostic_report();
+                }
                 if ui.button("Reset Layout").clicked() {
                     self.show_graph = true;
                     self.show_inspector = true;
@@ -414,11 +572,57 @@ impl EditorWorkbench {
             self.show_save_confirm = false;
         }
 
+        let mut should_apply_structural_fix = false;
+        if self.show_fix_confirm {
+            if let Some(dialog) = &self.fix_diff_dialog {
+                if dialog.show(ctx, &mut self.show_fix_confirm) {
+                    should_apply_structural_fix = true;
+                }
+            }
+        }
+
+        if should_apply_structural_fix {
+            if self.pending_auto_fix_batch.is_some() {
+                match self.apply_pending_autofix_batch() {
+                    Ok(result) => {
+                        self.toast = Some(ToastState::success(format!(
+                            "Auto-fix batch applied: {} applied, {} skipped",
+                            result.applied, result.skipped
+                        )));
+                    }
+                    Err(err) => {
+                        self.toast =
+                            Some(ToastState::error(format!("Auto-fix batch failed: {err}")));
+                    }
+                }
+            } else {
+                match self.apply_pending_structural_fix() {
+                    Ok(fix_id) => {
+                        self.toast = Some(ToastState::success(format!(
+                            "Applied structural fix '{fix_id}'"
+                        )));
+                    }
+                    Err(err) => {
+                        self.toast =
+                            Some(ToastState::error(format!("Structural fix failed: {err}")));
+                    }
+                }
+            }
+            self.fix_diff_dialog = None;
+            self.show_fix_confirm = false;
+        } else if !self.show_fix_confirm {
+            self.pending_structural_fix = None;
+            self.pending_auto_fix_batch = None;
+            self.fix_diff_dialog = None;
+        }
+
         self.persist_layout_prefs_if_changed();
     }
 }
 
 mod compile_ops;
+mod quick_fix_ops;
+mod report_ops;
 #[cfg(test)]
 #[path = "tests/workbench_tests.rs"]
 mod tests;

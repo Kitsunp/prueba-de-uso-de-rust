@@ -83,6 +83,23 @@ impl PyEngine {
         self.inner.current_event_json().map_err(vn_error_to_py)
     }
 
+    fn supported_event_types(&self) -> Vec<&'static str> {
+        vec![
+            "dialogue",
+            "choice",
+            "scene",
+            "jump",
+            "set_flag",
+            "set_var",
+            "jump_if",
+            "patch",
+            "ext_call",
+            "audio_action",
+            "transition",
+            "set_character_position",
+        ]
+    }
+
     fn visual_state<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
         let state = self.inner.visual_state();
         let dict = PyDict::new(py);
@@ -98,6 +115,23 @@ impl PyEngine {
         }
         dict.set_item("characters", characters)?;
         Ok(dict.into())
+    }
+
+    fn is_current_dialogue_read(&self) -> bool {
+        self.inner.is_current_dialogue_read()
+    }
+
+    fn choice_history<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
+        let list = PyList::empty(py);
+        for entry in self.inner.choice_history() {
+            let dict = PyDict::new(py);
+            dict.set_item("event_ip", entry.event_ip)?;
+            dict.set_item("option_index", entry.option_index)?;
+            dict.set_item("option_text", entry.option_text.as_str())?;
+            dict.set_item("target_ip", entry.target_ip)?;
+            list.append(dict)?;
+        }
+        Ok(list.into())
     }
 
     fn ui_state<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
@@ -153,6 +187,18 @@ impl PyEngine {
 
     fn set_prefetch_depth(&mut self, depth: usize) {
         self.prefetch_depth = depth;
+    }
+
+    fn prefetch_depth(&self) -> usize {
+        self.prefetch_depth
+    }
+
+    fn prefetch_assets_hint<'py>(&self, py: Python<'py>) -> PyResult<PyObject> {
+        let list = PyList::empty(py);
+        for path in self.inner.peek_next_asset_paths(self.prefetch_depth) {
+            list.append(path)?;
+        }
+        Ok(list.into())
     }
 
     fn is_loading(&self) -> bool {

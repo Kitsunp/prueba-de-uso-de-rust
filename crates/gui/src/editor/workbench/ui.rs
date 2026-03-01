@@ -3,18 +3,172 @@ use super::*;
 impl EditorWorkbench {
     pub(super) fn render_player_mode(&mut self, ctx: &egui::Context) {
         // Use the player_ui module which manages the central panel itself
-        crate::editor::player_ui::render_player_ui(&mut self.engine, &mut self.toast, ctx);
+        crate::editor::player_ui::render_player_ui(
+            &mut self.engine,
+            &mut self.toast,
+            &mut self.player_state,
+            &mut self.player_locale,
+            &self.localization_catalog,
+            ctx,
+        );
     }
 
     pub(super) fn render_editor_mode(&mut self, ctx: &egui::Context) {
         // 1. Bottom Panels (Validation & Timeline)
         if self.show_validation {
+            let mut close_validation = false;
+            let mut toggle_validation_collapse = false;
             egui::TopBottomPanel::bottom("validation_panel")
-                .resizable(true)
-                .min_height(100.0)
+                .resizable(!self.validation_collapsed)
+                .default_height(if self.validation_collapsed { 44.0 } else { 240.0 })
+                .min_height(if self.validation_collapsed { 36.0 } else { 56.0 })
                 .show(ctx, |ui| {
-                    LintPanel::new(&self.validation_issues, &mut self.selected_node).ui(ui);
+                    let error_count = self
+                        .validation_issues
+                        .iter()
+                        .filter(|issue| issue.severity == LintSeverity::Error)
+                        .count();
+                    let warning_count = self
+                        .validation_issues
+                        .iter()
+                        .filter(|issue| issue.severity == LintSeverity::Warning)
+                        .count();
+                    let info_count = self
+                        .validation_issues
+                        .iter()
+                        .filter(|issue| issue.severity == LintSeverity::Info)
+                        .count();
+
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Validation Report  |  E:{} W:{} I:{}",
+                                error_count, warning_count, info_count
+                            ))
+                            .strong(),
+                        );
+                        ui.separator();
+                        let collapse_label = if self.validation_collapsed {
+                            "Expandir"
+                        } else {
+                            "Minimizar"
+                        };
+                        if ui.button(collapse_label).clicked() {
+                            toggle_validation_collapse = true;
+                        }
+                        if ui.button("Cerrar").clicked() {
+                            close_validation = true;
+                        }
+                    });
+
+                    if self.validation_collapsed {
+                        return;
+                    }
+
+                    let lint_response = LintPanel::new(
+                        &self.validation_issues,
+                        &mut self.selected_node,
+                        &mut self.selected_issue,
+                        &mut self.diagnostic_language,
+                        &self.node_graph,
+                        self.last_fix_snapshot.is_some(),
+                    )
+                    .ui(ui);
+
+                    for action in lint_response.actions {
+                        match action {
+                            crate::editor::lint_panel::LintPanelAction::ApplyFix {
+                                issue_index,
+                                fix_id,
+                                structural,
+                            } => {
+                                if structural {
+                                    match self
+                                        .prepare_structural_fix_confirmation(issue_index, &fix_id)
+                                    {
+                                        Ok(()) => {
+                                            self.toast = Some(ToastState::warning(format!(
+                                                "Review diff and confirm structural fix '{fix_id}'"
+                                            )));
+                                        }
+                                        Err(err) => {
+                                            self.toast = Some(ToastState::error(format!(
+                                                "Fix '{fix_id}' preview failed: {err}"
+                                            )));
+                                        }
+                                    }
+                                } else {
+                                    match self.apply_issue_fix(issue_index, &fix_id) {
+                                        Ok(()) => {
+                                            self.toast = Some(ToastState::success(format!(
+                                                "Applied fix '{fix_id}'"
+                                            )));
+                                        }
+                                        Err(err) => {
+                                            self.toast = Some(ToastState::error(format!(
+                                                "Fix '{fix_id}' failed: {err}"
+                                            )));
+                                        }
+                                    }
+                                }
+                            }
+                            crate::editor::lint_panel::LintPanelAction::ApplyAllSafeFixes => {
+                                let applied = self.apply_all_safe_fixes();
+                                if applied > 0 {
+                                    self.toast = Some(ToastState::success(format!(
+                                        "Applied {applied} safe fix(es)"
+                                    )));
+                                } else {
+                                    self.toast = Some(ToastState::warning(
+                                        "No safe fixes available for current diagnostics",
+                                    ));
+                                }
+                            }
+                            crate::editor::lint_panel::LintPanelAction::PrepareAutoFixBatch {
+                                include_review,
+                            } => match self.prepare_autofix_batch_confirmation(include_review) {
+                                Ok(planned) => {
+                                    self.toast = Some(ToastState::warning(format!(
+                                        "Review horizontal diff and confirm auto-fix batch ({planned} planned)"
+                                    )));
+                                }
+                                Err(err) => {
+                                    self.toast = Some(ToastState::warning(format!(
+                                        "Auto-fix batch not prepared: {err}"
+                                    )));
+                                }
+                            },
+                            crate::editor::lint_panel::LintPanelAction::AutoFixIssue {
+                                issue_index,
+                                include_review,
+                            } => match self.apply_best_fix_for_issue(issue_index, include_review) {
+                                Ok(outcome) => {
+                                    self.toast = Some(ToastState::success(outcome));
+                                }
+                                Err(err) => {
+                                    self.toast = Some(ToastState::error(format!(
+                                        "Issue auto-fix failed: {err}"
+                                    )));
+                                }
+                            },
+                            crate::editor::lint_panel::LintPanelAction::RevertLastFix => {
+                                if self.revert_last_fix() {
+                                    self.toast =
+                                        Some(ToastState::success("Last fix reverted successfully"));
+                                } else {
+                                    self.toast = Some(ToastState::warning("No fix to revert"));
+                                }
+                            }
+                        }
+                    }
                 });
+            if toggle_validation_collapse {
+                self.validation_collapsed = !self.validation_collapsed;
+            }
+            if close_validation {
+                self.show_validation = false;
+                self.validation_collapsed = false;
+            }
         }
 
         if self.show_timeline && !self.show_validation {
@@ -92,27 +246,27 @@ impl EditorWorkbench {
                     }
                 }
             } else if self.show_inspector {
-                // Docked graph mode: Graph | Composer | Inspector
-                ui.columns(3, |columns| {
-                    columns[0].vertical(|ui| {
+                // Docked graph mode: resizable Graph | Composer | Inspector
+                let total_width = ui.available_width();
+                let graph_default = (total_width * 0.42).clamp(280.0, 760.0);
+                let inspector_default = (total_width * 0.24).clamp(220.0, 420.0);
+
+                egui::SidePanel::left("logic_graph_docked_panel")
+                    .resizable(true)
+                    .min_width(260.0)
+                    .default_width(graph_default)
+                    .show_inside(ui, |ui| {
                         ui.heading("Logic Graph");
                         let mut panel =
                             NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
                         panel.ui(ui);
                     });
 
-                    columns[1].vertical(|ui| {
-                        let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
-                            &mut self.scene,
-                            &self.engine,
-                            &mut self.selected_entity,
-                        );
-                        if let Some(act) = composer.ui(ui, &entity_owners) {
-                            composer_actions.push(act);
-                        }
-                    });
-
-                    columns[2].vertical(|ui| {
+                egui::SidePanel::right("inspector_docked_panel")
+                    .resizable(true)
+                    .min_width(220.0)
+                    .default_width(inspector_default)
+                    .show_inside(ui, |ui| {
                         ui.heading("Inspector");
                         let selected = self.node_graph.selected;
                         InspectorPanel::new(
@@ -123,27 +277,42 @@ impl EditorWorkbench {
                         )
                         .ui(ui);
                     });
+
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
+                        &mut self.scene,
+                        &self.engine,
+                        &mut self.selected_entity,
+                    );
+                    if let Some(act) = composer.ui(ui, &entity_owners) {
+                        composer_actions.push(act);
+                    }
                 });
             } else {
-                // Docked graph mode without inspector: Graph | Composer
-                ui.columns(2, |columns| {
-                    columns[0].vertical(|ui| {
+                // Docked graph mode without inspector: resizable Graph | Composer
+                let total_width = ui.available_width();
+                let graph_default = (total_width * 0.46).clamp(280.0, 900.0);
+
+                egui::SidePanel::left("logic_graph_docked_panel_no_inspector")
+                    .resizable(true)
+                    .min_width(260.0)
+                    .default_width(graph_default)
+                    .show_inside(ui, |ui| {
                         ui.heading("Logic Graph");
                         let mut panel =
                             NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
                         panel.ui(ui);
                     });
 
-                    columns[1].vertical(|ui| {
-                        let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
-                            &mut self.scene,
-                            &self.engine,
-                            &mut self.selected_entity,
-                        );
-                        if let Some(act) = composer.ui(ui, &entity_owners) {
-                            composer_actions.push(act);
-                        }
-                    });
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
+                        &mut self.scene,
+                        &self.engine,
+                        &mut self.selected_entity,
+                    );
+                    if let Some(act) = composer.ui(ui, &entity_owners) {
+                        composer_actions.push(act);
+                    }
                 });
             }
 

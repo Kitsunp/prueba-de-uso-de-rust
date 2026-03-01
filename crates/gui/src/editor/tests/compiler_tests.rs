@@ -198,3 +198,79 @@ fn choice_connection_auto_creates_option_and_avoids_dry_run_runtime_error() {
     };
     assert_eq!(options.len(), 1);
 }
+
+#[test]
+fn critical_bug_auto_repro() {
+    let mut graph = NodeGraph::new();
+    let start = graph.add_node(StoryNode::Start, p(0.0, 0.0));
+    let a = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "A".to_string(),
+            text: "A".to_string(),
+        },
+        p(0.0, 100.0),
+    );
+    let b = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "B".to_string(),
+            text: "B".to_string(),
+        },
+        p(0.0, 200.0),
+    );
+    graph.connect(start, a);
+    graph.connect(a, b);
+    graph.connect(b, a);
+
+    let result = compile_project(&graph);
+    assert!(result.issues.iter().any(|issue| {
+        matches!(
+            issue.code,
+            LintCode::DryRunStepLimit | LintCode::PotentialLoop
+        )
+    }));
+    let repro = result
+        .minimal_repro_script()
+        .expect("critical dry-run issue should produce minimal repro");
+    assert!(repro.compile().is_ok());
+}
+
+#[test]
+fn snapshot_replay_determinism() {
+    let graph = build_branching_graph();
+    let first = compile_project(&graph);
+    let second = compile_project(&graph);
+    let first_report = first.dry_run_report.expect("first report");
+    let second_report = second.dry_run_report.expect("second report");
+
+    let left: Vec<String> = first_report
+        .steps
+        .iter()
+        .map(|step| {
+            format!(
+                "{}|{}|{}|{:?}|{:?}|{}",
+                step.step,
+                step.event_ip,
+                step.event_signature,
+                step.visual_background,
+                step.visual_music,
+                step.character_count
+            )
+        })
+        .collect();
+    let right: Vec<String> = second_report
+        .steps
+        .iter()
+        .map(|step| {
+            format!(
+                "{}|{}|{}|{:?}|{:?}|{}",
+                step.step,
+                step.event_ip,
+                step.event_signature,
+                step.visual_background,
+                step.visual_music,
+                step.character_count
+            )
+        })
+        .collect();
+    assert_eq!(left, right);
+}

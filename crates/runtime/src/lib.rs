@@ -38,6 +38,7 @@ pub struct RuntimeApp<I, A, S> {
     assets: S,
     ui: UiState,
     last_bgm_path: Option<String>,
+    prefetch_depth: usize,
 }
 
 impl<I, A, S> RuntimeApp<I, A, S>
@@ -46,6 +47,8 @@ where
     A: Audio,
     S: AssetStore,
 {
+    const DEFAULT_PREFETCH_DEPTH: usize = 3;
+
     pub fn new(
         engine: Engine,
         input: I,
@@ -63,9 +66,11 @@ where
             assets,
             ui,
             last_bgm_path: None,
+            prefetch_depth: Self::DEFAULT_PREFETCH_DEPTH,
         };
         let audio_commands = app.engine.take_audio_commands();
         app.apply_audio_commands(&audio_commands);
+        app.prefetch_upcoming_assets();
         Ok(app)
     }
 
@@ -103,6 +108,15 @@ where
         &self.ui
     }
 
+    pub fn prefetch_depth(&self) -> usize {
+        self.prefetch_depth
+    }
+
+    pub fn set_prefetch_depth(&mut self, depth: usize) {
+        self.prefetch_depth = depth;
+        self.prefetch_upcoming_assets();
+    }
+
     pub fn handle_action(&mut self, action: InputAction) -> visual_novel_engine::VnResult<bool> {
         match action {
             InputAction::None => {}
@@ -111,12 +125,14 @@ where
                 let (audio_commands, _) = self.engine.step()?;
                 self.refresh_state()?;
                 self.apply_audio_commands(&audio_commands);
+                self.prefetch_upcoming_assets();
             }
             InputAction::Choose(index) => {
                 let _ = self.engine.choose(index)?;
                 self.refresh_state()?;
                 // After jumping, check if target is a Scene and apply its audio
                 self.apply_audio_for_current_scene();
+                self.prefetch_upcoming_assets();
             }
             InputAction::Back | InputAction::Menu => {
                 // Action recognized but currently non-mutating in runtime mode.
@@ -168,6 +184,15 @@ where
                     self.audio.play_sfx(path.as_ref());
                 }
             }
+        }
+    }
+
+    fn prefetch_upcoming_assets(&mut self) {
+        if self.prefetch_depth == 0 {
+            return;
+        }
+        for path in self.engine.peek_next_asset_paths(self.prefetch_depth) {
+            let _ = self.assets.load_bytes(&path);
         }
     }
 

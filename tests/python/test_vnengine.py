@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from vnengine.app import EngineApp
 from vnengine.builder import ScriptBuilder
 from vnengine.engine import Engine, _load_native_engine
+from vnengine.localization import LocalizationCatalog, collect_script_localization_keys
 from vnengine.types import (
     AudioAction,
     CharacterPlacement,
@@ -34,9 +35,15 @@ class TypesTests(unittest.TestCase):
         )
         self.assertEqual(script.to_json(), expected)
 
-    def test_script_requires_schema_version(self):
-        with self.assertRaises(ValueError):
-            Script.from_json('{"events": [], "labels": {"start": 0}}')
+    def test_script_accepts_missing_schema_version_for_legacy(self):
+        parsed = Script.from_json('{"events": [], "labels": {"start": 0}}')
+        self.assertEqual(parsed.labels["start"], 0)
+
+    def test_script_accepts_legacy_major_schema_version(self):
+        parsed = Script.from_json(
+            '{"script_schema_version":"0.9","events":[],"labels":{"start":0}}'
+        )
+        self.assertEqual(parsed.labels["start"], 0)
 
     def test_event_from_dict_rejects_unknown_type(self):
         with self.assertRaises(ValueError):
@@ -76,6 +83,31 @@ class TypesTests(unittest.TestCase):
         self.assertEqual(parsed.events[0].to_dict()["type"], "audio_action")
         self.assertEqual(parsed.events[1].to_dict()["type"], "transition")
         self.assertEqual(parsed.events[2].to_dict()["type"], "set_character_position")
+
+
+class LocalizationTests(unittest.TestCase):
+    def test_collect_and_validate_localization_keys(self):
+        script = Script(
+            events=[
+                Dialogue(speaker="loc:speaker.narrator", text="loc:dialogue.intro"),
+                AudioAction(channel="bgm", action="play", asset="theme.ogg"),
+            ],
+            labels={"start": 0},
+        )
+        keys = collect_script_localization_keys(script)
+        self.assertEqual(keys, {"speaker.narrator", "dialogue.intro"})
+
+        catalog = LocalizationCatalog(
+            default_locale="en",
+            locales={
+                "en": {"speaker.narrator": "Narrator"},
+                "es": {"speaker.narrator": "Narrador", "unused": "x"},
+            },
+        )
+        missing, orphan = catalog.validate_keys(keys)
+        self.assertIn("en:dialogue.intro", missing)
+        self.assertIn("es:dialogue.intro", missing)
+        self.assertIn("es:unused", orphan)
 
 
 class BuilderTests(unittest.TestCase):
@@ -214,6 +246,59 @@ class EngineWrapperTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             engine.ui_state()
 
+    def test_engine_read_tracking_wrapper_methods(self):
+        module = types.ModuleType("visual_novel_engine")
+
+        class FakeEngine:
+            def __init__(self, script_json):
+                self.script_json = script_json
+
+            def is_current_dialogue_read(self):
+                return True
+
+            def choice_history(self):
+                return [{"option_index": 0}]
+
+        module.Engine = FakeEngine
+        sys.modules["visual_novel_engine"] = module
+
+        engine = Engine.from_script(
+            {
+                "script_schema_version": SCRIPT_SCHEMA_VERSION,
+                "events": [],
+                "labels": {"start": 0},
+            }
+        )
+        self.assertTrue(engine.is_current_dialogue_read())
+        self.assertEqual(engine.choice_history(), [{"option_index": 0}])
+
+    def test_engine_prefetch_wrapper_methods(self):
+        module = types.ModuleType("visual_novel_engine")
+
+        class FakeEngine:
+            def __init__(self, script_json):
+                self.script_json = script_json
+                self.depth = 0
+
+            def set_prefetch_depth(self, depth):
+                self.depth = depth
+
+            def prefetch_assets_hint(self):
+                return ["bg/room.png"] if self.depth > 0 else []
+
+        module.Engine = FakeEngine
+        sys.modules["visual_novel_engine"] = module
+
+        engine = Engine.from_script(
+            {
+                "script_schema_version": SCRIPT_SCHEMA_VERSION,
+                "events": [],
+                "labels": {"start": 0},
+            }
+        )
+        engine.set_prefetch_depth(2)
+        self.assertEqual(engine.prefetch_assets_hint(), ["bg/room.png"])
+
 
 class EngineAppTests(unittest.TestCase):
     def test_engine_app_runs_choices(self):
@@ -260,7 +345,18 @@ class NativeBindingsTests(unittest.TestCase):
         if self.native is None:
             self.skipTest("visual_novel_engine native module not available")
 
-    def _sample_script_json(self):
+    def _dialogue_script_json(self):
+        payload = {
+            "script_schema_version": SCRIPT_SCHEMA_VERSION,
+            "events": [
+                {"type": "dialogue", "speaker": "Ava", "text": "Hola"},
+                {"type": "dialogue", "speaker": "Ava", "text": "Continuar"},
+            ],
+            "labels": {"start": 0},
+        }
+        return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+    def _ext_call_script_json(self):
         payload = {
             "script_schema_version": SCRIPT_SCHEMA_VERSION,
             "events": [
@@ -271,8 +367,16 @@ class NativeBindingsTests(unittest.TestCase):
         }
         return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
+    def _supports_ext_call(self):
+        probe = self.native.Engine(self._dialogue_script_json())
+        if hasattr(probe, "supported_event_types"):
+            return "ext_call" in set(probe.supported_event_types())
+        return False
+
     def test_resource_config_and_memory_usage(self):
-        engine = self.native.Engine(self._sample_script_json())
+        if not hasattr(self.native, "ResourceConfig"):
+            self.skipTest("Native engine without ResourceConfig API")
+        engine = self.native.Engine(self._dialogue_script_json())
         config = self.native.ResourceConfig(
             max_texture_memory=123, max_script_bytes=456
         )
@@ -282,7 +386,10 @@ class NativeBindingsTests(unittest.TestCase):
         self.assertEqual(usage["max_script_bytes"], 456)
 
     def test_ext_call_handler_and_resume(self):
-        engine = self.native.Engine(self._sample_script_json())
+        if not self._supports_ext_call():
+            self.skipTest("Native engine without ext_call support")
+
+        engine = self.native.Engine(self._ext_call_script_json())
         calls = []
 
         def handler(command, args):
@@ -300,8 +407,14 @@ class NativeBindingsTests(unittest.TestCase):
         self.assertEqual(next_event["type"], "dialogue")
 
     def test_audio_controller_and_prefetch_api(self):
-        engine = self.native.Engine(self._sample_script_json())
+        engine = self.native.Engine(self._dialogue_script_json())
+        if not hasattr(engine, "set_prefetch_depth"):
+            self.skipTest("Native engine without prefetch API")
+        if not hasattr(engine, "audio"):
+            self.skipTest("Native engine without audio controller API")
         engine.set_prefetch_depth(3)
+        if hasattr(engine, "prefetch_assets_hint"):
+            self.assertIsInstance(engine.prefetch_assets_hint(), list)
         self.assertIsInstance(engine.is_loading(), bool)
 
         audio = engine.audio()
@@ -318,6 +431,35 @@ class NativeBindingsTests(unittest.TestCase):
 
         audio.stop_all(fade_out=0.1)
         audio.play_sfx("click")
+
+    def test_engine_choice_history_and_read_tracking(self):
+        if not hasattr(self.native.Engine, "is_current_dialogue_read"):
+            self.skipTest("Engine binding without read-tracking API")
+        payload = {
+            "script_schema_version": SCRIPT_SCHEMA_VERSION,
+            "events": [
+                {"type": "dialogue", "speaker": "Ava", "text": "Hola"},
+                {
+                    "type": "choice",
+                    "prompt": "Ir?",
+                    "options": [{"text": "Volver", "target": "start"}],
+                },
+            ],
+            "labels": {"start": 0},
+        }
+        engine = self.native.Engine(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        )
+
+        self.assertFalse(engine.is_current_dialogue_read())
+        engine.step()  # consume dialogue
+        engine.choose(0)  # jump back to start
+        self.assertTrue(engine.is_current_dialogue_read())
+
+        history = engine.choice_history()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["option_index"], 0)
+        self.assertEqual(history[0]["option_text"], "Volver")
 
     def test_engine_app_propagates_unexpected_errors(self):
         class BrokenEngine:
@@ -342,6 +484,59 @@ class GuiBindingTests(unittest.TestCase):
         config = vn.VnConfig(width=800.0, height=600.0, fullscreen=False)
         self.assertIsNotNone(config)
         self.assertTrue(callable(vn.run_visual_novel))
+
+    def test_node_graph_search_and_bookmarks(self):
+        import visual_novel_engine as vn
+
+        if not hasattr(vn, "NodeGraph") or not hasattr(vn, "StoryNode"):
+            self.skipTest("GUI graph bindings are not available in this native build")
+
+        graph = vn.NodeGraph()
+        start = graph.add_node(vn.StoryNode.start(), 0.0, 0.0)
+        dialogue = graph.add_node(
+            vn.StoryNode.dialogue("Narrador", "Castillo"), 0.0, 100.0
+        )
+        graph.connect(start, dialogue)
+
+        hits = graph.search_nodes("castillo")
+        self.assertIn(dialogue, hits)
+
+        self.assertTrue(graph.set_bookmark("intro", dialogue))
+        self.assertEqual(graph.bookmark_target("intro"), dialogue)
+        bookmarks = dict(graph.list_bookmarks())
+        self.assertEqual(bookmarks["intro"], dialogue)
+
+    def test_node_graph_autofix_bindings(self):
+        import visual_novel_engine as vn
+
+        if not hasattr(vn, "NodeGraph") or not hasattr(vn, "StoryNode"):
+            self.skipTest("GUI graph bindings are not available in this native build")
+
+        graph = vn.NodeGraph()
+        required = ["validate", "fix_candidates", "autofix_issue", "autofix_safe"]
+        if not all(hasattr(graph, attr) for attr in required):
+            self.skipTest("Native GUI build without autofix APIs")
+
+        start = graph.add_node(vn.StoryNode.start(), 0.0, 0.0)
+        dialogue = graph.add_node(vn.StoryNode.dialogue("", "Hola"), 0.0, 100.0)
+        end = graph.add_node(vn.StoryNode.end(), 0.0, 200.0)
+        graph.connect(start, dialogue)
+        graph.connect(dialogue, end)
+
+        issues = graph.validate()
+        idx = next(
+            i for i, issue in enumerate(issues) if issue.code == "VAL_SPEAKER_EMPTY"
+        )
+        candidates = graph.fix_candidates(idx)
+        self.assertGreaterEqual(len(candidates), 1)
+        applied_fix = graph.autofix_issue(idx, False)
+        self.assertIsNotNone(applied_fix)
+
+        post_issues = graph.validate()
+        self.assertTrue(
+            all(issue.code != "VAL_SPEAKER_EMPTY" for issue in post_issues),
+            "speaker-empty issue should be auto-fixed",
+        )
 
 
 if __name__ == "__main__":

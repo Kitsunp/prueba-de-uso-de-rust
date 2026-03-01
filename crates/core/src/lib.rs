@@ -5,7 +5,9 @@ mod entity;
 mod error;
 mod event;
 mod graph;
+mod localization;
 pub mod manifest;
+mod migration;
 mod render;
 mod resource;
 mod script;
@@ -20,8 +22,7 @@ mod visual;
 
 pub use assets::{AssetId, AssetId128, AssetManifest};
 pub use audio::AudioCommand;
-pub use engine::Engine;
-pub use engine::StateChange;
+pub use engine::{ChoiceHistoryEntry, Engine, StateChange};
 pub use error::{VnError, VnResult};
 pub use event::{
     AudioActionCompiled, AudioActionRaw, CharacterPatchCompiled, CharacterPatchRaw,
@@ -31,12 +32,23 @@ pub use event::{
     SceneTransitionRaw, SceneUpdateCompiled, SceneUpdateRaw, SetCharacterPositionCompiled,
     SetCharacterPositionRaw, SharedStr,
 };
+pub use localization::{
+    collect_script_localization_keys, localization_key, LocalizationCatalog, LocalizationIssue,
+    LocalizationIssueKind,
+};
+pub use migration::{
+    migrate_script_json_to_current, migrate_script_json_value, MigrationError, MigrationReport,
+    MigrationTraceEntry,
+};
 pub use render::{RenderBackend, RenderOutput, TextRenderer};
 pub use resource::{LruCache, ResourceLimiter};
 pub use script::{ScriptCompiled, ScriptRaw};
 pub use security::SecurityPolicy;
 pub use state::EngineState;
-pub use storage::{compute_script_id, SaveData, SaveError, ScriptId};
+pub use storage::{
+    compute_script_id, SaveData, SaveError, SaveSlotEntry, SaveSlotMetadata, SaveSlotStore,
+    SaveStoreError, ScriptId,
+};
 pub use trace::{StateDigest, UiTrace, UiTraceStep, UiView as TraceUiView, VisualDigest};
 pub use ui::{UiState, UiView};
 pub use version::{COMPILED_FORMAT_VERSION, SAVE_FORMAT_VERSION, SCRIPT_SCHEMA_VERSION};

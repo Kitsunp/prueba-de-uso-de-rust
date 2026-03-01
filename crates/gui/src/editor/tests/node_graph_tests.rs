@@ -198,3 +198,142 @@ fn test_scene_profile_save_and_apply() {
     assert_eq!(music.as_deref(), Some("bgm/theme.ogg"));
     assert_eq!(characters.len(), 1);
 }
+
+#[test]
+fn test_bookmark_roundtrip_and_cleanup_on_node_remove() {
+    let mut graph = NodeGraph::new();
+    let dialogue = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "Ava".to_string(),
+            text: "Hola".to_string(),
+        },
+        pos(0.0, 0.0),
+    );
+
+    assert!(graph.set_bookmark("intro", dialogue));
+    assert_eq!(graph.bookmarked_node("intro"), Some(dialogue));
+
+    graph.remove_node(dialogue);
+    assert_eq!(graph.bookmarked_node("intro"), None);
+}
+
+#[test]
+fn test_global_search_finds_dialogue_and_choice_content() {
+    let mut graph = NodeGraph::new();
+    let dialogue = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "Narrador".to_string(),
+            text: "Bienvenido al castillo".to_string(),
+        },
+        pos(0.0, 0.0),
+    );
+    let choice = graph.add_node(
+        StoryNode::Choice {
+            prompt: "Ruta".to_string(),
+            options: vec!["Bosque".to_string(), "Castillo".to_string()],
+        },
+        pos(0.0, 100.0),
+    );
+
+    let hits = graph.search_nodes("castillo");
+    assert!(hits.contains(&dialogue));
+    assert!(hits.contains(&choice));
+}
+
+#[test]
+fn global_search_correctness() {
+    let mut graph = NodeGraph::new();
+    let dialogue = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "Ava".to_string(),
+            text: "Puerta secreta".to_string(),
+        },
+        pos(0.0, 0.0),
+    );
+    let scene = graph.add_node(
+        StoryNode::Scene {
+            profile: None,
+            background: Some("bg/secret_room.png".to_string()),
+            music: None,
+            characters: Vec::new(),
+        },
+        pos(0.0, 100.0),
+    );
+
+    let hits = graph.search_nodes("secret");
+    assert!(hits.contains(&dialogue));
+    assert!(hits.contains(&scene));
+}
+
+#[test]
+fn bookmark_navigation() {
+    let mut graph = NodeGraph::new();
+    let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
+    let dialogue = graph.add_node(
+        StoryNode::Dialogue {
+            speaker: "N".to_string(),
+            text: "Hola".to_string(),
+        },
+        pos(0.0, 100.0),
+    );
+    let end = graph.add_node(StoryNode::End, pos(0.0, 200.0));
+    graph.connect(start, dialogue);
+    graph.connect(dialogue, end);
+
+    assert!(graph.set_bookmark("intro", dialogue));
+    let bookmarked = graph
+        .bookmarked_node("intro")
+        .expect("bookmark should resolve");
+    assert_eq!(bookmarked, dialogue);
+    assert_eq!(graph.incoming_nodes(dialogue), vec![start]);
+    assert_eq!(graph.outgoing_nodes(dialogue), vec![end]);
+}
+
+#[test]
+fn test_node_for_event_ip_and_asset_reference_navigation() {
+    let mut graph = NodeGraph::new();
+    let start = graph.add_node(StoryNode::Start, pos(0.0, 0.0));
+    let scene = graph.add_node(
+        StoryNode::Scene {
+            profile: None,
+            background: Some("bg/room.png".to_string()),
+            music: Some("music/theme.ogg".to_string()),
+            characters: vec![visual_novel_engine::CharacterPlacementRaw {
+                name: "Ava".to_string(),
+                expression: Some("sprites/ava_smile.png".to_string()),
+                position: Some("left".to_string()),
+                x: None,
+                y: None,
+                scale: None,
+            }],
+        },
+        pos(0.0, 100.0),
+    );
+    let audio = graph.add_node(
+        StoryNode::AudioAction {
+            channel: "bgm".to_string(),
+            action: "play".to_string(),
+            asset: Some("music/theme.ogg".to_string()),
+            volume: Some(1.0),
+            fade_duration_ms: Some(150),
+            loop_playback: Some(true),
+        },
+        pos(0.0, 200.0),
+    );
+    let end = graph.add_node(StoryNode::End, pos(0.0, 300.0));
+    graph.connect(start, scene);
+    graph.connect(scene, audio);
+    graph.connect(audio, end);
+
+    assert_eq!(graph.node_for_event_ip(0), Some(scene));
+    assert_eq!(graph.node_for_event_ip(1), Some(audio));
+    assert_eq!(graph.node_for_event_ip(2), None);
+
+    let refs = graph.nodes_referencing_asset("music/theme.ogg");
+    assert!(refs.contains(&scene));
+    assert!(refs.contains(&audio));
+    assert_eq!(
+        graph.first_node_referencing_asset("sprites/ava_smile.png"),
+        Some(scene)
+    );
+}

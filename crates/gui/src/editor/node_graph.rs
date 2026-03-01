@@ -56,6 +56,9 @@ pub struct NodeGraph {
     pub(crate) connections: Vec<GraphConnection>,
     /// Reusable scene presets/environments.
     pub(crate) scene_profiles: BTreeMap<String, SceneProfile>,
+    /// Named anchors for fast navigation in large graphs.
+    #[serde(default)]
+    pub(crate) bookmarks: BTreeMap<String, u32>,
     /// Next available node ID
     next_id: u32,
     /// Currently selected node
@@ -88,6 +91,7 @@ impl Default for NodeGraph {
             nodes: Vec::new(),
             connections: Vec::new(),
             scene_profiles: BTreeMap::new(),
+            bookmarks: BTreeMap::new(),
             next_id: 0,
             selected: None,
             pan: egui::Vec2::ZERO,
@@ -124,6 +128,7 @@ impl NodeGraph {
     pub fn remove_node(&mut self, id: u32) {
         self.nodes.retain(|(nid, _, _)| *nid != id);
         self.connections.retain(|c| c.from != id && c.to != id);
+        self.bookmarks.retain(|_, target| *target != id);
 
         if self.selected == Some(id) {
             self.selected = None;
@@ -585,6 +590,127 @@ impl NodeGraph {
         self.scene_profiles.keys().cloned().collect()
     }
 
+    /// Creates or updates a bookmark that points to an existing node.
+    pub fn set_bookmark(&mut self, name: impl Into<String>, node_id: u32) -> bool {
+        if self.get_node(node_id).is_none() {
+            return false;
+        }
+        let normalized = name.into().trim().to_string();
+        if normalized.is_empty() {
+            return false;
+        }
+        self.bookmarks.insert(normalized, node_id);
+        self.modified = true;
+        true
+    }
+
+    /// Removes a bookmark by name.
+    pub fn remove_bookmark(&mut self, name: &str) -> bool {
+        if self.bookmarks.remove(name).is_some() {
+            self.modified = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Resolves a bookmark name into its node id.
+    pub fn bookmarked_node(&self, name: &str) -> Option<u32> {
+        self.bookmarks.get(name).copied()
+    }
+
+    /// Returns bookmark names and targets in deterministic order.
+    pub fn bookmarks(&self) -> impl Iterator<Item = (&String, &u32)> {
+        self.bookmarks.iter()
+    }
+
+    /// Returns node ids that directly connect into `node_id`.
+    pub fn incoming_nodes(&self, node_id: u32) -> Vec<u32> {
+        self.connections
+            .iter()
+            .filter(|connection| connection.to == node_id)
+            .map(|connection| connection.from)
+            .collect()
+    }
+
+    /// Returns node ids directly reachable from `node_id`.
+    pub fn outgoing_nodes(&self, node_id: u32) -> Vec<u32> {
+        self.connections
+            .iter()
+            .filter(|connection| connection.from == node_id)
+            .map(|connection| connection.to)
+            .collect()
+    }
+
+    /// Maps an event_ip from compiled/raw script flow back to the source node id.
+    pub fn node_for_event_ip(&self, event_ip: u32) -> Option<u32> {
+        let idx = usize::try_from(event_ip).ok()?;
+        self.script_order_node_ids().get(idx).copied()
+    }
+
+    /// Returns nodes that reference a concrete asset path.
+    pub fn nodes_referencing_asset(&self, asset_path: &str) -> Vec<u32> {
+        let needle = asset_path.trim();
+        if needle.is_empty() {
+            return Vec::new();
+        }
+
+        self.nodes
+            .iter()
+            .filter_map(|(node_id, node, _)| {
+                if node_references_asset(node, needle) {
+                    Some(*node_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Returns the first node that references the provided asset path.
+    pub fn first_node_referencing_asset(&self, asset_path: &str) -> Option<u32> {
+        self.nodes_referencing_asset(asset_path).into_iter().next()
+    }
+
+    fn script_order_node_ids(&self) -> Vec<u32> {
+        let start_id = self
+            .nodes
+            .iter()
+            .find(|(_, node, _)| matches!(node, StoryNode::Start))
+            .map(|(id, _, _)| *id);
+
+        let mut visited = Vec::new();
+        let mut queue = Vec::new();
+        if let Some(start) = start_id {
+            queue.push(start);
+        }
+
+        while let Some(id) = queue.pop() {
+            if visited.contains(&id) {
+                continue;
+            }
+            visited.push(id);
+
+            for connection in self
+                .connections
+                .iter()
+                .filter(|connection| connection.from == id)
+            {
+                if !visited.contains(&connection.to) {
+                    queue.push(connection.to);
+                }
+            }
+        }
+
+        visited
+            .into_iter()
+            .filter(|node_id| {
+                self.get_node(*node_id)
+                    .is_some_and(|node| !node.is_marker())
+            })
+            .collect()
+    }
+
     fn ensure_choice_option(&mut self, node_id: u32, option_idx: usize) {
         let Some(StoryNode::Choice { options, .. }) = self.get_node_mut(node_id) else {
             return;
@@ -656,6 +782,26 @@ impl NodeGraph {
             .map(|(_, _, pos)| pos)
     }
 
+    /// Case-insensitive global search over node labels and content.
+    pub fn search_nodes(&self, query: &str) -> Vec<u32> {
+        let needle = query.trim().to_ascii_lowercase();
+        if needle.is_empty() {
+            return Vec::new();
+        }
+
+        self.nodes
+            .iter()
+            .filter_map(|(id, node, _)| {
+                let haystack = searchable_text(node);
+                if haystack.contains(&needle) {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Returns an iterator over all nodes.
     pub fn nodes(&self) -> impl Iterator<Item = &(u32, StoryNode, egui::Pos2)> {
         self.nodes.iter()
@@ -676,6 +822,105 @@ impl NodeGraph {
     #[allow(dead_code)]
     pub(crate) fn connections_slice(&self) -> &[GraphConnection] {
         &self.connections
+    }
+}
+
+fn searchable_text(node: &StoryNode) -> String {
+    let mut fields = Vec::new();
+    fields.push(node.type_name().to_ascii_lowercase());
+    match node {
+        StoryNode::Dialogue { speaker, text } => {
+            fields.push(speaker.to_ascii_lowercase());
+            fields.push(text.to_ascii_lowercase());
+        }
+        StoryNode::Choice { prompt, options } => {
+            fields.push(prompt.to_ascii_lowercase());
+            for option in options {
+                fields.push(option.to_ascii_lowercase());
+            }
+        }
+        StoryNode::Scene {
+            profile,
+            background,
+            music,
+            characters,
+        } => {
+            if let Some(profile) = profile {
+                fields.push(profile.to_ascii_lowercase());
+            }
+            if let Some(background) = background {
+                fields.push(background.to_ascii_lowercase());
+            }
+            if let Some(music) = music {
+                fields.push(music.to_ascii_lowercase());
+            }
+            for character in characters {
+                fields.push(character.name.to_ascii_lowercase());
+                if let Some(expression) = &character.expression {
+                    fields.push(expression.to_ascii_lowercase());
+                }
+                if let Some(position) = &character.position {
+                    fields.push(position.to_ascii_lowercase());
+                }
+            }
+        }
+        StoryNode::Jump { target } => fields.push(target.to_ascii_lowercase()),
+        StoryNode::SetVariable { key, .. } => fields.push(key.to_ascii_lowercase()),
+        StoryNode::JumpIf { target, .. } => fields.push(target.to_ascii_lowercase()),
+        StoryNode::ScenePatch(_) => {}
+        StoryNode::AudioAction {
+            channel,
+            action,
+            asset,
+            ..
+        } => {
+            fields.push(channel.to_ascii_lowercase());
+            fields.push(action.to_ascii_lowercase());
+            if let Some(asset) = asset {
+                fields.push(asset.to_ascii_lowercase());
+            }
+        }
+        StoryNode::Transition { kind, color, .. } => {
+            fields.push(kind.to_ascii_lowercase());
+            if let Some(color) = color {
+                fields.push(color.to_ascii_lowercase());
+            }
+        }
+        StoryNode::CharacterPlacement { name, .. } => fields.push(name.to_ascii_lowercase()),
+        StoryNode::Generic(event) => fields.push(event.to_json_string().to_ascii_lowercase()),
+        StoryNode::Start | StoryNode::End => {}
+    }
+    fields.join(" ")
+}
+
+fn node_references_asset(node: &StoryNode, asset_path: &str) -> bool {
+    match node {
+        StoryNode::Scene {
+            background,
+            music,
+            characters,
+            ..
+        } => {
+            background.as_deref() == Some(asset_path)
+                || music.as_deref() == Some(asset_path)
+                || characters
+                    .iter()
+                    .any(|character| character.expression.as_deref() == Some(asset_path))
+        }
+        StoryNode::ScenePatch(patch) => {
+            patch.background.as_deref() == Some(asset_path)
+                || patch.music.as_deref() == Some(asset_path)
+                || patch
+                    .add
+                    .iter()
+                    .any(|character| character.expression.as_deref() == Some(asset_path))
+                || patch
+                    .update
+                    .iter()
+                    .any(|character| character.expression.as_deref() == Some(asset_path))
+        }
+        StoryNode::AudioAction { asset, .. } => asset.as_deref() == Some(asset_path),
+        _ => false,
     }
 }
 

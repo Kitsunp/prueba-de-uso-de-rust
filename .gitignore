@@ -10,3 +10,8 @@ test_output.txt
 *.log
 docs/integrity_threat_model.md
 docs/phase9_authoring_acceptance.md
+docs/phase10_compliance_verification_2026-03-01.md
+docs/phase10_execution_tracker.yaml
+crates/runtime/tests/audio_sync_tests.rs
+docs/phase10_p0_checklist.md
+docs/phase10_production_plan.md

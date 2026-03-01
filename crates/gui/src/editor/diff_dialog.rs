@@ -9,7 +9,12 @@ pub struct DiffDialog {
     previous_script: Option<ScriptRaw>,
     current_script: ScriptRaw,
     stats: DiffStats,
-    lines: Vec<DiffLine>,
+    lines: Vec<DiffRow>,
+    title: String,
+    intro_text: String,
+    warning_text: String,
+    confirm_label: String,
+    cancel_label: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -23,27 +28,104 @@ struct DiffStats {
 enum DiffKind {
     Added,
     Removed,
+    Modified,
     Context,
+    Elided,
 }
 
 #[derive(Clone, Debug)]
-struct DiffLine {
+struct DiffRow {
     kind: DiffKind,
-    text: String,
+    left_no: Option<usize>,
+    right_no: Option<usize>,
+    left_text: String,
+    right_text: String,
 }
 
 impl DiffDialog {
     pub fn new(previous_script: Option<&ScriptRaw>, current_script: &ScriptRaw) -> Self {
+        Self::new_save(previous_script, current_script)
+    }
+
+    pub fn new_save(previous_script: Option<&ScriptRaw>, current_script: &ScriptRaw) -> Self {
+        Self::new_with_context(
+            previous_script,
+            current_script,
+            "Confirmar Cambios".to_string(),
+            "Estas por guardar cambios en el script.".to_string(),
+            "Esto sobrescribira el archivo en disco.".to_string(),
+            "Confirmar Guardado".to_string(),
+            "Cancelar".to_string(),
+        )
+    }
+
+    pub fn new_quick_fix(
+        previous_script: Option<&ScriptRaw>,
+        current_script: &ScriptRaw,
+        fix_id: &str,
+    ) -> Self {
+        Self::new_with_context(
+            previous_script,
+            current_script,
+            format!("Confirmar Quick-Fix Estructural ({fix_id})"),
+            format!(
+                "Este quick-fix estructural ('{fix_id}') modificara el grafo. Revisa el diff antes de aplicar."
+            ),
+            "Solo aplica si el cambio respeta tu intencion narrativa.".to_string(),
+            "Aplicar Quick-Fix".to_string(),
+            "Cancelar".to_string(),
+        )
+    }
+
+    pub fn new_autofix_batch(
+        previous_script: Option<&ScriptRaw>,
+        current_script: &ScriptRaw,
+        fix_count: usize,
+        include_review: bool,
+    ) -> Self {
+        let mode = if include_review {
+            "completo (safe + review)"
+        } else {
+            "safe"
+        };
+        Self::new_with_context(
+            previous_script,
+            current_script,
+            format!("Confirmar Auto-Fix {mode}"),
+            format!(
+                "Se aplicaran {fix_count} fix(es) automáticos en modo {mode}. Revisa el diff horizontal antes de confirmar."
+            ),
+            "Confirma solo si el resultado conserva la semantica narrativa y de ejecucion."
+                .to_string(),
+            "Aplicar Auto-Fix".to_string(),
+            "Cancelar".to_string(),
+        )
+    }
+
+    fn new_with_context(
+        previous_script: Option<&ScriptRaw>,
+        current_script: &ScriptRaw,
+        title: String,
+        intro_text: String,
+        warning_text: String,
+        confirm_label: String,
+        cancel_label: String,
+    ) -> Self {
         let previous_script = previous_script.cloned();
         let current_script = current_script.clone();
         let stats = compute_stats(previous_script.as_ref(), &current_script);
-        let lines = build_diff_lines(previous_script.as_ref(), &current_script);
+        let lines = build_diff_rows(previous_script.as_ref(), &current_script);
 
         Self {
             previous_script,
             current_script,
             stats,
             lines,
+            title,
+            intro_text,
+            warning_text,
+            confirm_label,
+            cancel_label,
         }
     }
 
@@ -51,13 +133,13 @@ impl DiffDialog {
     pub fn show(&self, ctx: &egui::Context, open: &mut bool) -> bool {
         let mut confirmed = false;
         if *open {
-            egui::Window::new("Confirmar Cambios")
+            egui::Window::new(self.title.as_str())
                 .collapsible(false)
                 .resizable(true)
+                .movable(true)
                 .default_size(egui::vec2(780.0, 520.0))
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                 .show(ctx, |ui| {
-                    ui.label("Estas por guardar cambios en el script.");
+                    ui.label(self.intro_text.as_str());
                     ui.separator();
 
                     ui.heading("Resumen de Cambios");
@@ -94,35 +176,71 @@ impl DiffDialog {
                     }
 
                     ui.separator();
-                    ui.label(egui::RichText::new("Diff (estilo Git):").strong());
-                    egui::ScrollArea::vertical()
-                        .max_height(300.0)
-                        .show(ui, |ui| {
-                            for line in &self.lines {
-                                let (prefix, color) = match line.kind {
-                                    DiffKind::Added => ("+", egui::Color32::GREEN),
-                                    DiffKind::Removed => ("-", egui::Color32::RED),
-                                    DiffKind::Context => (" ", egui::Color32::GRAY),
-                                };
-                                ui.label(
-                                    egui::RichText::new(format!("{} {}", prefix, line.text))
-                                        .monospace()
-                                        .color(color),
-                                );
-                            }
-                        });
+                    ui.label(
+                        egui::RichText::new("Diff horizontal (estilo Git, lado a lado):").strong(),
+                    );
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Anterior").monospace().strong());
+                        ui.add_space(24.0);
+                        ui.label(egui::RichText::new("Actual").monospace().strong());
+                    });
+                    egui::ScrollArea::both().max_height(300.0).show(ui, |ui| {
+                        let full_width = ui.available_width();
+                        let marker_width = 18.0;
+                        let column_width = ((full_width - marker_width).max(240.0)) / 2.0;
+                        egui::Grid::new("diff_horizontal_grid")
+                            .striped(true)
+                            .num_columns(3)
+                            .spacing(egui::vec2(10.0, 2.0))
+                            .show(ui, |ui| {
+                                for row in &self.lines {
+                                    let (marker, color) = match row.kind {
+                                        DiffKind::Added => ("+", egui::Color32::GREEN),
+                                        DiffKind::Removed => ("-", egui::Color32::RED),
+                                        DiffKind::Modified => ("~", egui::Color32::YELLOW),
+                                        DiffKind::Context => (" ", egui::Color32::GRAY),
+                                        DiffKind::Elided => ("…", egui::Color32::GRAY),
+                                    };
+                                    let left = render_line_cell(row.left_no, &row.left_text);
+                                    let right = render_line_cell(row.right_no, &row.right_text);
+
+                                    ui.add_sized(
+                                        [column_width, 0.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(left).monospace().color(color),
+                                        ),
+                                    );
+                                    ui.add_sized(
+                                        [marker_width, 0.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(marker)
+                                                .monospace()
+                                                .strong()
+                                                .color(color),
+                                        ),
+                                    );
+                                    ui.add_sized(
+                                        [column_width, 0.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(right).monospace().color(color),
+                                        ),
+                                    );
+                                    ui.end_row();
+                                }
+                            });
+                    });
 
                     ui.separator();
                     ui.label(
-                        egui::RichText::new("Esto sobrescribira el archivo en disco.")
+                        egui::RichText::new(self.warning_text.as_str())
                             .color(egui::Color32::YELLOW),
                     );
 
                     ui.horizontal(|ui| {
-                        if ui.button("Cancelar").clicked() {
+                        if ui.button(self.cancel_label.as_str()).clicked() {
                             *open = false;
                         }
-                        if ui.button("Confirmar Guardado").clicked() {
+                        if ui.button(self.confirm_label.as_str()).clicked() {
                             confirmed = true;
                             *open = false;
                         }
@@ -164,7 +282,7 @@ fn compute_stats(previous: Option<&ScriptRaw>, current: &ScriptRaw) -> DiffStats
     stats
 }
 
-fn build_diff_lines(previous: Option<&ScriptRaw>, current: &ScriptRaw) -> Vec<DiffLine> {
+fn build_diff_rows(previous: Option<&ScriptRaw>, current: &ScriptRaw) -> Vec<DiffRow> {
     let new_json = current
         .to_json()
         .unwrap_or_else(|_| "<error serializando script actual>".to_string());
@@ -173,9 +291,13 @@ fn build_diff_lines(previous: Option<&ScriptRaw>, current: &ScriptRaw) -> Vec<Di
     let Some(previous) = previous else {
         return new_lines
             .into_iter()
-            .map(|line| DiffLine {
+            .enumerate()
+            .map(|(idx, line)| DiffRow {
                 kind: DiffKind::Added,
-                text: line.to_string(),
+                left_no: None,
+                right_no: Some(idx),
+                left_text: String::new(),
+                right_text: line.to_string(),
             })
             .collect();
     };
@@ -186,9 +308,12 @@ fn build_diff_lines(previous: Option<&ScriptRaw>, current: &ScriptRaw) -> Vec<Di
     let old_lines: Vec<&str> = old_json.lines().collect();
 
     if old_lines == new_lines {
-        return vec![DiffLine {
+        return vec![DiffRow {
             kind: DiffKind::Context,
-            text: "Sin cambios de contenido".to_string(),
+            left_no: None,
+            right_no: None,
+            left_text: "Sin cambios de contenido".to_string(),
+            right_text: "Sin cambios de contenido".to_string(),
         }];
     }
 
@@ -209,68 +334,111 @@ fn build_diff_lines(previous: Option<&ScriptRaw>, current: &ScriptRaw) -> Vec<Di
     }
 
     let mut out = Vec::new();
-    push_context_window(&mut out, &old_lines[..prefix], true);
+    push_context_window(&mut out, &old_lines[..prefix], 0, 0, true);
 
-    for line in &old_lines[prefix..old_lines.len().saturating_sub(suffix)] {
-        out.push(DiffLine {
-            kind: DiffKind::Removed,
-            text: (*line).to_string(),
+    let old_mid = &old_lines[prefix..old_lines.len().saturating_sub(suffix)];
+    let new_mid = &new_lines[prefix..new_lines.len().saturating_sub(suffix)];
+    let common_mid = old_mid.len().max(new_mid.len());
+    for idx in 0..common_mid {
+        let old = old_mid.get(idx).copied();
+        let new = new_mid.get(idx).copied();
+        let kind = match (old, new) {
+            (Some(o), Some(n)) if o == n => DiffKind::Context,
+            (Some(_), Some(_)) => DiffKind::Modified,
+            (Some(_), None) => DiffKind::Removed,
+            (None, Some(_)) => DiffKind::Added,
+            (None, None) => DiffKind::Context,
+        };
+        out.push(DiffRow {
+            kind,
+            left_no: old.map(|_| prefix + idx),
+            right_no: new.map(|_| prefix + idx),
+            left_text: old.unwrap_or("").to_string(),
+            right_text: new.unwrap_or("").to_string(),
         });
     }
 
-    for line in &new_lines[prefix..new_lines.len().saturating_sub(suffix)] {
-        out.push(DiffLine {
-            kind: DiffKind::Added,
-            text: (*line).to_string(),
-        });
-    }
-
+    let old_suffix_start = old_lines.len().saturating_sub(suffix);
+    let new_suffix_start = new_lines.len().saturating_sub(suffix);
     push_context_window(
         &mut out,
-        &new_lines[new_lines.len().saturating_sub(suffix)..],
+        &new_lines[new_suffix_start..],
+        old_suffix_start,
+        new_suffix_start,
         false,
     );
 
     out
 }
 
-fn push_context_window(out: &mut Vec<DiffLine>, lines: &[&str], is_prefix: bool) {
+fn push_context_window(
+    out: &mut Vec<DiffRow>,
+    lines: &[&str],
+    left_start: usize,
+    right_start: usize,
+    is_prefix: bool,
+) {
     const CONTEXT_LINES: usize = 4;
     if lines.is_empty() {
         return;
     }
 
     if lines.len() <= CONTEXT_LINES {
-        for line in lines {
-            out.push(DiffLine {
+        for (idx, line) in lines.iter().enumerate() {
+            out.push(DiffRow {
                 kind: DiffKind::Context,
-                text: (*line).to_string(),
+                left_no: Some(left_start + idx),
+                right_no: Some(right_start + idx),
+                left_text: (*line).to_string(),
+                right_text: (*line).to_string(),
             });
         }
         return;
     }
 
     if is_prefix {
-        for line in &lines[..CONTEXT_LINES] {
-            out.push(DiffLine {
+        for (idx, line) in lines[..CONTEXT_LINES].iter().enumerate() {
+            out.push(DiffRow {
                 kind: DiffKind::Context,
-                text: (*line).to_string(),
+                left_no: Some(left_start + idx),
+                right_no: Some(right_start + idx),
+                left_text: (*line).to_string(),
+                right_text: (*line).to_string(),
             });
         }
-        out.push(DiffLine {
-            kind: DiffKind::Context,
-            text: format!("... {} lineas sin cambios ...", lines.len() - CONTEXT_LINES),
+        out.push(DiffRow {
+            kind: DiffKind::Elided,
+            left_no: None,
+            right_no: None,
+            left_text: format!("... {} lineas sin cambios ...", lines.len() - CONTEXT_LINES),
+            right_text: String::new(),
         });
     } else {
-        out.push(DiffLine {
-            kind: DiffKind::Context,
-            text: format!("... {} lineas sin cambios ...", lines.len() - CONTEXT_LINES),
+        out.push(DiffRow {
+            kind: DiffKind::Elided,
+            left_no: None,
+            right_no: None,
+            left_text: format!("... {} lineas sin cambios ...", lines.len() - CONTEXT_LINES),
+            right_text: String::new(),
         });
-        for line in &lines[lines.len() - CONTEXT_LINES..] {
-            out.push(DiffLine {
+        let base = lines.len() - CONTEXT_LINES;
+        for (idx, line) in lines[base..].iter().enumerate() {
+            let offset = base + idx;
+            out.push(DiffRow {
                 kind: DiffKind::Context,
-                text: (*line).to_string(),
+                left_no: Some(left_start + offset),
+                right_no: Some(right_start + offset),
+                left_text: (*line).to_string(),
+                right_text: (*line).to_string(),
             });
         }
+    }
+}
+
+fn render_line_cell(line_no: Option<usize>, text: &str) -> String {
+    let rendered = text.replace('\t', "    ");
+    match line_no {
+        Some(no) => format!("{:>4} {}", no + 1, rendered),
+        None => format!("     {}", rendered),
     }
 }

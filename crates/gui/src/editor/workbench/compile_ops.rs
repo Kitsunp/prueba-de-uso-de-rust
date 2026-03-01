@@ -1,13 +1,56 @@
 use super::*;
 
 impl EditorWorkbench {
+    fn append_localization_issues(&mut self, script: &visual_novel_engine::ScriptRaw) {
+        if self.localization_catalog.locales.is_empty() {
+            return;
+        }
+
+        let required = visual_novel_engine::collect_script_localization_keys(script);
+        if required.is_empty() {
+            return;
+        }
+
+        let issues = self
+            .localization_catalog
+            .validate_keys(required.iter().map(std::string::String::as_str));
+        for issue in issues {
+            let message = match issue.kind {
+                visual_novel_engine::LocalizationIssueKind::MissingKey => format!(
+                    "[i18n] Missing key '{}' in locale '{}'",
+                    issue.key, issue.locale
+                ),
+                visual_novel_engine::LocalizationIssueKind::OrphanKey => format!(
+                    "[i18n] Orphan key '{}' in locale '{}'",
+                    issue.key, issue.locale
+                ),
+            };
+            self.validation_issues.push(LintIssue::warning(
+                None,
+                ValidationPhase::Graph,
+                LintCode::CompileError,
+                message,
+            ));
+        }
+    }
+
     pub fn run_dry_validation(&mut self) -> bool {
         let result = crate::editor::compiler::compile_project(&self.node_graph);
         self.current_script = Some(result.script);
         self.last_dry_run_report = result.dry_run_report.clone();
         self.validation_issues = result.issues;
         Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
+        if let Some(script) = self.current_script.as_ref().cloned() {
+            self.append_localization_issues(&script);
+        }
+        if self
+            .selected_issue
+            .is_some_and(|idx| idx >= self.validation_issues.len())
+        {
+            self.selected_issue = None;
+        }
         self.show_validation = !self.validation_issues.is_empty();
+        self.validation_collapsed = false;
 
         let has_errors = self
             .validation_issues
@@ -99,7 +142,17 @@ impl EditorWorkbench {
         self.last_dry_run_report = result.dry_run_report.clone();
         self.validation_issues = result.issues;
         Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
+        if let Some(script) = self.current_script.as_ref().cloned() {
+            self.append_localization_issues(&script);
+        }
+        if self
+            .selected_issue
+            .is_some_and(|idx| idx >= self.validation_issues.len())
+        {
+            self.selected_issue = None;
+        }
         self.show_validation = !self.validation_issues.is_empty();
+        self.validation_collapsed = false;
 
         let Some(repro) = repro else {
             self.toast = Some(ToastState::warning(
@@ -140,7 +193,26 @@ impl EditorWorkbench {
         self.last_dry_run_report = result.dry_run_report.clone();
         self.validation_issues = result.issues;
         Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
-        self.show_validation = !self.validation_issues.is_empty();
+        if let Some(script) = self.current_script.as_ref().cloned() {
+            self.append_localization_issues(&script);
+        }
+        if self
+            .selected_issue
+            .is_some_and(|idx| idx >= self.validation_issues.len())
+        {
+            self.selected_issue = None;
+        }
+        let has_errors = self
+            .validation_issues
+            .iter()
+            .any(|issue| issue.severity == LintSeverity::Error);
+        if self.validation_issues.is_empty() {
+            self.show_validation = false;
+            self.validation_collapsed = false;
+        } else if has_errors {
+            // Keep critical diagnostics visible automatically.
+            self.show_validation = true;
+        }
 
         match result.engine_result {
             Ok(engine) => {

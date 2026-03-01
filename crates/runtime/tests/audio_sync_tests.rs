@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use visual_novel_engine::{
-    ChoiceOptionRaw, ChoiceRaw, Engine, EventRaw, ResourceLimiter, SceneUpdateRaw, ScriptRaw,
-    SecurityPolicy,
+    AudioActionRaw, ChoiceOptionRaw, ChoiceRaw, DialogueRaw, Engine, EventRaw, ResourceLimiter,
+    SceneUpdateRaw, ScriptRaw, SecurityPolicy,
 };
 use vnengine_runtime::{AssetStore, Audio, Input, InputAction, RuntimeApp};
 
@@ -23,6 +23,18 @@ struct NullAssets;
 impl AssetStore for NullAssets {
     fn load_bytes(&self, _id: &str) -> Result<Vec<u8>, String> {
         Err("NullAssets".to_string())
+    }
+}
+
+#[derive(Clone, Default)]
+struct TrackingAssets {
+    calls: Rc<RefCell<Vec<String>>>,
+}
+
+impl AssetStore for TrackingAssets {
+    fn load_bytes(&self, id: &str) -> Result<Vec<u8>, String> {
+        self.calls.borrow_mut().push(id.to_string());
+        Ok(vec![1, 2, 3])
     }
 }
 
@@ -196,4 +208,59 @@ fn audio_does_not_replay_same_music_when_choice_targets_same_track() {
     let state = audio_state.borrow();
     assert_eq!(state.play_calls, vec!["music/theme.ogg".to_string()]);
     assert_eq!(state.last_music.as_deref(), Some("music/theme.ogg"));
+}
+
+#[test]
+fn runtime_prefetch_tracks_upcoming_paths() {
+    let events = vec![
+        EventRaw::Scene(SceneUpdateRaw {
+            background: Some("bg/start.png".to_string()),
+            music: Some("music/intro.ogg".to_string()),
+            characters: Vec::new(),
+        }),
+        EventRaw::Dialogue(DialogueRaw {
+            speaker: "Narrator".to_string(),
+            text: "Hola".to_string(),
+        }),
+        EventRaw::AudioAction(AudioActionRaw {
+            channel: "sfx".to_string(),
+            action: "play".to_string(),
+            asset: Some("sfx/click.ogg".to_string()),
+            volume: Some(1.0),
+            fade_duration_ms: None,
+            loop_playback: Some(false),
+        }),
+        EventRaw::Scene(SceneUpdateRaw {
+            background: Some("bg/next.png".to_string()),
+            music: Some("music/next.ogg".to_string()),
+            characters: Vec::new(),
+        }),
+    ];
+    let labels = BTreeMap::from([("start".to_string(), 0)]);
+    let engine = build_engine(events, labels);
+    let audio_state = Rc::new(RefCell::new(AudioState::default()));
+    let tracked_assets = TrackingAssets::default();
+    let calls_handle = tracked_assets.calls.clone();
+
+    let mut app = RuntimeApp::new(
+        engine,
+        NullInput,
+        SharedAudio {
+            state: audio_state.clone(),
+        },
+        tracked_assets,
+    )
+    .unwrap();
+
+    let calls = calls_handle.borrow().clone();
+    assert!(calls.contains(&"bg/start.png".to_string()));
+    assert!(calls.contains(&"music/intro.ogg".to_string()));
+    assert!(calls.contains(&"sfx/click.ogg".to_string()));
+    assert!(!calls.contains(&"bg/next.png".to_string()));
+
+    calls_handle.borrow_mut().clear();
+    app.set_prefetch_depth(4);
+    let calls = calls_handle.borrow().clone();
+    assert!(calls.contains(&"bg/next.png".to_string()));
+    assert!(calls.contains(&"music/next.ogg".to_string()));
 }

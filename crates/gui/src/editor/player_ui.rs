@@ -1,26 +1,156 @@
 //! Player UI for testing stories in the editor.
-//!
-//! This module provides the interactive player mode UI,
-//! rendering each event type appropriately and handling user input.
 
 use std::time::Duration;
 
 use eframe::egui;
 use tracing::{info, instrument};
-use visual_novel_engine::{ChoiceOptionCompiled, Engine, EventCompiled};
+use visual_novel_engine::{
+    localization_key, ChoiceHistoryEntry, ChoiceOptionCompiled, Engine, EventCompiled,
+    LocalizationCatalog,
+};
 
 use super::node_types::ToastState;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkipMode {
+    Off,
+    ReadOnly,
+    All,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlayerSessionState {
+    pub show_backlog: bool,
+    pub show_choice_history: bool,
+    pub autoplay_enabled: bool,
+    pub autoplay_delay_ms: u64,
+    pub text_chars_per_second: f32,
+    pub skip_mode: SkipMode,
+    pub bgm_volume: f32,
+    pub sfx_volume: f32,
+    pub voice_volume: f32,
+    pub bgm_muted: bool,
+    pub sfx_muted: bool,
+    pub voice_muted: bool,
+    current_ip: Option<u32>,
+    line_started_at_sec: f64,
+    last_auto_step_at_sec: Option<f64>,
+}
+
+impl Default for PlayerSessionState {
+    fn default() -> Self {
+        Self {
+            show_backlog: false,
+            show_choice_history: false,
+            autoplay_enabled: false,
+            autoplay_delay_ms: 1200,
+            text_chars_per_second: 45.0,
+            skip_mode: SkipMode::Off,
+            bgm_volume: 1.0,
+            sfx_volume: 1.0,
+            voice_volume: 1.0,
+            bgm_muted: false,
+            sfx_muted: false,
+            voice_muted: false,
+            current_ip: None,
+            line_started_at_sec: 0.0,
+            last_auto_step_at_sec: None,
+        }
+    }
+}
+
+impl PlayerSessionState {
+    fn on_position_changed(&mut self, position: u32, now_sec: f64) {
+        if self.current_ip != Some(position) {
+            self.current_ip = Some(position);
+            self.line_started_at_sec = now_sec;
+        }
+    }
+
+    fn reset_runtime_progress(&mut self, now_sec: f64) {
+        self.current_ip = None;
+        self.line_started_at_sec = now_sec;
+        self.last_auto_step_at_sec = None;
+    }
+
+    fn reveal_current_line(&mut self, text: &str, now_sec: f64) {
+        let cps = self.text_chars_per_second.max(1.0) as f64;
+        let needed = (text.chars().count() as f64) / cps;
+        self.line_started_at_sec = now_sec - needed;
+    }
+
+    fn visible_text<'a>(&self, text: &'a str, now_sec: f64) -> &'a str {
+        if text.is_empty() {
+            return text;
+        }
+        let cps = self.text_chars_per_second.max(1.0) as f64;
+        let elapsed = (now_sec - self.line_started_at_sec).max(0.0);
+        let visible_chars = (elapsed * cps).floor() as usize;
+        let total_chars = text.chars().count();
+        if visible_chars >= total_chars {
+            return text;
+        }
+        let byte_end = byte_index_for_char(text, visible_chars);
+        &text[..byte_end]
+    }
+
+    fn is_text_fully_revealed(&self, text: &str, now_sec: f64) -> bool {
+        self.visible_text(text, now_sec).len() == text.len()
+    }
+
+    fn should_skip_current(&self, event: &EventCompiled, engine: &Engine) -> bool {
+        match self.skip_mode {
+            SkipMode::Off => false,
+            SkipMode::ReadOnly => {
+                matches!(event, EventCompiled::Dialogue(_)) && engine.is_current_dialogue_read()
+            }
+            SkipMode::All => !matches!(event, EventCompiled::Choice(_)),
+        }
+    }
+
+    fn autoplay_ready(&self, now_sec: f64) -> bool {
+        if !self.autoplay_enabled {
+            return false;
+        }
+        match self.last_auto_step_at_sec {
+            Some(last) => (now_sec - last).max(0.0) >= (self.autoplay_delay_ms as f64) / 1000.0,
+            None => true,
+        }
+    }
+
+    fn mark_auto_step(&mut self, now_sec: f64) {
+        self.last_auto_step_at_sec = Some(now_sec);
+    }
+}
+
+fn byte_index_for_char(text: &str, char_count: usize) -> usize {
+    text.char_indices()
+        .nth(char_count)
+        .map(|(idx, _)| idx)
+        .unwrap_or(text.len())
+}
 
 /// Renders the player mode UI.
 #[instrument(skip_all)]
 pub fn render_player_ui(
     engine: &mut Option<Engine>,
     toast: &mut Option<ToastState>,
+    player: &mut PlayerSessionState,
+    player_locale: &mut String,
+    localization_catalog: &LocalizationCatalog,
     ctx: &egui::Context,
 ) {
     egui::CentralPanel::default().show(ctx, |ui| {
         if let Some(ref mut eng) = engine {
-            render_event_ui(ui, ctx, eng, toast);
+            render_event_ui(
+                ui,
+                ctx,
+                eng,
+                toast,
+                player,
+                player_locale,
+                localization_catalog,
+            );
         } else {
             render_no_script_ui(ui);
         }
@@ -43,32 +173,85 @@ fn render_event_ui(
     ctx: &egui::Context,
     engine: &mut Engine,
     toast: &mut Option<ToastState>,
+    player: &mut PlayerSessionState,
+    player_locale: &mut String,
+    localization_catalog: &LocalizationCatalog,
 ) {
-    ui.horizontal(|ui| {
-        ui.heading("Player Mode");
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Restart").clicked() {
-                info!("Restarting story");
-                if engine.jump_to_label("start").is_ok() {
-                    *toast = Some(ToastState::success("Story restarted"));
-                }
-            }
-        });
-    });
+    let now_sec = ctx.input(|i| i.time);
+    let current_ip = engine.state().position;
+    player.on_position_changed(current_ip, now_sec);
+
+    render_header_bar(ui, engine, toast, player, now_sec);
+    ui.separator();
+    render_player_controls(ui, player, player_locale, localization_catalog);
+    render_backlog_window(ctx, engine, player);
+    render_choice_history_window(ctx, engine, player);
     ui.separator();
 
     match engine.current_event() {
         Ok(event) => {
-            ui.add_space(20.0);
+            if player.should_skip_current(&event, engine) {
+                let _ = engine.step();
+                ctx.request_repaint_after(Duration::from_millis(16));
+                return;
+            }
+
+            ui.add_space(14.0);
             match event {
                 EventCompiled::Dialogue(d) => {
-                    render_dialogue(ui, engine, d.speaker.as_ref(), d.text.as_ref());
+                    let localized_speaker = localize_inline_value(
+                        d.speaker.as_ref(),
+                        player_locale,
+                        localization_catalog,
+                    );
+                    let localized_text =
+                        localize_inline_value(d.text.as_ref(), player_locale, localization_catalog);
+                    if render_dialogue(
+                        ui,
+                        ctx,
+                        player,
+                        &localized_speaker,
+                        &localized_text,
+                        now_sec,
+                    ) {
+                        let _ = engine.step();
+                    }
                 }
                 EventCompiled::Choice(c) => {
-                    render_choice(ui, engine, toast, c.prompt.as_ref(), &c.options);
+                    let localized_prompt = localize_inline_value(
+                        c.prompt.as_ref(),
+                        player_locale,
+                        localization_catalog,
+                    );
+                    let localized_options = c
+                        .options
+                        .iter()
+                        .map(|option| {
+                            localize_inline_value(
+                                option.text.as_ref(),
+                                player_locale,
+                                localization_catalog,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    render_choice(
+                        ui,
+                        engine,
+                        toast,
+                        &localized_prompt,
+                        &localized_options,
+                        &c.options,
+                    );
                 }
                 EventCompiled::Scene(s) => {
-                    render_scene(ui, engine, s.background.as_ref().map(|s| s.as_ref()));
+                    if render_scene(
+                        ui,
+                        player,
+                        s.background.as_ref().map(|s| s.as_ref()),
+                        now_sec,
+                    ) {
+                        let _ = engine.step();
+                    }
                 }
                 EventCompiled::Transition(t) => {
                     render_transition(ui, ctx, engine, t.kind, t.duration_ms);
@@ -89,12 +272,151 @@ fn render_event_ui(
         Err(e) => {
             let error_str = format!("{}", e);
             if error_str.contains("End") || error_str.contains("position") {
-                render_end(ui, engine, toast);
+                render_end(ui, engine, toast, player, now_sec);
             } else {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", e));
             }
         }
     }
+}
+
+fn render_header_bar(
+    ui: &mut egui::Ui,
+    engine: &mut Engine,
+    toast: &mut Option<ToastState>,
+    player: &mut PlayerSessionState,
+    now_sec: f64,
+) {
+    ui.horizontal(|ui| {
+        ui.heading("Player Mode");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("Restart").clicked() {
+                info!("Restarting story");
+                if engine.jump_to_label("start").is_ok() {
+                    engine.clear_session_history();
+                    player.reset_runtime_progress(now_sec);
+                    *toast = Some(ToastState::success("Story restarted"));
+                }
+            }
+        });
+    });
+}
+
+fn render_player_controls(
+    ui: &mut egui::Ui,
+    player: &mut PlayerSessionState,
+    player_locale: &mut String,
+    localization_catalog: &LocalizationCatalog,
+) {
+    ui.horizontal_wrapped(|ui| {
+        if !localization_catalog.locale_codes().is_empty() {
+            egui::ComboBox::from_id_source("player_locale_selector")
+                .selected_text(format!("Locale: {}", player_locale))
+                .show_ui(ui, |ui| {
+                    for locale in localization_catalog.locale_codes() {
+                        ui.selectable_value(player_locale, locale.clone(), locale);
+                    }
+                });
+        }
+
+        ui.checkbox(&mut player.autoplay_enabled, "Auto");
+        ui.add(egui::Slider::new(&mut player.autoplay_delay_ms, 200..=5000).text("Auto delay ms"));
+        ui.add(
+            egui::Slider::new(&mut player.text_chars_per_second, 10.0..=240.0).text("Text chars/s"),
+        );
+
+        egui::ComboBox::from_id_source("player_skip_mode")
+            .selected_text(match player.skip_mode {
+                SkipMode::Off => "Skip: Off",
+                SkipMode::ReadOnly => "Skip: Read",
+                SkipMode::All => "Skip: All",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut player.skip_mode, SkipMode::Off, "Skip: Off");
+                ui.selectable_value(&mut player.skip_mode, SkipMode::ReadOnly, "Skip: Read");
+                ui.selectable_value(&mut player.skip_mode, SkipMode::All, "Skip: All");
+            });
+
+        ui.separator();
+        ui.checkbox(&mut player.show_backlog, "Backlog");
+        ui.checkbox(&mut player.show_choice_history, "Choice history");
+    });
+
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Audio mix (preview):");
+        ui.checkbox(&mut player.bgm_muted, "Mute BGM");
+        ui.add(egui::Slider::new(&mut player.bgm_volume, 0.0..=1.0).text("BGM"));
+        ui.checkbox(&mut player.sfx_muted, "Mute SFX");
+        ui.add(egui::Slider::new(&mut player.sfx_volume, 0.0..=1.0).text("SFX"));
+        ui.checkbox(&mut player.voice_muted, "Mute Voice");
+        ui.add(egui::Slider::new(&mut player.voice_volume, 0.0..=1.0).text("Voice"));
+    });
+}
+
+fn render_backlog_window(ctx: &egui::Context, engine: &Engine, player: &mut PlayerSessionState) {
+    if !player.show_backlog {
+        return;
+    }
+    let mut open = player.show_backlog;
+    egui::Window::new("Backlog")
+        .open(&mut open)
+        .default_width(420.0)
+        .show(ctx, |ui| {
+            if engine.state().history.is_empty() {
+                ui.label("No dialogue history yet.");
+                return;
+            }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for line in engine.state().history.iter().rev() {
+                    ui.group(|ui| {
+                        ui.label(egui::RichText::new(line.speaker.as_ref()).strong());
+                        ui.label(line.text.as_ref());
+                    });
+                    ui.add_space(6.0);
+                }
+            });
+        });
+    player.show_backlog = open;
+}
+
+fn render_choice_history_window(
+    ctx: &egui::Context,
+    engine: &Engine,
+    player: &mut PlayerSessionState,
+) {
+    if !player.show_choice_history {
+        return;
+    }
+    let mut open = player.show_choice_history;
+    egui::Window::new("Choice History")
+        .open(&mut open)
+        .default_width(420.0)
+        .show(ctx, |ui| {
+            if engine.choice_history().is_empty() {
+                ui.label("No choices selected yet.");
+                return;
+            }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for entry in engine.choice_history().iter().rev() {
+                    render_choice_history_entry(ui, entry);
+                    ui.add_space(6.0);
+                }
+            });
+        });
+    player.show_choice_history = open;
+}
+
+fn render_choice_history_entry(ui: &mut egui::Ui, entry: &ChoiceHistoryEntry) {
+    ui.group(|ui| {
+        ui.label(format!(
+            "ip {} -> option {}",
+            entry.event_ip,
+            entry.option_index + 1
+        ));
+        ui.label(format!("\"{}\"", entry.option_text));
+        ui.label(format!("target ip {}", entry.target_ip));
+    });
 }
 
 fn transition_kind_label(kind: u8) -> &'static str {
@@ -147,7 +469,17 @@ fn render_transition(
     }
 }
 
-fn render_dialogue(ui: &mut egui::Ui, engine: &mut Engine, speaker: &str, text: &str) {
+fn render_dialogue(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    player: &mut PlayerSessionState,
+    speaker: &str,
+    text: &str,
+    now_sec: f64,
+) -> bool {
+    let rendered_text = player.visible_text(text, now_sec);
+    let text_complete = player.is_text_fully_revealed(text, now_sec);
+
     egui::Frame::none()
         .fill(egui::Color32::from_rgb(60, 60, 80))
         .rounding(8.0)
@@ -163,17 +495,36 @@ fn render_dialogue(ui: &mut egui::Ui, engine: &mut Engine, speaker: &str, text: 
         .rounding(8.0)
         .inner_margin(egui::Margin::same(16.0))
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(text).size(16.0));
+            ui.label(egui::RichText::new(rendered_text).size(16.0));
         });
 
     ui.add_space(20.0);
+    let mut should_advance = false;
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Continue").clicked() {
-                let _ = engine.step();
+            let label = if text_complete {
+                "Continue"
+            } else {
+                "Show full"
+            };
+            if ui.button(label).clicked() {
+                if text_complete {
+                    should_advance = true;
+                } else {
+                    player.reveal_current_line(text, now_sec);
+                }
             }
         });
     });
+
+    if !text_complete {
+        ctx.request_repaint_after(Duration::from_millis(16));
+    } else if player.autoplay_ready(now_sec) {
+        player.mark_auto_step(now_sec);
+        should_advance = true;
+    }
+
+    should_advance
 }
 
 fn render_choice(
@@ -181,6 +532,7 @@ fn render_choice(
     engine: &mut Engine,
     toast: &mut Option<ToastState>,
     prompt: &str,
+    localized_options: &[String],
     options: &[ChoiceOptionCompiled],
 ) {
     egui::Frame::none()
@@ -193,8 +545,12 @@ fn render_choice(
 
     ui.add_space(15.0);
     for (i, option) in options.iter().enumerate() {
+        let label = localized_options
+            .get(i)
+            .map(String::as_str)
+            .unwrap_or(option.text.as_ref());
         if ui
-            .add(egui::Button::new(option.text.as_ref()).min_size(egui::vec2(200.0, 40.0)))
+            .add(egui::Button::new(label).min_size(egui::vec2(200.0, 40.0)))
             .clicked()
         {
             info!("Choice selected: {} ({})", option.text.as_ref(), i);
@@ -208,7 +564,24 @@ fn render_choice(
     }
 }
 
-fn render_scene(ui: &mut egui::Ui, engine: &mut Engine, background: Option<&str>) {
+fn localize_inline_value(
+    raw: &str,
+    locale: &str,
+    localization_catalog: &LocalizationCatalog,
+) -> String {
+    if let Some(key) = localization_key(raw) {
+        localization_catalog.resolve_or_key(locale, key)
+    } else {
+        raw.to_string()
+    }
+}
+
+fn render_scene(
+    ui: &mut egui::Ui,
+    player: &mut PlayerSessionState,
+    background: Option<&str>,
+    now_sec: f64,
+) -> bool {
     egui::Frame::none()
         .fill(egui::Color32::from_rgb(40, 60, 40))
         .rounding(8.0)
@@ -222,11 +595,22 @@ fn render_scene(ui: &mut egui::Ui, engine: &mut Engine, background: Option<&str>
 
     ui.add_space(10.0);
     if ui.button("Continue").clicked() {
-        let _ = engine.step();
+        return true;
     }
+    if player.autoplay_ready(now_sec) {
+        player.mark_auto_step(now_sec);
+        return true;
+    }
+    false
 }
 
-fn render_end(ui: &mut egui::Ui, engine: &mut Engine, toast: &mut Option<ToastState>) {
+fn render_end(
+    ui: &mut egui::Ui,
+    engine: &mut Engine,
+    toast: &mut Option<ToastState>,
+    player: &mut PlayerSessionState,
+    now_sec: f64,
+) {
     ui.vertical_centered(|ui| {
         ui.add_space(50.0);
         egui::Frame::none()
@@ -241,6 +625,8 @@ fn render_end(ui: &mut egui::Ui, engine: &mut Engine, toast: &mut Option<ToastSt
         if ui.button("Play Again").clicked() {
             info!("Restarting from end");
             if engine.jump_to_label("start").is_ok() {
+                engine.clear_session_history();
+                player.reset_runtime_progress(now_sec);
                 *toast = Some(ToastState::success("Story restarted"));
             }
         }
@@ -249,8 +635,71 @@ fn render_end(ui: &mut egui::Ui, engine: &mut Engine, toast: &mut Option<ToastSt
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use visual_novel_engine::{DialogueRaw, EventRaw, ResourceLimiter, ScriptRaw, SecurityPolicy};
+
+    fn one_dialogue_engine() -> Engine {
+        let script = ScriptRaw::new(
+            vec![EventRaw::Dialogue(DialogueRaw {
+                speaker: "Narrator".to_string(),
+                text: "Hola mundo".to_string(),
+            })],
+            BTreeMap::from([("start".to_string(), 0usize)]),
+        );
+        Engine::new(
+            script,
+            SecurityPolicy::default(),
+            ResourceLimiter::default(),
+        )
+        .expect("engine must build")
+    }
+
     #[test]
-    fn test_player_ui_module_compiles() {
-        assert_eq!(2 + 2, 4);
+    fn text_reveal_is_utf8_safe() {
+        let mut state = PlayerSessionState {
+            text_chars_per_second: 1.0,
+            ..PlayerSessionState::default()
+        };
+        state.on_position_changed(0, 0.0);
+        let line = "Hola こんにちは";
+        let first = state.visible_text(line, 1.0);
+        let second = state.visible_text(line, 5.0);
+
+        assert!(line.starts_with(first));
+        assert!(line.starts_with(second));
+    }
+
+    #[test]
+    fn skip_read_only_only_skips_seen_dialogue() {
+        let state = PlayerSessionState {
+            skip_mode: SkipMode::ReadOnly,
+            ..PlayerSessionState::default()
+        };
+        let mut engine = one_dialogue_engine();
+        let event = engine.current_event().expect("event at start");
+
+        assert!(!state.should_skip_current(&event, &engine));
+
+        let _ = engine.step().expect("step dialogue");
+        engine.jump_to_label("start").expect("restart to start");
+        let event = engine.current_event().expect("event at start again");
+
+        assert!(state.should_skip_current(&event, &engine));
+    }
+
+    #[test]
+    fn autoplay_delay_is_respected() {
+        let mut state = PlayerSessionState {
+            autoplay_enabled: true,
+            autoplay_delay_ms: 1000,
+            ..PlayerSessionState::default()
+        };
+
+        assert!(state.autoplay_ready(0.0));
+        state.mark_auto_step(0.2);
+        assert!(!state.autoplay_ready(0.9));
+        assert!(state.autoplay_ready(1.3));
     }
 }

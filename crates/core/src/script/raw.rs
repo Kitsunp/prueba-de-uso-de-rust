@@ -9,6 +9,7 @@ use crate::event::{
     CondCompiled, CondRaw, DialogueCompiled, EventCompiled, EventRaw, ScenePatchCompiled,
     SceneUpdateCompiled, SharedStr,
 };
+use crate::migration::migrate_script_json_value;
 use crate::resource::ResourceLimiter;
 use crate::version::SCRIPT_SCHEMA_VERSION;
 
@@ -57,10 +58,21 @@ impl ScriptRaw {
 
     /// Parses a JSON script into a raw script structure with resource limits.
     pub fn from_json_with_limits(input: &str, limits: ResourceLimiter) -> VnResult<Self> {
-        let envelope: ScriptEnvelope =
+        let mut payload: serde_json::Value =
             serde_json::from_str(input).map_err(|err| json_deserialize_error(input, &err))?;
+        migrate_script_json_value(&mut payload)
+            .map_err(|err| VnError::InvalidScript(format!("script migration failed: {err}")))?;
+
+        let migrated_input =
+            serde_json::to_string_pretty(&payload).map_err(|err| VnError::Serialization {
+                message: err.to_string(),
+                src: input.to_string(),
+                span: (0, 0).into(),
+            })?;
+        let envelope: ScriptEnvelope = serde_json::from_value(payload)
+            .map_err(|err| json_deserialize_error(&migrated_input, &err))?;
         match envelope.script_schema_version.as_deref() {
-            Some(version) if version == SCRIPT_SCHEMA_VERSION => {
+            Some(version) if is_compatible_schema(version) => {
                 let script = Self {
                     events: envelope.events,
                     labels: envelope.labels,
@@ -294,6 +306,25 @@ impl ScriptRaw {
             start_ip,
             flag_count: flag_map.len() as u32,
         })
+    }
+}
+
+fn is_compatible_schema(version: &str) -> bool {
+    if version == SCRIPT_SCHEMA_VERSION {
+        return true;
+    }
+
+    let Some((major, _)) = version.split_once('.') else {
+        return false;
+    };
+    let Some((current_major, _)) = SCRIPT_SCHEMA_VERSION.split_once('.') else {
+        return false;
+    };
+
+    match (major.parse::<u32>(), current_major.parse::<u32>()) {
+        // Accept legacy major versions when no structural migration is required.
+        (Ok(found_major), Ok(active_major)) => found_major <= active_major,
+        _ => false,
     }
 }
 

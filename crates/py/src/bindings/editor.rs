@@ -8,7 +8,12 @@ use pyo3::prelude::*;
 use visual_novel_engine::{
     CharacterPatchRaw, CharacterPlacementRaw, CmpOp, CondRaw, EventRaw, ScenePatchRaw,
 };
-use visual_novel_gui::editor::{validate_graph, LintIssue, LintSeverity, NodeGraph, StoryNode};
+use visual_novel_gui::editor::quick_fix::{
+    apply_fix, suggest_fixes, QuickFixCandidate, QuickFixRisk,
+};
+use visual_novel_gui::editor::{
+    validate_graph, DiagnosticLanguage, LintIssue, LintSeverity, NodeGraph, StoryNode,
+};
 
 fn parse_cmp_op(op: &str) -> PyResult<CmpOp> {
     match op {
@@ -22,6 +27,53 @@ fn parse_cmp_op(op: &str) -> PyResult<CmpOp> {
             "Unknown comparison op '{op}'"
         ))),
     }
+}
+
+fn select_fix_candidate(
+    issue: &LintIssue,
+    graph: &NodeGraph,
+    include_review: bool,
+) -> Option<QuickFixCandidate> {
+    let candidates = suggest_fixes(issue, graph);
+    if include_review {
+        candidates
+            .iter()
+            .find(|candidate| candidate.risk == QuickFixRisk::Safe)
+            .cloned()
+            .or_else(|| candidates.into_iter().next())
+    } else {
+        candidates
+            .into_iter()
+            .find(|candidate| candidate.risk == QuickFixRisk::Safe)
+    }
+}
+
+fn apply_autofix_pass(graph: &mut NodeGraph, include_review: bool) -> Result<usize, String> {
+    let mut applied = 0usize;
+    let mut guard = 0usize;
+
+    while guard < 128 {
+        guard += 1;
+        let issues = validate_graph(graph);
+        let mut applied_this_round = false;
+
+        for issue in issues {
+            let Some(candidate) = select_fix_candidate(&issue, graph, include_review) else {
+                continue;
+            };
+            if apply_fix(graph, &issue, candidate.fix_id)? {
+                applied += 1;
+                applied_this_round = true;
+                break;
+            }
+        }
+
+        if !applied_this_round {
+            break;
+        }
+    }
+
+    Ok(applied)
 }
 
 // =============================================================================
@@ -288,6 +340,76 @@ impl PyNodeGraph {
         serde_json::to_string_pretty(&script).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    fn search_nodes(&self, query: &str) -> Vec<u32> {
+        self.inner.search_nodes(query)
+    }
+
+    fn validate(&self) -> Vec<PyLintIssue> {
+        validate_graph(&self.inner)
+            .into_iter()
+            .map(PyLintIssue::from)
+            .collect()
+    }
+
+    fn fix_candidates(&self, issue_index: usize) -> PyResult<Vec<PyQuickFixCandidate>> {
+        let issues = validate_graph(&self.inner);
+        let issue = issues
+            .get(issue_index)
+            .ok_or_else(|| PyValueError::new_err(format!("invalid issue index {issue_index}")))?;
+        Ok(suggest_fixes(issue, &self.inner)
+            .into_iter()
+            .map(PyQuickFixCandidate::from)
+            .collect())
+    }
+
+    #[pyo3(signature = (issue_index, include_review=false))]
+    fn autofix_issue(
+        &mut self,
+        issue_index: usize,
+        include_review: bool,
+    ) -> PyResult<Option<String>> {
+        let issues = validate_graph(&self.inner);
+        let issue = issues
+            .get(issue_index)
+            .ok_or_else(|| PyValueError::new_err(format!("invalid issue index {issue_index}")))?;
+        let candidate = select_fix_candidate(issue, &self.inner, include_review)
+            .ok_or_else(|| PyValueError::new_err("no fix candidate available for issue"))?;
+        let changed =
+            apply_fix(&mut self.inner, issue, candidate.fix_id).map_err(PyValueError::new_err)?;
+        if changed {
+            Ok(Some(candidate.fix_id.to_string()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn autofix_safe(&mut self) -> PyResult<usize> {
+        apply_autofix_pass(&mut self.inner, false).map_err(PyValueError::new_err)
+    }
+
+    fn autofix_full(&mut self) -> PyResult<usize> {
+        apply_autofix_pass(&mut self.inner, true).map_err(PyValueError::new_err)
+    }
+
+    fn set_bookmark(&mut self, name: String, node_id: u32) -> bool {
+        self.inner.set_bookmark(name, node_id)
+    }
+
+    fn remove_bookmark(&mut self, name: &str) -> bool {
+        self.inner.remove_bookmark(name)
+    }
+
+    fn bookmark_target(&self, name: &str) -> Option<u32> {
+        self.inner.bookmarked_node(name)
+    }
+
+    fn list_bookmarks(&self) -> Vec<(String, u32)> {
+        self.inner
+            .bookmarks()
+            .map(|(name, node_id)| (name.clone(), *node_id))
+            .collect()
+    }
+
     fn save(&self, path: &str) -> PyResult<()> {
         let script = self.inner.to_script();
         let json = serde_json::to_string_pretty(&script)
@@ -311,6 +433,56 @@ impl PyNodeGraph {
             self.inner.len(),
             self.inner.connection_count()
         )
+    }
+}
+
+/// Quick-fix candidate metadata exposed to Python.
+#[pyclass(name = "QuickFixCandidate")]
+#[derive(Clone)]
+pub struct PyQuickFixCandidate {
+    #[pyo3(get)]
+    fix_id: String,
+    #[pyo3(get)]
+    risk: String,
+    #[pyo3(get)]
+    structural: bool,
+    #[pyo3(get)]
+    title_es: String,
+    #[pyo3(get)]
+    title_en: String,
+    #[pyo3(get)]
+    preconditions_es: String,
+    #[pyo3(get)]
+    preconditions_en: String,
+    #[pyo3(get)]
+    postconditions_es: String,
+    #[pyo3(get)]
+    postconditions_en: String,
+}
+
+#[pymethods]
+impl PyQuickFixCandidate {
+    fn __repr__(&self) -> String {
+        format!(
+            "QuickFixCandidate(fix_id='{}', risk='{}', structural={})",
+            self.fix_id, self.risk, self.structural
+        )
+    }
+}
+
+impl From<QuickFixCandidate> for PyQuickFixCandidate {
+    fn from(candidate: QuickFixCandidate) -> Self {
+        Self {
+            fix_id: candidate.fix_id.to_string(),
+            risk: candidate.risk.label().to_string(),
+            structural: candidate.structural,
+            title_es: candidate.title_es.to_string(),
+            title_en: candidate.title_en.to_string(),
+            preconditions_es: candidate.preconditions_es.to_string(),
+            preconditions_en: candidate.preconditions_en.to_string(),
+            postconditions_es: candidate.postconditions_es.to_string(),
+            postconditions_en: candidate.postconditions_en.to_string(),
+        }
     }
 }
 
@@ -381,11 +553,35 @@ pub struct PyLintIssue {
     #[pyo3(get)]
     event_ip: Option<u32>,
     #[pyo3(get)]
+    edge_from: Option<u32>,
+    #[pyo3(get)]
+    edge_to: Option<u32>,
+    #[pyo3(get)]
+    asset_path: Option<String>,
+    #[pyo3(get)]
     phase: String,
     #[pyo3(get)]
     code: String,
     #[pyo3(get)]
     diagnostic_id: String,
+    #[pyo3(get)]
+    message_es: String,
+    #[pyo3(get)]
+    message_en: String,
+    #[pyo3(get)]
+    root_cause_es: String,
+    #[pyo3(get)]
+    root_cause_en: String,
+    #[pyo3(get)]
+    why_failed_es: String,
+    #[pyo3(get)]
+    why_failed_en: String,
+    #[pyo3(get)]
+    how_to_fix_es: String,
+    #[pyo3(get)]
+    how_to_fix_en: String,
+    #[pyo3(get)]
+    docs_ref: String,
 }
 
 #[pymethods]
@@ -411,9 +607,21 @@ impl From<LintIssue> for PyLintIssue {
             message: issue.message.clone(),
             node_id: issue.node_id,
             event_ip: issue.event_ip,
+            edge_from: issue.edge_from,
+            edge_to: issue.edge_to,
+            asset_path: issue.asset_path.clone(),
             phase: issue.phase.label().to_string(),
             code: issue.code.label().to_string(),
             diagnostic_id: issue.diagnostic_id(),
+            message_es: issue.localized_message(DiagnosticLanguage::Es),
+            message_en: issue.localized_message(DiagnosticLanguage::En),
+            root_cause_es: issue.explanation(DiagnosticLanguage::Es).root_cause,
+            root_cause_en: issue.explanation(DiagnosticLanguage::En).root_cause,
+            why_failed_es: issue.explanation(DiagnosticLanguage::Es).why_failed,
+            why_failed_en: issue.explanation(DiagnosticLanguage::En).why_failed,
+            how_to_fix_es: issue.explanation(DiagnosticLanguage::Es).how_to_fix,
+            how_to_fix_en: issue.explanation(DiagnosticLanguage::En).how_to_fix,
+            docs_ref: issue.explanation(DiagnosticLanguage::En).docs_ref,
         }
     }
 }
@@ -439,6 +647,7 @@ pub fn py_validate_graph(graph: &PyNodeGraph) -> Vec<PyLintIssue> {
 pub fn register_editor_classes(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyStoryNode>()?;
     m.add_class::<PyNodeGraph>()?;
+    m.add_class::<PyQuickFixCandidate>()?;
     m.add_class::<PyLintSeverity>()?;
     m.add_class::<PyLintIssue>()?;
     m.add_function(wrap_pyfunction!(py_validate_graph, m)?)?;
@@ -448,6 +657,7 @@ pub fn register_editor_classes(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::pos2;
     use visual_novel_gui::editor::{LintCode, ValidationPhase};
 
     #[test]
@@ -465,6 +675,60 @@ mod tests {
         assert_eq!(mapped.code, "DRY_PARITY_MISMATCH");
         assert_eq!(mapped.node_id, Some(7));
         assert_eq!(mapped.event_ip, Some(3));
+        assert_eq!(mapped.edge_from, None);
+        assert_eq!(mapped.edge_to, None);
+        assert_eq!(mapped.asset_path, None);
         assert_eq!(mapped.diagnostic_id, "DRYRUN:DRY_PARITY_MISMATCH:7:3");
+        assert!(!mapped.message_es.is_empty());
+        assert!(!mapped.message_en.is_empty());
+        assert!(!mapped.root_cause_es.is_empty());
+        assert!(!mapped.root_cause_en.is_empty());
+        assert!(!mapped.why_failed_es.is_empty());
+        assert!(!mapped.why_failed_en.is_empty());
+        assert!(!mapped.how_to_fix_es.is_empty());
+        assert!(!mapped.how_to_fix_en.is_empty());
+        assert!(mapped.docs_ref.starts_with("docs/"));
+    }
+
+    #[test]
+    fn autofix_helper_selects_review_when_requested() {
+        let graph = NodeGraph::new();
+        let issue = validate_graph(&graph)
+            .into_iter()
+            .find(|entry| entry.code == LintCode::MissingStart)
+            .expect("missing start issue expected");
+
+        assert!(select_fix_candidate(&issue, &graph, false).is_none());
+        let candidate = select_fix_candidate(&issue, &graph, true)
+            .expect("review selection should include structural candidate");
+        assert_eq!(candidate.fix_id, "graph_add_start");
+    }
+
+    #[test]
+    fn autofix_safe_pass_applies_deterministic_fix() {
+        let mut graph = NodeGraph::new();
+        let start = graph.add_node(StoryNode::Start, pos2(0.0, 0.0));
+        let dialogue = graph.add_node(
+            StoryNode::Dialogue {
+                speaker: "".to_string(),
+                text: "Hola".to_string(),
+            },
+            pos2(0.0, 120.0),
+        );
+        let end = graph.add_node(StoryNode::End, pos2(0.0, 240.0));
+        graph.connect(start, dialogue);
+        graph.connect(dialogue, end);
+
+        let applied =
+            apply_autofix_pass(&mut graph, false).expect("safe autofix pass should complete");
+        assert!(applied >= 1);
+
+        let remaining = validate_graph(&graph);
+        assert!(
+            remaining
+                .iter()
+                .all(|issue| issue.code != LintCode::EmptySpeakerName),
+            "empty speaker issue should be fixed"
+        );
     }
 }

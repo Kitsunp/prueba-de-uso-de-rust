@@ -88,6 +88,78 @@ pub struct AssetStore {
     byte_cache: Mutex<ByteCache>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetFingerprintEntry {
+    pub rel_path: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetFingerprintCatalog {
+    pub entries: BTreeMap<String, AssetFingerprintEntry>,
+    pub dedup_groups: BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlatformBudget {
+    pub max_total_bytes: u64,
+    pub max_assets: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BudgetReport {
+    pub total_bytes: u64,
+    pub asset_count: usize,
+    pub duplicate_blob_count: usize,
+    pub unique_blob_count: usize,
+    pub within_budget: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlatformTarget {
+    Desktop,
+    Mobile,
+    Web,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetKind {
+    Image,
+    Audio,
+    Other,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TranscodePreset {
+    pub target: PlatformTarget,
+    pub image_extension: &'static str,
+    pub audio_extension: &'static str,
+    pub image_quality: u8,
+    pub audio_bitrate_kbps: u16,
+    pub max_texture_side: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TranscodeRecommendation {
+    pub rel_path: String,
+    pub kind: AssetKind,
+    pub source_extension: String,
+    pub target_extension: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScenePreloadPlan {
+    pub by_scene: BTreeMap<String, Vec<String>>,
+    pub unique_assets: Vec<String>,
+    pub total_references: usize,
+    pub deduped_references: usize,
+    pub cache_hit_rate: f32,
+}
+
 #[derive(Debug)]
 struct CachedBytes {
     data: Vec<u8>,
@@ -155,6 +227,54 @@ impl ByteCache {
             },
         );
         self.current_bytes = self.current_bytes.saturating_add(bytes);
+    }
+}
+
+impl PlatformTarget {
+    pub fn default_budget(self) -> PlatformBudget {
+        match self {
+            PlatformTarget::Desktop => PlatformBudget {
+                max_total_bytes: 2 * 1024 * 1024 * 1024,
+                max_assets: 20_000,
+            },
+            PlatformTarget::Mobile => PlatformBudget {
+                max_total_bytes: 512 * 1024 * 1024,
+                max_assets: 10_000,
+            },
+            PlatformTarget::Web => PlatformBudget {
+                max_total_bytes: 256 * 1024 * 1024,
+                max_assets: 8_000,
+            },
+        }
+    }
+
+    pub fn default_transcode_preset(self) -> TranscodePreset {
+        match self {
+            PlatformTarget::Desktop => TranscodePreset {
+                target: self,
+                image_extension: "png",
+                audio_extension: "ogg",
+                image_quality: 95,
+                audio_bitrate_kbps: 192,
+                max_texture_side: 4096,
+            },
+            PlatformTarget::Mobile => TranscodePreset {
+                target: self,
+                image_extension: "webp",
+                audio_extension: "ogg",
+                image_quality: 85,
+                audio_bitrate_kbps: 128,
+                max_texture_side: 2048,
+            },
+            PlatformTarget::Web => TranscodePreset {
+                target: self,
+                image_extension: "webp",
+                audio_extension: "mp3",
+                image_quality: 80,
+                audio_bitrate_kbps: 128,
+                max_texture_side: 2048,
+            },
+        }
     }
 }
 
@@ -290,6 +410,165 @@ impl AssetStore {
     }
 }
 
+impl AssetFingerprintCatalog {
+    pub fn build(root: &Path, allowed_extensions: &[&str]) -> Result<Self, AssetError> {
+        let mut entries = BTreeMap::new();
+        let mut dedup_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let allowed: HashSet<String> = allowed_extensions
+            .iter()
+            .map(|value| value.to_ascii_lowercase())
+            .collect();
+        let mut stack = vec![root.to_path_buf()];
+
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+
+                if !is_allowed_by_extension(&path, &allowed) {
+                    continue;
+                }
+
+                let rel = path
+                    .strip_prefix(root)
+                    .map_err(|_| AssetError::Traversal)?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let bytes = fs::read(&path)?;
+                let size = bytes.len() as u64;
+                let sha256 = sha256_hex(&bytes);
+                entries.insert(
+                    rel.clone(),
+                    AssetFingerprintEntry {
+                        rel_path: rel.clone(),
+                        sha256: sha256.clone(),
+                        size,
+                    },
+                );
+                dedup_groups.entry(sha256).or_default().push(rel);
+            }
+        }
+
+        Ok(Self {
+            entries,
+            dedup_groups,
+        })
+    }
+
+    pub fn unique_blob_count(&self) -> usize {
+        self.dedup_groups.len()
+    }
+
+    pub fn duplicate_blob_count(&self) -> usize {
+        self.dedup_groups
+            .values()
+            .map(Vec::len)
+            .filter(|count| *count > 1)
+            .map(|count| count - 1)
+            .sum()
+    }
+
+    pub fn budget_report(&self, budget: PlatformBudget) -> BudgetReport {
+        let total_bytes = self.entries.values().map(|entry| entry.size).sum();
+        let asset_count = self.entries.len();
+        let within_budget =
+            total_bytes <= budget.max_total_bytes && asset_count <= budget.max_assets;
+        BudgetReport {
+            total_bytes,
+            asset_count,
+            duplicate_blob_count: self.duplicate_blob_count(),
+            unique_blob_count: self.unique_blob_count(),
+            within_budget,
+        }
+    }
+
+    pub fn transcode_recommendations(
+        &self,
+        target: PlatformTarget,
+    ) -> Vec<TranscodeRecommendation> {
+        let preset = target.default_transcode_preset();
+        let mut output = Vec::new();
+
+        for entry in self.entries.values() {
+            let source_extension = Path::new(&entry.rel_path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.to_ascii_lowercase())
+                .unwrap_or_default();
+            let kind = infer_asset_kind(&entry.rel_path);
+            let target_extension = match kind {
+                AssetKind::Image => Some(preset.image_extension),
+                AssetKind::Audio => Some(preset.audio_extension),
+                AssetKind::Other => None,
+            };
+
+            let Some(target_extension) = target_extension else {
+                continue;
+            };
+            if source_extension == target_extension {
+                continue;
+            }
+
+            output.push(TranscodeRecommendation {
+                rel_path: entry.rel_path.clone(),
+                kind,
+                source_extension,
+                target_extension: target_extension.to_string(),
+                reason: format!(
+                    "target={:?} prefers .{} for {:?} assets",
+                    target, target_extension, kind
+                ),
+            });
+        }
+
+        output
+    }
+
+    pub fn scene_preload_plan(scene_assets: &BTreeMap<String, Vec<String>>) -> ScenePreloadPlan {
+        let mut by_scene = BTreeMap::new();
+        let mut unique = std::collections::BTreeSet::new();
+        let mut total_references = 0usize;
+
+        for (scene_id, raw_assets) in scene_assets {
+            let mut local_seen = HashSet::new();
+            let mut local_assets = Vec::new();
+            for asset in raw_assets {
+                let trimmed = asset.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                total_references = total_references.saturating_add(1);
+                if local_seen.insert(trimmed.to_string()) {
+                    local_assets.push(trimmed.to_string());
+                }
+                unique.insert(trimmed.to_string());
+            }
+            by_scene.insert(scene_id.clone(), local_assets);
+        }
+
+        let unique_assets: Vec<String> = unique.into_iter().collect();
+        let deduped_references = unique_assets.len();
+        let cache_hit_rate = if total_references == 0 {
+            1.0
+        } else {
+            ((total_references.saturating_sub(deduped_references)) as f32)
+                / (total_references as f32)
+        };
+
+        ScenePreloadPlan {
+            by_scene,
+            unique_assets,
+            total_references,
+            deduped_references,
+            cache_hit_rate,
+        }
+    }
+}
+
 pub struct LoadedImage {
     pub name: String,
     pub size: [usize; 2],
@@ -314,6 +593,28 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     let digest = hasher.finalize();
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn is_allowed_by_extension(path: &Path, allowed: &HashSet<String>) -> bool {
+    if allowed.is_empty() {
+        return true;
+    }
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| allowed.contains(&ext.to_ascii_lowercase()))
+        .unwrap_or(false)
+}
+
+fn infer_asset_kind(path: &str) -> AssetKind {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("png" | "jpg" | "jpeg" | "webp" | "bmp") => AssetKind::Image,
+        Some("ogg" | "wav" | "flac" | "mp3" | "m4a") => AssetKind::Audio,
+        _ => AssetKind::Other,
+    }
 }
 
 #[cfg(test)]
@@ -363,6 +664,164 @@ mod tests {
             .load_bytes("audio/theme.ogg")
             .expect("second read should be served from cache");
         assert_eq!(second, vec![1, 2, 3, 4]);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fingerprint_catalog_detects_duplicate_blobs_and_budget() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock must be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("vn_assets_fingerprint_{unique}"));
+        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
+        std::fs::create_dir_all(root.join("bg")).expect("bg dir");
+
+        std::fs::write(root.join("audio/a.ogg"), [1u8, 2, 3]).expect("write a");
+        std::fs::write(root.join("audio/b.ogg"), [1u8, 2, 3]).expect("write b duplicate");
+        std::fs::write(root.join("bg/c.png"), [9u8, 8, 7, 6]).expect("write c");
+
+        let catalog = AssetFingerprintCatalog::build(&root, &["ogg", "png"]).expect("catalog");
+        assert_eq!(catalog.entries.len(), 3);
+        assert_eq!(catalog.unique_blob_count(), 2);
+        assert_eq!(catalog.duplicate_blob_count(), 1);
+
+        let ok_budget = PlatformBudget {
+            max_total_bytes: 32,
+            max_assets: 8,
+        };
+        let report = catalog.budget_report(ok_budget);
+        assert!(report.within_budget);
+        assert_eq!(report.asset_count, 3);
+
+        let tight_budget = PlatformBudget {
+            max_total_bytes: 4,
+            max_assets: 2,
+        };
+        let report = catalog.budget_report(tight_budget);
+        assert!(!report.within_budget);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn asset_fingerprint_stability() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock must be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("vn_assets_stability_{unique}"));
+        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
+        std::fs::create_dir_all(root.join("bg")).expect("bg dir");
+        std::fs::write(root.join("audio/theme.ogg"), [1u8, 3, 5, 7]).expect("write audio");
+        std::fs::write(root.join("bg/room.png"), [9u8, 8, 7, 6]).expect("write image");
+
+        let first = AssetFingerprintCatalog::build(&root, &["ogg", "png"]).expect("catalog 1");
+        let second = AssetFingerprintCatalog::build(&root, &["ogg", "png"]).expect("catalog 2");
+
+        assert_eq!(first.entries, second.entries);
+        assert_eq!(first.dedup_groups, second.dedup_groups);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dedup_reduces_duplicate_load() {
+        let scenes = std::collections::BTreeMap::from([
+            (
+                "intro".to_string(),
+                vec![
+                    "bg/room.png".to_string(),
+                    "music/theme.ogg".to_string(),
+                    "bg/room.png".to_string(),
+                ],
+            ),
+            (
+                "choice_a".to_string(),
+                vec![
+                    "bg/room.png".to_string(),
+                    "music/theme.ogg".to_string(),
+                    "sfx/click.ogg".to_string(),
+                ],
+            ),
+        ]);
+
+        let plan = AssetFingerprintCatalog::scene_preload_plan(&scenes);
+        assert_eq!(plan.total_references, 6);
+        assert_eq!(plan.deduped_references, 3);
+        assert!(plan.cache_hit_rate > 0.4);
+    }
+
+    #[test]
+    fn platform_budget_enforcement() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock must be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("vn_assets_budget_platform_{unique}"));
+        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
+        std::fs::write(root.join("audio/theme.ogg"), [1u8, 2, 3, 4, 5]).expect("write audio");
+        let catalog = AssetFingerprintCatalog::build(&root, &["ogg"]).expect("catalog");
+
+        let mobile_budget = PlatformTarget::Mobile.default_budget();
+        assert!(catalog.budget_report(mobile_budget).within_budget);
+
+        let tight = PlatformBudget {
+            max_total_bytes: 2,
+            max_assets: 1,
+        };
+        assert!(!catalog.budget_report(tight).within_budget);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn scene_preload_hit_rate() {
+        let scenes = std::collections::BTreeMap::from([
+            (
+                "s1".to_string(),
+                vec!["bg/a.png".to_string(), "music/a.ogg".to_string()],
+            ),
+            (
+                "s2".to_string(),
+                vec!["bg/a.png".to_string(), "music/b.ogg".to_string()],
+            ),
+            (
+                "s3".to_string(),
+                vec!["bg/a.png".to_string(), "music/a.ogg".to_string()],
+            ),
+        ]);
+
+        let plan = AssetFingerprintCatalog::scene_preload_plan(&scenes);
+        assert_eq!(plan.total_references, 6);
+        assert_eq!(plan.deduped_references, 3);
+        assert!((plan.cache_hit_rate - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn transcode_recommendations_follow_platform_presets() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock must be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("vn_assets_transcode_{unique}"));
+        std::fs::create_dir_all(root.join("audio")).expect("audio dir");
+        std::fs::create_dir_all(root.join("bg")).expect("bg dir");
+        std::fs::write(root.join("audio/theme.wav"), [1u8, 2, 3]).expect("write audio");
+        std::fs::write(root.join("bg/room.png"), [7u8, 8, 9]).expect("write image");
+        std::fs::write(root.join("bg/skip.webp"), [0u8, 1, 2]).expect("write webp");
+
+        let catalog =
+            AssetFingerprintCatalog::build(&root, &["wav", "png", "webp"]).expect("catalog");
+        let mobile = catalog.transcode_recommendations(PlatformTarget::Mobile);
+        assert!(mobile
+            .iter()
+            .any(|item| item.rel_path == "audio/theme.wav" && item.target_extension == "ogg"));
+        assert!(mobile
+            .iter()
+            .any(|item| item.rel_path == "bg/room.png" && item.target_extension == "webp"));
+        assert!(!mobile.iter().any(|item| item.rel_path == "bg/skip.webp"));
 
         let _ = std::fs::remove_dir_all(root);
     }

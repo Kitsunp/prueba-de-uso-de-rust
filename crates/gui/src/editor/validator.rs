@@ -33,6 +33,7 @@ pub enum LintCode {
     MissingStart,
     MultipleStart,
     UnreachableNode,
+    PotentialLoop,
     DeadEnd,
     ChoiceNoOptions,
     ChoiceOptionUnlinked,
@@ -69,6 +70,7 @@ impl LintCode {
             LintCode::MissingStart => "VAL_START_MISSING",
             LintCode::MultipleStart => "VAL_START_MULTIPLE",
             LintCode::UnreachableNode => "VAL_UNREACHABLE",
+            LintCode::PotentialLoop => "VAL_POTENTIAL_LOOP",
             LintCode::DeadEnd => "VAL_DEAD_END",
             LintCode::ChoiceNoOptions => "VAL_CHOICE_EMPTY",
             LintCode::ChoiceOptionUnlinked => "VAL_CHOICE_UNLINKED",
@@ -105,6 +107,9 @@ impl LintCode {
 pub struct LintIssue {
     pub node_id: Option<u32>,
     pub event_ip: Option<u32>,
+    pub edge_from: Option<u32>,
+    pub edge_to: Option<u32>,
+    pub asset_path: Option<String>,
     pub severity: LintSeverity,
     pub phase: ValidationPhase,
     pub code: LintCode,
@@ -140,6 +145,9 @@ impl LintIssue {
         Self {
             node_id,
             event_ip: None,
+            edge_from: None,
+            edge_to: None,
+            asset_path: None,
             severity,
             phase,
             code,
@@ -149,6 +157,17 @@ impl LintIssue {
 
     pub fn with_event_ip(mut self, event_ip: Option<u32>) -> Self {
         self.event_ip = event_ip;
+        self
+    }
+
+    pub fn with_edge(mut self, edge_from: Option<u32>, edge_to: Option<u32>) -> Self {
+        self.edge_from = edge_from;
+        self.edge_to = edge_to;
+        self
+    }
+
+    pub fn with_asset_path(mut self, asset_path: Option<String>) -> Self {
+        self.asset_path = asset_path;
         self
     }
 

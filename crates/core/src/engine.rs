@@ -1,5 +1,6 @@
 //! Runtime engine that executes compiled scripts.
 
+use std::collections::{BTreeSet, VecDeque};
 use std::time::Duration;
 
 use crate::assets::AssetId;
@@ -13,6 +14,16 @@ use crate::security::SecurityPolicy;
 use crate::state::EngineState;
 
 const DEFAULT_FADE_MS: u64 = 500;
+const CHOICE_HISTORY_LIMIT: usize = 512;
+
+/// Recorded decision made by the player at a Choice event.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChoiceHistoryEntry {
+    pub event_ip: u32,
+    pub option_index: usize,
+    pub option_text: String,
+    pub target_ip: u32,
+}
 
 /// Execution engine for compiled scripts.
 #[derive(Clone, Debug)]
@@ -21,6 +32,8 @@ pub struct Engine {
     state: EngineState,
     policy: SecurityPolicy,
     queued_audio: Vec<AudioCommand>,
+    read_dialogue_ips: BTreeSet<u32>,
+    choice_history: VecDeque<ChoiceHistoryEntry>,
 }
 
 impl Engine {
@@ -44,6 +57,8 @@ impl Engine {
             state,
             policy,
             queued_audio,
+            read_dialogue_ips: BTreeSet::new(),
+            choice_history: VecDeque::with_capacity(64),
         })
     }
 
@@ -65,6 +80,8 @@ impl Engine {
             state,
             policy,
             queued_audio,
+            read_dialogue_ips: BTreeSet::new(),
+            choice_history: VecDeque::with_capacity(64),
         })
     }
 
@@ -116,6 +133,12 @@ impl Engine {
                     .options
                     .get(option_index)
                     .ok_or(VnError::InvalidChoice)?;
+                self.record_choice_decision(
+                    self.state.position,
+                    option_index,
+                    option.text.as_ref(),
+                    option.target_ip,
+                );
                 self.jump_to_ip(option.target_ip)?;
             }
             _ => return Err(VnError::InvalidChoice),
@@ -128,6 +151,7 @@ impl Engine {
         event: &EventCompiled,
         audio_commands: &mut Vec<AudioCommand>,
     ) -> VnResult<()> {
+        let current_ip = self.state.position;
         match event {
             EventCompiled::Jump { target_ip } => self.jump_to_ip(*target_ip),
             EventCompiled::SetFlag { flag_id, value } => {
@@ -143,6 +167,7 @@ impl Engine {
             EventCompiled::Choice(_) => Ok(()),
             EventCompiled::Dialogue(dialogue) => {
                 self.state.record_dialogue(dialogue);
+                self.read_dialogue_ips.insert(current_ip);
                 self.advance_position()
             }
             EventCompiled::SetVar { var_id, value } => {
@@ -369,6 +394,21 @@ impl Engine {
         assets
     }
 
+    /// Returns unique upcoming asset paths that can be prefetched safely.
+    ///
+    /// This intentionally excludes non-path semantic fields (for example, character display names)
+    /// to avoid prefetching invalid resources.
+    pub fn peek_next_asset_paths(&self, depth: usize) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut paths = Vec::new();
+        let start = self.state.position as usize;
+        let end = (start + depth).min(self.script.events.len());
+        for event in &self.script.events[start..end] {
+            collect_prefetch_paths_from_event(event, &mut seen, &mut paths);
+        }
+        paths
+    }
+
     /// Returns compiled script labels.
     pub fn labels(&self) -> &std::collections::BTreeMap<String, u32> {
         &self.script.labels
@@ -399,7 +439,31 @@ impl Engine {
             )));
         }
         self.state = state;
+        self.read_dialogue_ips.clear();
+        self.choice_history.clear();
         Ok(())
+    }
+
+    /// Returns `true` if a dialogue at the given instruction pointer was already displayed.
+    pub fn is_dialogue_read(&self, ip: u32) -> bool {
+        self.read_dialogue_ips.contains(&ip)
+    }
+
+    /// Returns `true` when the current event is a dialogue previously displayed.
+    pub fn is_current_dialogue_read(&self) -> bool {
+        matches!(self.current_event_ref(), Ok(EventCompiled::Dialogue(_)))
+            && self.read_dialogue_ips.contains(&self.state.position)
+    }
+
+    /// Returns the current in-memory choice history.
+    pub fn choice_history(&self) -> &VecDeque<ChoiceHistoryEntry> {
+        &self.choice_history
+    }
+
+    /// Clears runtime-only session history (read dialogue marks and choice history).
+    pub fn clear_session_history(&mut self) {
+        self.read_dialogue_ips.clear();
+        self.choice_history.clear();
     }
 
     /// Renders the current event using the provided renderer.
@@ -452,6 +516,88 @@ fn append_music_delta(
         None => audio_commands.push(AudioCommand::StopBgm {
             fade_out: Duration::from_millis(DEFAULT_FADE_MS),
         }),
+    }
+}
+
+fn collect_prefetch_paths_from_event(
+    event: &EventCompiled,
+    seen: &mut std::collections::HashSet<String>,
+    output: &mut Vec<String>,
+) {
+    match event {
+        EventCompiled::Scene(scene) => {
+            if let Some(background) = &scene.background {
+                push_unique_prefetch_path(background.as_ref(), seen, output);
+            }
+            if let Some(music) = &scene.music {
+                push_unique_prefetch_path(music.as_ref(), seen, output);
+            }
+            for character in &scene.characters {
+                if let Some(expression) = &character.expression {
+                    push_unique_prefetch_path(expression.as_ref(), seen, output);
+                }
+            }
+        }
+        EventCompiled::Patch(patch) => {
+            if let Some(background) = &patch.background {
+                push_unique_prefetch_path(background.as_ref(), seen, output);
+            }
+            if let Some(music) = &patch.music {
+                push_unique_prefetch_path(music.as_ref(), seen, output);
+            }
+            for character in &patch.add {
+                if let Some(expression) = &character.expression {
+                    push_unique_prefetch_path(expression.as_ref(), seen, output);
+                }
+            }
+            for character in &patch.update {
+                if let Some(expression) = &character.expression {
+                    push_unique_prefetch_path(expression.as_ref(), seen, output);
+                }
+            }
+        }
+        EventCompiled::AudioAction(action) => {
+            if action.action == 0 {
+                if let Some(asset) = &action.asset {
+                    push_unique_prefetch_path(asset.as_ref(), seen, output);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_unique_prefetch_path(
+    value: &str,
+    seen: &mut std::collections::HashSet<String>,
+    output: &mut Vec<String>,
+) {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if seen.insert(trimmed.to_string()) {
+        output.push(trimmed.to_string());
+    }
+}
+
+impl Engine {
+    fn record_choice_decision(
+        &mut self,
+        event_ip: u32,
+        option_index: usize,
+        option_text: &str,
+        target_ip: u32,
+    ) {
+        if self.choice_history.len() >= CHOICE_HISTORY_LIMIT {
+            self.choice_history.pop_front();
+        }
+        self.choice_history.push_back(ChoiceHistoryEntry {
+            event_ip,
+            option_index,
+            option_text: option_text.to_string(),
+            target_ip,
+        });
     }
 }
 

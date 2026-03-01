@@ -60,6 +60,46 @@ class Engine:
             raise RuntimeError("Native engine module does not provide ui_state")
         return self._engine.ui_state()
 
+    def is_current_dialogue_read(self) -> bool:
+        """Return whether the current dialogue event was already shown in this session."""
+
+        if not hasattr(self._engine, "is_current_dialogue_read"):
+            raise RuntimeError(
+                "Native engine module does not provide read-tracking bindings"
+            )
+        return bool(self._engine.is_current_dialogue_read())
+
+    def choice_history(self) -> Any:
+        """Return recorded choice decisions for the current engine session."""
+
+        if not hasattr(self._engine, "choice_history"):
+            raise RuntimeError(
+                "Native engine module does not provide choice-history bindings"
+            )
+        return self._engine.choice_history()
+
+    def supported_event_types(self) -> Any:
+        """Return event types supported by the native runtime binding."""
+
+        if hasattr(self._engine, "supported_event_types"):
+            return self._engine.supported_event_types()
+        # Conservative fallback for very old native modules.
+        return ["dialogue", "choice", "scene", "jump", "set_flag"]
+
+    def set_prefetch_depth(self, depth: int) -> None:
+        """Configure lookahead depth used by native prefetch hints."""
+
+        if not hasattr(self._engine, "set_prefetch_depth"):
+            raise RuntimeError("Native engine module does not provide prefetch API")
+        self._engine.set_prefetch_depth(depth)
+
+    def prefetch_assets_hint(self) -> Any:
+        """Return upcoming asset paths suggested for prefetching."""
+
+        if hasattr(self._engine, "prefetch_assets_hint"):
+            return self._engine.prefetch_assets_hint()
+        return []
+
     @property
     def raw(self) -> Any:
         """Return the underlying native engine instance."""

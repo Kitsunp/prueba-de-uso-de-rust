@@ -8,6 +8,7 @@
 
 mod asset_browser;
 pub mod compiler;
+mod diagnostics;
 mod diff_dialog;
 mod errors;
 pub mod execution_contract;
@@ -21,6 +22,7 @@ mod node_rendering;
 mod node_types;
 mod player_ui;
 pub mod project_io;
+pub mod quick_fix;
 mod script_sync;
 mod timeline_panel;
 mod undo;
@@ -30,6 +32,7 @@ pub mod visual_composer;
 mod workbench;
 
 pub use asset_browser::AssetBrowserPanel;
+pub use diagnostics::{DiagnosticExplanation, DiagnosticLanguage};
 pub use diff_dialog::DiffDialog;
 pub use errors::EditorError;
 pub use graph_panel::GraphPanel;

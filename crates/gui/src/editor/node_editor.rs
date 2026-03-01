@@ -242,10 +242,13 @@ impl<'a> NodeEditorPanel<'a> {
                 .pan_by(egui::vec2(-pan_speed, 0.0) / self.graph.zoom());
         }
 
-        // Zoom with scroll wheel
-        let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll_delta.abs() > 0.0 {
-            self.graph.zoom_by(scroll_delta * 0.002);
+        // Zoom with scroll wheel only when pointer is over the graph canvas.
+        // This avoids stealing wheel input from dialogs/panels (e.g. save diff).
+        if response.hovered() {
+            let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll_delta.abs() > 0.0 {
+                self.graph.zoom_by(scroll_delta * 0.002);
+            }
         }
 
         // Double-click to reset view

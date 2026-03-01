@@ -5,8 +5,9 @@ use visual_novel_gui::{run_app as run_gui, GuiError};
 
 pub use bindings::{
     register_editor_classes, vn_error_to_py, PyAudio, PyEngine, PyGraphEdge, PyGraphNode,
-    PyGraphStats, PyKeyframe, PyLintIssue, PyLintSeverity, PyNodeGraph, PyResourceConfig,
-    PyScriptBuilder, PyStoryGraph, PyStoryNode, PyTimeline, PyTrack, PyVnConfig, StepResult,
+    PyGraphStats, PyKeyframe, PyLintIssue, PyLintSeverity, PyNodeGraph, PyQuickFixCandidate,
+    PyResourceConfig, PyScriptBuilder, PyStoryGraph, PyStoryNode, PyTimeline, PyTrack, PyVnConfig,
+    StepResult,
 };
 
 #[pymodule]
