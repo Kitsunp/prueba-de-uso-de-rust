@@ -99,17 +99,29 @@ jobs:
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
       - name: Generate SBOM
-        run: cargo cyclonedx --format json --all --output-file sbom.cdx.json
+        run: cargo cyclonedx --format json --all --override-filename sbom.cdx
       - name: Validate SBOM content
         run: |
           python3 - <<'PY'
           import json
-          with open("sbom.cdx.json","r",encoding="utf-8") as f:
-              payload = json.load(f)
-          components = payload.get("components", [])
-          if not components:
-              raise SystemExit("SBOM does not contain components")
-          print(f"SBOM components: {len(components)}")
+          from pathlib import Path
+
+          files = sorted(Path(".").rglob("sbom.cdx.json"))
+          if not files:
+              raise SystemExit("SBOM files not found (expected at least one sbom.cdx.json)")
+
+          total_components = 0
+          for file in files:
+              payload = json.loads(file.read_text(encoding="utf-8"))
+              if payload.get("bomFormat") != "CycloneDX":
+                  raise SystemExit(f"{file}: bomFormat is not CycloneDX")
+              components = payload.get("components", [])
+              if not components:
+                  raise SystemExit(f"{file}: SBOM does not contain components")
+              total_components += len(components)
+
+          print(f"SBOM files: {len(files)}")
+          print(f"SBOM total components: {total_components}")
           PY
 
   fuzz-smoke:
