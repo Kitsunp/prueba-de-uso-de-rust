@@ -6,8 +6,8 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use visual_novel_engine::{
-    compute_script_id, Engine, ResourceLimiter, SaveData, ScriptCompiled, ScriptRaw,
-    SecurityPolicy, UiTrace, SCRIPT_SCHEMA_VERSION,
+    compute_script_id, run_repro_case, Engine, ReproCase, ResourceLimiter, SaveData,
+    ScriptCompiled, ScriptRaw, SecurityPolicy, UiTrace, SCRIPT_SCHEMA_VERSION,
 };
 use walkdir::WalkDir;
 
@@ -48,6 +48,14 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
+    /// Run a local repro-case JSON and evaluate its oracle/monitors.
+    ReproRun {
+        repro: PathBuf,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+    },
 }
 
 #[derive(Serialize)]
@@ -81,6 +89,11 @@ fn main() -> Result<()> {
         } => trace_script(&script, steps, &output),
         Command::VerifySave { save, script } => verify_save(&save, &script),
         Command::Manifest { assets, output } => build_manifest(&assets, &output),
+        Command::ReproRun {
+            repro,
+            output,
+            strict,
+        } => run_repro_bundle(&repro, output.as_deref(), strict),
     }
 }
 
@@ -193,4 +206,35 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     let digest = hasher.finalize();
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn run_repro_bundle(path: &Path, output: Option<&Path>, strict: bool) -> Result<()> {
+    let raw = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let case = ReproCase::from_json(&raw).context("parse repro case")?;
+    let report = run_repro_case(&case);
+
+    println!(
+        "repro '{}' => stop_reason={} oracle_triggered={} matched_monitors={}",
+        case.title,
+        report.stop_reason.label(),
+        report.oracle_triggered,
+        report.matched_monitors.join(",")
+    );
+    if let Some(event_ip) = report.failing_event_ip {
+        println!("failing_event_ip={event_ip}");
+    }
+    println!("stop_message={}", report.stop_message);
+
+    if let Some(out) = output {
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let payload = report.to_json().context("serialize repro report")?;
+        fs::write(out, payload).with_context(|| format!("write {}", out.display()))?;
+    }
+
+    if strict && !report.oracle_triggered {
+        anyhow::bail!("repro oracle was not triggered");
+    }
+    Ok(())
 }

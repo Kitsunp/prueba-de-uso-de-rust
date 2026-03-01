@@ -106,6 +106,8 @@ pub struct EditorWorkbench {
     // Validation
     pub validation_issues: Vec<LintIssue>,
     pub last_dry_run_report: Option<crate::editor::compiler::DryRunReport>,
+    pub loaded_repro_case: Option<visual_novel_engine::ReproCase>,
+    pub last_repro_report: Option<visual_novel_engine::ReproRunReport>,
     pub diagnostic_language: DiagnosticLanguage,
     pub player_locale: String,
     pub localization_catalog: LocalizationCatalog,
@@ -205,6 +207,8 @@ impl EditorWorkbench {
             engine: None,
             validation_issues: Vec::new(),
             last_dry_run_report: None,
+            loaded_repro_case: None,
+            last_repro_report: None,
             diagnostic_language: DiagnosticLanguage::Es,
             player_locale: "en".to_string(),
             localization_catalog: LocalizationCatalog::default(),
@@ -523,6 +527,15 @@ impl EditorWorkbench {
                 }
                 if ui.button("Exportar Repro Dry Run").clicked() {
                     self.export_dry_run_repro();
+                }
+                if ui.button("Exportar Repro Case").clicked() {
+                    self.export_repro_case();
+                }
+                if ui.button("Importar Repro Case").clicked() {
+                    self.import_repro_case();
+                }
+                if ui.button("Ejecutar Repro Cargado").clicked() {
+                    self.run_loaded_repro_case();
                 }
                 if ui.button("Exportar Reporte Diagnostico").clicked() {
                     self.export_diagnostic_report();

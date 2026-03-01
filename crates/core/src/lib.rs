@@ -9,6 +9,7 @@ mod localization;
 pub mod manifest;
 mod migration;
 mod render;
+mod repro;
 mod resource;
 mod script;
 mod security;
@@ -41,6 +42,10 @@ pub use migration::{
     MigrationTraceEntry,
 };
 pub use render::{RenderBackend, RenderOutput, TextRenderer};
+pub use repro::{
+    run_repro_case, run_repro_case_with_limits, ReproCase, ReproMonitor, ReproMonitorResult,
+    ReproOracle, ReproRunReport, ReproStepTrace, ReproStopReason, REPRO_CASE_SCHEMA,
+};
 pub use resource::{LruCache, ResourceLimiter};
 pub use script::{ScriptCompiled, ScriptRaw};
 pub use security::SecurityPolicy;

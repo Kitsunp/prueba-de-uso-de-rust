@@ -35,6 +35,18 @@ pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
                 workbench.export_dry_run_repro();
                 ui.close_menu();
             }
+            if ui.button("Export Repro Case").clicked() {
+                workbench.export_repro_case();
+                ui.close_menu();
+            }
+            if ui.button("Import Repro Case").clicked() {
+                workbench.import_repro_case();
+                ui.close_menu();
+            }
+            if ui.button("Run Loaded Repro Case").clicked() {
+                workbench.run_loaded_repro_case();
+                ui.close_menu();
+            }
             if ui.button("Export Diagnostic Report").clicked() {
                 workbench.export_diagnostic_report();
                 ui.close_menu();

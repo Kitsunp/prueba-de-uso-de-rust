@@ -201,7 +201,56 @@ impl EditorWorkbench {
                 });
         }
 
-        // 3. Central Area (Docking Logic)
+        // 3. Docked Graph/Inspector Panels (context-level to avoid nested layout clipping)
+        if !self.node_editor_window_open && self.show_graph {
+            let total_width = ctx.available_rect().width();
+            let graph_default = (total_width * 0.34).clamp(260.0, 680.0);
+            let inspector_default = (total_width * 0.22).clamp(220.0, 420.0);
+
+            if self.show_inspector {
+                egui::SidePanel::right("inspector_docked_panel")
+                    .resizable(true)
+                    .min_width(220.0)
+                    .max_width(520.0)
+                    .default_width(inspector_default)
+                    .show(ctx, |ui| {
+                        let selected = self.node_graph.selected;
+                        InspectorPanel::new(
+                            &self.scene,
+                            &mut self.node_graph,
+                            selected,
+                            self.selected_entity,
+                        )
+                        .ui(ui);
+                    });
+
+                egui::SidePanel::left("logic_graph_docked_panel")
+                    .resizable(true)
+                    .min_width(260.0)
+                    .max_width(960.0)
+                    .default_width(graph_default)
+                    .show(ctx, |ui| {
+                        ui.heading("Logic Graph");
+                        let mut panel =
+                            NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
+                        panel.ui(ui);
+                    });
+            } else {
+                egui::SidePanel::left("logic_graph_docked_panel_no_inspector")
+                    .resizable(true)
+                    .min_width(260.0)
+                    .max_width(1080.0)
+                    .default_width(graph_default)
+                    .show(ctx, |ui| {
+                        ui.heading("Logic Graph");
+                        let mut panel =
+                            NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
+                        panel.ui(ui);
+                    });
+            }
+        }
+
+        // 4. Central Area (Composer + detached inspector logic)
 
         // Prepare Data for decoupled rendering to avoid simultaneous mutable borrows
         let entity_owners = self.build_entity_node_map();
@@ -245,75 +294,16 @@ impl EditorWorkbench {
                         composer_actions.push(act);
                     }
                 }
-            } else if self.show_inspector {
-                // Docked graph mode: resizable Graph | Composer | Inspector
-                let total_width = ui.available_width();
-                let graph_default = (total_width * 0.42).clamp(280.0, 760.0);
-                let inspector_default = (total_width * 0.24).clamp(220.0, 420.0);
-
-                egui::SidePanel::left("logic_graph_docked_panel")
-                    .resizable(true)
-                    .min_width(260.0)
-                    .default_width(graph_default)
-                    .show_inside(ui, |ui| {
-                        ui.heading("Logic Graph");
-                        let mut panel =
-                            NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
-                        panel.ui(ui);
-                    });
-
-                egui::SidePanel::right("inspector_docked_panel")
-                    .resizable(true)
-                    .min_width(220.0)
-                    .default_width(inspector_default)
-                    .show_inside(ui, |ui| {
-                        ui.heading("Inspector");
-                        let selected = self.node_graph.selected;
-                        InspectorPanel::new(
-                            &self.scene,
-                            &mut self.node_graph,
-                            selected,
-                            self.selected_entity,
-                        )
-                        .ui(ui);
-                    });
-
-                egui::CentralPanel::default().show_inside(ui, |ui| {
-                    let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
-                        &mut self.scene,
-                        &self.engine,
-                        &mut self.selected_entity,
-                    );
-                    if let Some(act) = composer.ui(ui, &entity_owners) {
-                        composer_actions.push(act);
-                    }
-                });
             } else {
-                // Docked graph mode without inspector: resizable Graph | Composer
-                let total_width = ui.available_width();
-                let graph_default = (total_width * 0.46).clamp(280.0, 900.0);
-
-                egui::SidePanel::left("logic_graph_docked_panel_no_inspector")
-                    .resizable(true)
-                    .min_width(260.0)
-                    .default_width(graph_default)
-                    .show_inside(ui, |ui| {
-                        ui.heading("Logic Graph");
-                        let mut panel =
-                            NodeEditorPanel::new(&mut self.node_graph, &mut self.undo_stack);
-                        panel.ui(ui);
-                    });
-
-                egui::CentralPanel::default().show_inside(ui, |ui| {
-                    let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
-                        &mut self.scene,
-                        &self.engine,
-                        &mut self.selected_entity,
-                    );
-                    if let Some(act) = composer.ui(ui, &entity_owners) {
-                        composer_actions.push(act);
-                    }
-                });
+                // Docked graph mode: graph/inspector are drawn at ctx-level, central keeps composer.
+                let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
+                    &mut self.scene,
+                    &self.engine,
+                    &mut self.selected_entity,
+                );
+                if let Some(act) = composer.ui(ui, &entity_owners) {
+                    composer_actions.push(act);
+                }
             }
 
             crate::editor::node_rendering::render_toast(ui, &mut self.toast);
