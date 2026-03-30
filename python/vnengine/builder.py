@@ -184,9 +184,7 @@ class ScriptBuilder:
         normalized_args: List[str] = []
         for arg in args:
             if not isinstance(arg, str):
-                raise ValueError(
-                    f"ext_call args must be str, got {type(arg).__name__}"
-                )
+                raise ValueError(f"ext_call args must be str, got {type(arg).__name__}")
             normalized_args.append(arg)
         self._events.append(ExtCall(command=command, args=normalized_args))
 

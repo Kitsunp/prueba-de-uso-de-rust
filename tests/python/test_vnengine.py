@@ -113,7 +113,9 @@ class TypesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Transition.from_dict({"kind": "fade", "duration_ms": False})
         with self.assertRaises(ValueError):
-            SetCharacterPosition.from_dict({"name": "Ava", "x": 1, "y": 2, "scale": True})
+            SetCharacterPosition.from_dict(
+                {"name": "Ava", "x": 1, "y": 2, "scale": True}
+            )
         with self.assertRaises(ValueError):
             AudioAction.from_dict(
                 {
@@ -315,7 +317,9 @@ class EngineWrapperTests(unittest.TestCase):
         )
         event = engine.step()
         self.assertEqual(event["type"], "dialogue")
-        self.assertEqual(engine.last_audio_commands(), [{"type": "play_bgm", "path": "theme.ogg"}])
+        self.assertEqual(
+            engine.last_audio_commands(), [{"type": "play_bgm", "path": "theme.ogg"}]
+        )
 
     def test_engine_ui_state_calls_native(self):
         module = types.ModuleType("visual_novel_engine")

@@ -53,7 +53,9 @@ class Engine:
         """Register a native ext-call callback, if exposed by the binding."""
 
         if not hasattr(self._engine, "register_handler"):
-            raise RuntimeError("Native engine module does not provide callback bindings")
+            raise RuntimeError(
+                "Native engine module does not provide callback bindings"
+            )
         self._engine.register_handler(callback)
 
     def allow_ext_call_command(self, command: str) -> None:

@@ -1,4 +1,8 @@
 /target
+/.benchmarks/
+/build/
+/dist/
+/wheelhouse/
 *.pyc
 *.pyo
 __pycache__/
@@ -8,6 +12,8 @@ __pycache__/
 .ruff_cache/
 .hypothesis/
 .tox/
+/out/
+/.local/
 .coverage
 .coverage.*
 coverage/
@@ -18,8 +24,6 @@ htmlcov/
 *.txt
 test_output.txt
 test_fail.log
-test_output.txt
-test_output.txt
 *.log
 *.tmp
 *.temp
