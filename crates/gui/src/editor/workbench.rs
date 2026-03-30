@@ -93,6 +93,9 @@ pub struct EditorWorkbench {
 
     // Scene Data
     pub scene: visual_novel_engine::SceneState,
+    pub composer_entity_owners: std::collections::HashMap<u32, u32>,
+    pub composer_image_cache: std::collections::HashMap<String, egui::TextureHandle>,
+    pub composer_image_failures: std::collections::HashMap<String, String>,
 
     // Timeline/Playback
     pub timeline: visual_novel_engine::Timeline,
@@ -102,6 +105,8 @@ pub struct EditorWorkbench {
 
     // Engine Instance (for Player Mode)
     pub engine: Option<Engine>,
+    pub player_audio_backend: Option<Box<dyn visual_novel_runtime::Audio>>,
+    pub player_audio_root: Option<std::path::PathBuf>,
 
     // Validation
     pub validation_issues: Vec<LintIssue>,
@@ -200,11 +205,16 @@ impl EditorWorkbench {
             selected_node: None,
             selected_entity: None,
             scene: visual_novel_engine::SceneState::default(),
+            composer_entity_owners: std::collections::HashMap::new(),
+            composer_image_cache: std::collections::HashMap::new(),
+            composer_image_failures: std::collections::HashMap::new(),
             timeline: visual_novel_engine::Timeline::new(60), // 60 ticks per second
             current_time: 0.0,
             is_playing: false,
             player_state: crate::editor::player_ui::PlayerSessionState::default(),
             engine: None,
+            player_audio_backend: None,
+            player_audio_root: None,
             validation_issues: Vec::new(),
             last_dry_run_report: None,
             loaded_repro_case: None,
@@ -297,188 +307,6 @@ impl EditorWorkbench {
         }
     }
 
-    pub fn load_project(&mut self, path: std::path::PathBuf) {
-        match crate::editor::project_io::load_project(path.clone()) {
-            Ok(loaded_project) => {
-                let migrated_manifest = loaded_project
-                    .manifest_migration_report
-                    .as_ref()
-                    .map(|report| report.entries.len());
-                let project_root = path
-                    .parent()
-                    .map(std::path::Path::to_path_buf)
-                    .unwrap_or(path.clone());
-                self.project_root = Some(project_root.clone());
-                self.localization_catalog =
-                    Self::load_localization_catalog(&project_root, &loaded_project.manifest);
-                self.player_locale = loaded_project.manifest.settings.default_language.clone();
-                self.manifest = Some(loaded_project.manifest);
-                if let Some((script_path, loaded_script)) = loaded_project.entry_point_script {
-                    self.apply_loaded_script(loaded_script, script_path);
-                    if let Some(steps) = migrated_manifest {
-                        self.toast = Some(crate::editor::node_types::ToastState::warning(format!(
-                            "Project loaded with manifest migration ({steps} step(s))"
-                        )));
-                    }
-                } else {
-                    self.toast = Some(if let Some(steps) = migrated_manifest {
-                        crate::editor::node_types::ToastState::warning(format!(
-                            "Project loaded without entry script (manifest migrated in {steps} step(s))"
-                        ))
-                    } else {
-                        crate::editor::node_types::ToastState::success(
-                            "Project loaded (No entry script)",
-                        )
-                    });
-                }
-            }
-            Err(e) => {
-                self.toast = Some(crate::editor::node_types::ToastState::error(format!(
-                    "Failed to load project: {}",
-                    e
-                )));
-                tracing::error!("Failed to load project: {}", e);
-            }
-        }
-    }
-
-    pub fn load_script(&mut self, path: std::path::PathBuf) {
-        match crate::editor::project_io::load_script(path.clone()) {
-            Ok(loaded_script) => {
-                if self.project_root.is_none() {
-                    self.project_root = path.parent().map(std::path::Path::to_path_buf);
-                }
-                if let Some(root) = &self.project_root {
-                    self.localization_catalog = Self::discover_locales_without_manifest(root);
-                    if self.player_locale.trim().is_empty() {
-                        self.player_locale = self.localization_catalog.default_locale.clone();
-                    }
-                }
-                self.apply_loaded_script(loaded_script, path);
-            }
-            Err(e) => {
-                self.toast = Some(crate::editor::node_types::ToastState::error(format!(
-                    "Failed to load script: {}",
-                    e
-                )));
-                tracing::error!("Failed to load script: {}", e);
-            }
-        }
-    }
-
-    fn apply_loaded_script(
-        &mut self,
-        loaded_script: crate::editor::project_io::LoadedScript,
-        path: std::path::PathBuf,
-    ) {
-        self.node_graph = loaded_script.graph;
-        let mut stack = UndoStack::new();
-        stack.push(self.node_graph.clone());
-        self.undo_stack = stack;
-        self.pending_save_path = Some(path);
-        self.saved_script_snapshot = Some(self.node_graph.to_script());
-
-        let msg = if loaded_script.was_imported {
-            "Imported script"
-        } else {
-            "Script loaded"
-        };
-        self.toast = Some(ToastState::success(msg));
-
-        // CRITICAL: Sync to engine
-        let _ = self.sync_graph_to_script();
-    }
-
-    fn load_localization_catalog(
-        project_root: &std::path::Path,
-        manifest: &visual_novel_engine::manifest::ProjectManifest,
-    ) -> LocalizationCatalog {
-        let mut catalog = LocalizationCatalog::new(manifest.settings.default_language.clone());
-        for locale in &manifest.settings.supported_languages {
-            let path = project_root.join("locales").join(format!("{locale}.json"));
-            if !path.exists() {
-                continue;
-            }
-            let Ok(raw) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(parsed) =
-                serde_json::from_str::<std::collections::BTreeMap<String, String>>(&raw)
-            else {
-                continue;
-            };
-            catalog.insert_locale_table(locale.clone(), parsed);
-        }
-        catalog
-    }
-
-    fn discover_locales_without_manifest(project_root: &std::path::Path) -> LocalizationCatalog {
-        let mut catalog = LocalizationCatalog::default();
-        let locale_dir = project_root.join("locales");
-        if !locale_dir.exists() {
-            return catalog;
-        }
-
-        let Ok(entries) = std::fs::read_dir(locale_dir) else {
-            return catalog;
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let Some(stem) = path.file_stem().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            let Ok(raw) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(parsed) =
-                serde_json::from_str::<std::collections::BTreeMap<String, String>>(&raw)
-            else {
-                continue;
-            };
-            catalog.insert_locale_table(stem.to_string(), parsed);
-        }
-
-        if let Some(first) = catalog.locale_codes().first() {
-            catalog.default_locale = first.clone();
-        }
-        catalog
-    }
-
-    pub fn execute_save(&mut self, path: &std::path::Path, _content_unused: &str) {
-        if let Err(e) = crate::editor::project_io::save_script(path, &self.node_graph) {
-            tracing::error!("Failed to save: {}", e);
-            self.toast = Some(ToastState::error(format!("Save failed: {}", e)));
-        } else {
-            self.saved_script_snapshot = Some(self.node_graph.to_script());
-            self.node_graph.clear_modified();
-        }
-    }
-
-    pub fn prepare_save_confirmation(&mut self) {
-        let maybe_path = self.pending_save_path.clone().or_else(|| {
-            rfd::FileDialog::new()
-                .add_filter("Script JSON", &["json"])
-                .set_file_name("script.json")
-                .save_file()
-        });
-
-        if let Some(path) = maybe_path {
-            self.pending_save_path = Some(path);
-            let new_script = self.node_graph.to_script();
-            self.show_save_confirm = true;
-            self.diff_dialog = Some(DiffDialog::new(
-                self.saved_script_snapshot.as_ref(),
-                &new_script,
-            ));
-        } else {
-            self.toast = Some(ToastState::warning("Save cancelled"));
-        }
-    }
-
     pub fn ui(&mut self, ctx: &egui::Context) {
         // Top Menu Bar
         egui::TopBottomPanel::top("top_menu_bar").show(ctx, |ui| {
@@ -509,7 +337,9 @@ impl EditorWorkbench {
                     .selectable_label(self.mode == EditorMode::Player, "Play")
                     .clicked()
                 {
-                    self.mode = EditorMode::Player;
+                    if self.prepare_player_mode() {
+                        self.mode = EditorMode::Player;
+                    }
                 }
 
                 ui.separator();
@@ -524,6 +354,9 @@ impl EditorWorkbench {
                 }
                 if ui.button("Exportar .vnproject").clicked() {
                     self.export_compiled_project();
+                }
+                if ui.button("Empaquetar Bundle").clicked() {
+                    self.package_bundle_native();
                 }
                 if ui.button("Exportar Repro Dry Run").clicked() {
                     self.export_dry_run_repro();
@@ -634,6 +467,11 @@ impl EditorWorkbench {
 }
 
 mod compile_ops;
+mod composer_ops;
+mod import_ops;
+mod player_audio_path;
+mod player_mode_ops;
+mod project_ops;
 mod quick_fix_ops;
 mod report_ops;
 #[cfg(test)]

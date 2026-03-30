@@ -2,12 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use visual_novel_engine::{
-    compute_script_id, run_repro_case, Engine, ReproCase, ResourceLimiter, SaveData,
-    ScriptCompiled, ScriptRaw, SecurityPolicy, UiTrace, SCRIPT_SCHEMA_VERSION,
+    compute_script_id, export_bundle, run_repro_case, BundleIntegrity, Engine, ExportBundleSpec,
+    ExportTargetPlatform, ImportFallbackPolicy, ImportProfile, ReproCase, ResourceLimiter,
+    SaveData, ScriptCompiled, ScriptRaw, SecurityPolicy, UiTrace, SCRIPT_SCHEMA_VERSION,
 };
 use walkdir::WalkDir;
 
@@ -56,6 +57,67 @@ enum Command {
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
+    /// Import a Ren'Py project into vnengine project files.
+    ImportRenpy {
+        /// Ren'Py project folder path.
+        project: PathBuf,
+        /// Output folder to write project.vnm/main.json/report.
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Import profile. `story-first` keeps the engine model as source of truth.
+        #[arg(long, value_enum, default_value_t = ImportProfileArg::StoryFirst)]
+        profile: ImportProfileArg,
+        /// Include paths matching this pattern (repeatable).
+        #[arg(long = "include-pattern")]
+        include_pattern: Vec<String>,
+        /// Exclude paths matching this pattern (repeatable).
+        #[arg(long = "exclude-pattern")]
+        exclude_pattern: Vec<String>,
+        /// Include `game/tl/**` files even in story-first mode.
+        #[arg(long)]
+        include_tl: bool,
+        /// Include UI DSL files (`gui.rpy`, `screens.rpy`, `options.rpy`) even in story-first mode.
+        #[arg(long)]
+        include_ui: bool,
+        /// Fail import when unsupported/degraded constructs are found.
+        #[arg(long)]
+        strict_mode: bool,
+        /// Fallback policy for unsupported statements.
+        #[arg(long, value_enum, default_value_t = ImportFallbackArg::DegradeWithTrace)]
+        fallback_policy: ImportFallbackArg,
+        /// Entry label to map as `start` in generated script.
+        #[arg(long, default_value = "start")]
+        entry_label: String,
+        /// Optional custom report path.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
+    /// Package a project into a reproducible bundle layout.
+    Package {
+        /// Project root containing `project.vnm` and entry script.
+        project: PathBuf,
+        /// Output folder for bundle artifacts.
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Target platform profile.
+        #[arg(long, value_enum, default_value_t = PackageTargetArg::Windows)]
+        target: PackageTargetArg,
+        /// Optional entry script path relative to project root.
+        #[arg(long)]
+        entry_script: Option<PathBuf>,
+        /// Optional runtime artifact (absolute or project-relative) to embed in bundle.
+        #[arg(long)]
+        runtime_artifact: Option<PathBuf>,
+        /// Bundle integrity mode.
+        #[arg(long, value_enum, default_value_t = PackageIntegrityArg::None)]
+        integrity: PackageIntegrityArg,
+        /// HMAC key when `--integrity hmac-sha256`.
+        #[arg(long)]
+        hmac_key: Option<String>,
+        /// Output layout version stamped in report.
+        #[arg(long, default_value_t = 1)]
+        layout_version: u16,
+    },
 }
 
 #[derive(Serialize)]
@@ -77,6 +139,70 @@ struct AssetEntry {
     size: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ImportProfileArg {
+    StoryFirst,
+    Full,
+    Custom,
+}
+
+impl From<ImportProfileArg> for ImportProfile {
+    fn from(value: ImportProfileArg) -> Self {
+        match value {
+            ImportProfileArg::StoryFirst => ImportProfile::StoryFirst,
+            ImportProfileArg::Full => ImportProfile::Full,
+            ImportProfileArg::Custom => ImportProfile::Custom,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ImportFallbackArg {
+    Strict,
+    DegradeWithTrace,
+}
+
+impl From<ImportFallbackArg> for ImportFallbackPolicy {
+    fn from(value: ImportFallbackArg) -> Self {
+        match value {
+            ImportFallbackArg::Strict => ImportFallbackPolicy::Strict,
+            ImportFallbackArg::DegradeWithTrace => ImportFallbackPolicy::DegradeWithTrace,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum PackageTargetArg {
+    Windows,
+    Linux,
+    Macos,
+}
+
+impl From<PackageTargetArg> for ExportTargetPlatform {
+    fn from(value: PackageTargetArg) -> Self {
+        match value {
+            PackageTargetArg::Windows => ExportTargetPlatform::Windows,
+            PackageTargetArg::Linux => ExportTargetPlatform::Linux,
+            PackageTargetArg::Macos => ExportTargetPlatform::Macos,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum PackageIntegrityArg {
+    None,
+    HmacSha256,
+}
+
+impl From<PackageIntegrityArg> for BundleIntegrity {
+    fn from(value: PackageIntegrityArg) -> Self {
+        match value {
+            PackageIntegrityArg::None => BundleIntegrity::None,
+            PackageIntegrityArg::HmacSha256 => BundleIntegrity::HmacSha256,
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -94,6 +220,50 @@ fn main() -> Result<()> {
             output,
             strict,
         } => run_repro_bundle(&repro, output.as_deref(), strict),
+        Command::ImportRenpy {
+            project,
+            output,
+            profile,
+            include_pattern,
+            exclude_pattern,
+            include_tl,
+            include_ui,
+            strict_mode,
+            fallback_policy,
+            entry_label,
+            report,
+        } => import_renpy(
+            &project,
+            &output,
+            profile.into(),
+            include_pattern,
+            exclude_pattern,
+            include_tl.then_some(true),
+            include_ui.then_some(true),
+            strict_mode,
+            fallback_policy.into(),
+            &entry_label,
+            report.as_deref(),
+        ),
+        Command::Package {
+            project,
+            output,
+            target,
+            entry_script,
+            runtime_artifact,
+            integrity,
+            hmac_key,
+            layout_version,
+        } => package_project(ExportBundleSpec {
+            project_root: project,
+            output_root: output,
+            target_platform: target.into(),
+            entry_script,
+            runtime_artifact,
+            integrity: integrity.into(),
+            output_layout_version: layout_version,
+            hmac_key,
+        }),
     }
 }
 
@@ -143,6 +313,9 @@ fn trace_script(path: &Path, steps: usize, output: &Path) -> Result<()> {
         match &event {
             visual_novel_engine::EventCompiled::Choice(_) => {
                 let _ = engine.choose(0);
+            }
+            visual_novel_engine::EventCompiled::ExtCall { .. } => {
+                let _ = engine.resume();
             }
             _ => {
                 let _ = engine.step();
@@ -235,6 +408,63 @@ fn run_repro_bundle(path: &Path, output: Option<&Path>, strict: bool) -> Result<
 
     if strict && !report.oracle_triggered {
         anyhow::bail!("repro oracle was not triggered");
+    }
+    Ok(())
+}
+
+fn import_renpy(
+    project: &Path,
+    output: &Path,
+    profile: ImportProfile,
+    include_patterns: Vec<String>,
+    exclude_patterns: Vec<String>,
+    include_tl: Option<bool>,
+    include_ui: Option<bool>,
+    strict_mode: bool,
+    fallback_policy: ImportFallbackPolicy,
+    entry_label: &str,
+    report: Option<&Path>,
+) -> Result<()> {
+    let report_result =
+        visual_novel_engine::import_renpy_project(visual_novel_engine::ImportRenpyOptions {
+            project_root: project.to_path_buf(),
+            output_root: output.to_path_buf(),
+            entry_label: entry_label.to_string(),
+            report_path: report.map(Path::to_path_buf),
+            profile,
+            include_tl,
+            include_ui,
+            include_patterns,
+            exclude_patterns,
+            strict_mode,
+            fallback_policy,
+        })?;
+
+    println!(
+        "imported Ren'Py project => profile={} files={} events={} labels={} degraded={} issues={}",
+        report_result.profile,
+        report_result.files_parsed,
+        report_result.events_generated,
+        report_result.labels_generated,
+        report_result.degraded_events,
+        report_result.issues.len()
+    );
+
+    Ok(())
+}
+
+fn package_project(spec: ExportBundleSpec) -> Result<()> {
+    let report = export_bundle(spec)?;
+
+    println!(
+        "packaged project => target={} assets={} integrity={} launcher={} report=meta/package_report.json",
+        report.target_platform, report.assets_copied, report.integrity, report.launcher
+    );
+    if let Some(runtime) = report.runtime_artifact {
+        println!("runtime_artifact={runtime}");
+    }
+    if let Some(signature) = report.bundle_hmac_sha256 {
+        println!("bundle_hmac_sha256={signature}");
     }
     Ok(())
 }

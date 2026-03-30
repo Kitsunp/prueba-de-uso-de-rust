@@ -19,6 +19,14 @@ pub(super) fn default_asset_exists(path: &str) -> bool {
     }
 }
 
+pub(super) fn asset_exists_from_project_root(project_root: &Path, path: &str) -> bool {
+    let candidate = Path::new(path.trim());
+    if candidate.is_absolute() {
+        return candidate.is_file();
+    }
+    project_root.join(candidate).is_file()
+}
+
 pub(super) fn should_probe_asset_exists(path: &str) -> bool {
     let p = path.trim();
     if p.is_empty() {

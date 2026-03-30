@@ -3,7 +3,7 @@
 //! This module provides bidirectional conversion between NodeGraph and ScriptRaw.
 //! Extracted from node_graph.rs to comply with Criterio J (<500 lines).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use eframe::egui;
 use visual_novel_engine::{
@@ -97,6 +97,9 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
         index_to_id.insert(idx, id);
     }
 
+    let last_y = 100.0 + (script.events.len() as f32) * NODE_VERTICAL_SPACING;
+    let end_id = graph.add_node(StoryNode::End, egui::pos2(100.0, last_y));
+
     // Connect Start to first event
     if let Some(&first_id) = index_to_id.get(&0) {
         graph.connect(start_id, first_id);
@@ -117,7 +120,9 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
         match event {
             EventRaw::Jump { target } => {
                 if let Some(&target_idx) = label_to_index.get(target.as_str()) {
-                    if let Some(&target_id) = index_to_id.get(&target_idx) {
+                    if target_idx == script.events.len() {
+                        graph.connect(from_id, end_id);
+                    } else if let Some(&target_id) = index_to_id.get(&target_idx) {
                         graph.connect(from_id, target_id);
                     }
                 }
@@ -125,7 +130,9 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
             EventRaw::Choice(c) => {
                 for (opt_idx, option) in c.options.iter().enumerate() {
                     if let Some(&target_idx) = label_to_index.get(option.target.as_str()) {
-                        if let Some(&target_id) = index_to_id.get(&target_idx) {
+                        if target_idx == script.events.len() {
+                            graph.connect_port(from_id, opt_idx, end_id);
+                        } else if let Some(&target_id) = index_to_id.get(&target_idx) {
                             // Smart Branching: Connect from specific option port
                             graph.connect_port(from_id, opt_idx, target_id);
                         }
@@ -135,7 +142,9 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
             EventRaw::JumpIf { target, .. } => {
                 // Handle JumpIf logic flow: it can go to target OR next
                 if let Some(&target_idx) = label_to_index.get(target.as_str()) {
-                    if let Some(&target_id) = index_to_id.get(&target_idx) {
+                    if target_idx == script.events.len() {
+                        graph.connect(from_id, end_id);
+                    } else if let Some(&target_id) = index_to_id.get(&target_idx) {
                         graph.connect(from_id, target_id);
                     }
                 }
@@ -151,10 +160,6 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
             }
         }
     }
-
-    // Add End node
-    let last_y = 100.0 + (script.events.len() as f32) * NODE_VERTICAL_SPACING;
-    let end_id = graph.add_node(StoryNode::End, egui::pos2(100.0, last_y));
 
     // Connect nodes with no outgoing connections to End
     // Use GraphConnection struct access
@@ -172,6 +177,8 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
         graph.connect(id, end_id);
     }
 
+    graph.auto_layout_hierarchical();
+    graph.zoom_to_fit();
     graph.clear_modified();
     graph
 }
@@ -189,21 +196,23 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
 
     // BFS traversal from start
     let mut visited = Vec::new();
-    let mut queue = Vec::new();
+    let mut queue = VecDeque::new();
 
     if let Some(start) = start_id {
-        queue.push(start);
+        queue.push_back(start);
     }
 
-    while let Some(id) = queue.pop() {
+    while let Some(id) = queue.pop_front() {
         if visited.contains(&id) {
             continue;
         }
         visited.push(id);
 
-        for conn in graph.connections() {
-            if conn.from == id && !visited.contains(&conn.to) {
-                queue.push(conn.to);
+        let mut outgoing: Vec<_> = graph.connections().filter(|conn| conn.from == id).collect();
+        outgoing.sort_by_key(|conn| (conn.from_port, conn.to));
+        for conn in outgoing {
+            if !visited.contains(&conn.to) && !queue.contains(&conn.to) {
+                queue.push_back(conn.to);
             }
         }
     }
@@ -459,5 +468,35 @@ mod tests {
         assert_eq!(choice.options.len(), 2);
         assert!(choice.options[0].target.starts_with("__unlinked_node_"));
         assert!(choice.options[1].target.starts_with("__unlinked_node_"));
+    }
+
+    #[test]
+    fn test_choice_targeting_end_label_roundtrips_without_unlinked_target() {
+        let mut labels = BTreeMap::new();
+        labels.insert("start".to_string(), 0);
+        labels.insert("__end".to_string(), 1);
+
+        let script = ScriptRaw::new(
+            vec![EventRaw::Choice(ChoiceRaw {
+                prompt: "Salir?".to_string(),
+                options: vec![ChoiceOptionRaw {
+                    text: "Fin".to_string(),
+                    target: "__end".to_string(),
+                }],
+            })],
+            labels,
+        );
+
+        let graph = from_script(&script);
+        let roundtrip = to_script(&graph);
+
+        let Some(EventRaw::Choice(choice)) = roundtrip.events.first() else {
+            panic!("Expected first event to be choice");
+        };
+        assert_eq!(choice.options[0].target, "__end");
+        assert!(
+            roundtrip.compile().is_ok(),
+            "roundtrip script should remain compilable when targeting __end"
+        );
     }
 }

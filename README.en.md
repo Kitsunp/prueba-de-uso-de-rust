@@ -164,6 +164,7 @@ vnengine compile script.json -o script.vnsc
 vnengine trace script.json --steps 50 -o trace.yaml
 vnengine verify-save save.vns --script script.vnsc
 vnengine manifest assets/ -o manifest.json
+vnengine import-renpy path/to/renpy-project -o imported_project --entry-label start
 ```
 
 ## Python Bindings

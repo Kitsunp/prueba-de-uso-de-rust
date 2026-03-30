@@ -35,7 +35,10 @@ impl EditorWorkbench {
     }
 
     pub fn run_dry_validation(&mut self) -> bool {
-        let result = crate::editor::compiler::compile_project(&self.node_graph);
+        let result = crate::editor::compiler::compile_project_with_project_root(
+            &self.node_graph,
+            self.project_root.as_deref(),
+        );
         self.current_script = Some(result.script);
         self.last_dry_run_report = result.dry_run_report.clone();
         self.validation_issues = result.issues;
@@ -64,6 +67,7 @@ impl EditorWorkbench {
         match result.engine_result {
             Ok(engine) => {
                 self.engine = Some(engine);
+                self.refresh_scene_from_engine_preview();
                 self.toast = Some(ToastState::success("Dry Run completed"));
                 true
             }
@@ -134,8 +138,67 @@ impl EditorWorkbench {
         }
     }
 
+    pub fn package_bundle_native(&mut self) {
+        let project_root = self.project_root.clone().or_else(|| {
+            self.pending_save_path
+                .as_ref()
+                .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+        });
+        let Some(project_root) = project_root else {
+            self.toast = Some(ToastState::error(
+                "Package failed: load/save a project first so project_root is known",
+            ));
+            return;
+        };
+
+        let Some(output_root) = rfd::FileDialog::new()
+            .set_directory(&project_root)
+            .pick_folder()
+        else {
+            self.toast = Some(ToastState::warning("Package cancelled"));
+            return;
+        };
+
+        let entry_script = self
+            .manifest
+            .as_ref()
+            .map(|manifest| std::path::PathBuf::from(&manifest.settings.entry_point));
+
+        let target = if cfg!(target_os = "windows") {
+            visual_novel_engine::ExportTargetPlatform::Windows
+        } else if cfg!(target_os = "macos") {
+            visual_novel_engine::ExportTargetPlatform::Macos
+        } else {
+            visual_novel_engine::ExportTargetPlatform::Linux
+        };
+
+        match visual_novel_engine::export_bundle(visual_novel_engine::ExportBundleSpec {
+            project_root,
+            output_root,
+            target_platform: target,
+            entry_script,
+            runtime_artifact: None,
+            integrity: visual_novel_engine::BundleIntegrity::None,
+            output_layout_version: 1,
+            hmac_key: None,
+        }) {
+            Ok(report) => {
+                self.toast = Some(ToastState::success(format!(
+                    "Bundle packaged: assets={} launcher={}",
+                    report.assets_copied, report.launcher
+                )));
+            }
+            Err(err) => {
+                self.toast = Some(ToastState::error(format!("Package failed: {err}")));
+            }
+        }
+    }
+
     pub fn export_dry_run_repro(&mut self) {
-        let result = crate::editor::compiler::compile_project(&self.node_graph);
+        let result = crate::editor::compiler::compile_project_with_project_root(
+            &self.node_graph,
+            self.project_root.as_deref(),
+        );
         let repro = result.minimal_repro_script();
         let script = result.script.clone();
         self.current_script = Some(script);
@@ -188,7 +251,10 @@ impl EditorWorkbench {
     pub fn build_repro_case_from_current_graph(
         &mut self,
     ) -> Option<visual_novel_engine::ReproCase> {
-        let result = crate::editor::compiler::compile_project(&self.node_graph);
+        let result = crate::editor::compiler::compile_project_with_project_root(
+            &self.node_graph,
+            self.project_root.as_deref(),
+        );
         let repro_script = result
             .minimal_repro_script()
             .or_else(|| Some(result.script.clone()))?;
@@ -385,7 +451,10 @@ impl EditorWorkbench {
     }
 
     pub fn sync_graph_to_script(&mut self) -> Result<(), String> {
-        let result = crate::editor::compiler::compile_project(&self.node_graph);
+        let result = crate::editor::compiler::compile_project_with_project_root(
+            &self.node_graph,
+            self.project_root.as_deref(),
+        );
 
         // Update State
         self.current_script = Some(result.script);
@@ -416,6 +485,7 @@ impl EditorWorkbench {
         match result.engine_result {
             Ok(engine) => {
                 self.engine = Some(engine);
+                self.refresh_scene_from_engine_preview();
                 Ok(())
             }
             Err(e) => {

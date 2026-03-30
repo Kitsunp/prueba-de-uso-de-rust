@@ -11,7 +11,7 @@ impl<'a> AssetBrowserPanel<'a> {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        ui.heading("📂 Asset Browser");
+        ui.heading("Asset Browser");
         ui.separator();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -35,9 +35,19 @@ impl<'a> AssetBrowserPanel<'a> {
                 if self.manifest.assets.audio.is_empty() {
                     ui.label("No audio in manifest");
                 } else {
-                    // List view for audio
-                    for name in self.manifest.assets.audio.keys() {
-                        ui.label(format!("🎵 {}", name));
+                    for (name, path) in &self.manifest.assets.audio {
+                        let button = ui.add(egui::Button::new(format!("Audio {name}")));
+                        if button.drag_started() {
+                            let payload = format!(
+                                "asset://audio/{}",
+                                path.to_string_lossy().replace('\\', "/")
+                            );
+                            ui.memory_mut(|mem| {
+                                mem.data
+                                    .insert_temp(egui::Id::new("dragged_asset"), payload)
+                            });
+                        }
+                        button.on_hover_text(format!("Drag to scene\nPath: {:?}", path));
                     }
                 }
             });
@@ -55,35 +65,38 @@ impl<'a> AssetBrowserPanel<'a> {
                             .assets
                             .backgrounds
                             .iter()
-                            .map(|(k, v)| (k, v.clone()))
+                            .map(|(name, path)| (name, path.clone()))
                             .collect(),
                         "char" => self
                             .manifest
                             .assets
                             .characters
                             .iter()
-                            .map(|(k, v)| (k, v.path.clone()))
+                            .map(|(name, asset)| (name, asset.path.clone()))
                             .collect(),
-                        _ => vec![],
+                        _ => Vec::new(),
                     };
 
                     for (name, path) in assets {
-                        let btn = ui.add(
-                            egui::Button::new(format!("📄\n{}", name))
+                        let button = ui.add(
+                            egui::Button::new(format!("Asset\n{name}"))
                                 .min_size(egui::vec2(80.0, 80.0)),
                         );
 
-                        // Simple Drag Payload: "type:name"
-                        if btn.drag_started() {
-                            let payload = format!("asset://{}/{}", type_id, name);
+                        let value = match type_id {
+                            "bg" => path.to_string_lossy().replace('\\', "/"),
+                            "char" => name.to_string(),
+                            _ => name.to_string(),
+                        };
+                        if button.drag_started() {
+                            let payload = format!("asset://{type_id}/{value}");
                             ui.memory_mut(|mem| {
                                 mem.data
                                     .insert_temp(egui::Id::new("dragged_asset"), payload)
                             });
                         }
 
-                        // Drag Source visual (tooltip) - consumes btn
-                        btn.on_hover_text(format!("Drag to scene\nPath: {:?}", path));
+                        button.on_hover_text(format!("Drag to scene\nPath: {:?}", path));
                     }
                 });
             });

@@ -205,6 +205,9 @@ impl<'a> LintPanel<'a> {
                         if let Some(asset_path) = &issue.asset_path {
                             ui.label(format!("asset={asset_path}"));
                         }
+                        if let Some(blocked_by) = &issue.blocked_by {
+                            ui.label(format!("blocked_by={blocked_by}"));
+                        }
 
                         ui.separator();
                         ui.label(egui::RichText::new("Cause").strong());

@@ -4,6 +4,7 @@
 //! visual novel scripts with timeline, graph, and viewport panels.
 
 fn main() {
+    let _ = tracing_subscriber::fmt::try_init();
     match visual_novel_gui::run_editor() {
         Ok(()) => {}
         Err(e) => {

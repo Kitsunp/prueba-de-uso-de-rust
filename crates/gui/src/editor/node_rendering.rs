@@ -249,10 +249,27 @@ pub fn render_inline_editor(graph: &mut NodeGraph, ui: &egui::Ui) {
                 StoryNode::Start | StoryNode::End => {
                     ui.label("This node has no editable properties.");
                 }
-                StoryNode::Generic(_) => {
-                    ui.label("This node type cannot be edited locally.");
-                    ui.label("Use the Inspector to view details.");
-                }
+                StoryNode::Generic(event) => match event {
+                    visual_novel_engine::EventRaw::ExtCall { command, args } => {
+                        ui.label("External Action");
+                        ui.horizontal(|ui| {
+                            ui.label("Command:");
+                            changed |= ui.text_edit_singleline(command).changed();
+                        });
+                        ui.label("Args:");
+                        for arg in args.iter_mut() {
+                            changed |= ui.text_edit_singleline(arg).changed();
+                        }
+                        if ui.button("Add Arg").clicked() {
+                            args.push(String::new());
+                            changed = true;
+                        }
+                    }
+                    _ => {
+                        ui.label("This node type cannot be edited locally.");
+                        ui.label("Use the Inspector to view details.");
+                    }
+                },
                 StoryNode::CharacterPlacement { name, x, y, scale } => {
                     ui.label("Character Placement");
                     ui.horizontal(|ui| {
@@ -297,9 +314,12 @@ pub fn render_inline_editor(graph: &mut NodeGraph, ui: &egui::Ui) {
 
 /// Draws a bezier connection curve between two points.
 pub fn draw_bezier_connection(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2) {
-    let control_offset = (to.y - from.y).abs() * 0.5;
-    let control1 = from + egui::vec2(0.0, control_offset);
-    let control2 = to - egui::vec2(0.0, control_offset);
+    let delta = to - from;
+    if delta.length_sq() <= f32::EPSILON {
+        return;
+    }
+
+    let (control1, control2) = bezier_control_points(from, to);
 
     let points: Vec<egui::Pos2> = (0..=20)
         .map(|i| {
@@ -324,7 +344,14 @@ pub fn draw_bezier_connection(painter: &egui::Painter, from: egui::Pos2, to: egu
 
     // Arrow head
     let arrow_size = 8.0;
-    let dir = (to - control2).normalized();
+    let mut arrow_dir = to - control2;
+    if arrow_dir.length_sq() <= f32::EPSILON {
+        arrow_dir = delta;
+    }
+    if arrow_dir.length_sq() <= f32::EPSILON {
+        return;
+    }
+    let dir = arrow_dir.normalized();
     let arrow_left = to - dir * arrow_size + dir.rot90() * arrow_size * 0.5;
     let arrow_right = to - dir * arrow_size - dir.rot90() * arrow_size * 0.5;
     painter.add(egui::Shape::convex_polygon(
@@ -332,6 +359,32 @@ pub fn draw_bezier_connection(painter: &egui::Painter, from: egui::Pos2, to: egu
         egui::Color32::from_rgb(100, 180, 100),
         egui::Stroke::NONE,
     ));
+}
+
+fn bezier_control_points(from: egui::Pos2, to: egui::Pos2) -> (egui::Pos2, egui::Pos2) {
+    let delta = to - from;
+    if delta.length_sq() <= f32::EPSILON {
+        return (from, to);
+    }
+
+    let horizontal_bias = delta.x.abs() >= delta.y.abs();
+    if horizontal_bias {
+        let direction = delta.x.signum();
+        let magnitude = (delta.x.abs() * 0.5).clamp(36.0, 220.0);
+        let control_offset = magnitude * direction;
+        (
+            from + egui::vec2(control_offset, 0.0),
+            to - egui::vec2(control_offset, 0.0),
+        )
+    } else {
+        let direction = delta.y.signum();
+        let magnitude = (delta.y.abs() * 0.5).clamp(36.0, 220.0);
+        let control_offset = magnitude * direction;
+        (
+            from + egui::vec2(0.0, control_offset),
+            to - egui::vec2(0.0, control_offset),
+        )
+    }
 }
 
 // =============================================================================
@@ -348,12 +401,9 @@ mod tests {
         let from = egui::pos2(0.0, 0.0);
         let to = egui::pos2(100.0, 200.0);
 
-        let control_offset = (to.y - from.y).abs() * 0.5;
-        let control1 = from + egui::vec2(0.0, control_offset);
-        let control2 = to - egui::vec2(0.0, control_offset);
+        let (control1, control2) = bezier_control_points(from, to);
 
         // Verify control points are calculated correctly
-        assert_eq!(control_offset, 100.0);
         assert_eq!(control1, egui::pos2(0.0, 100.0));
         assert_eq!(control2, egui::pos2(100.0, 100.0));
 
@@ -390,9 +440,35 @@ mod tests {
         let from = egui::pos2(0.0, 50.0);
         let to = egui::pos2(100.0, 50.0);
 
-        // For horizontal line, control offset should be 0
-        let control_offset = (to.y - from.y).abs() * 0.5;
-        assert_eq!(control_offset, 0.0);
+        let (control1, control2) = bezier_control_points(from, to);
+        assert_eq!(control1, egui::pos2(50.0, 50.0));
+        assert_eq!(control2, egui::pos2(50.0, 50.0));
+    }
+
+    #[test]
+    fn test_bezier_control_points_keep_direction_for_reverse_edges() {
+        let from = egui::pos2(300.0, 220.0);
+        let to = egui::pos2(120.0, 80.0);
+        let (control1, control2) = bezier_control_points(from, to);
+
+        assert!(
+            control1.x <= from.x,
+            "reverse edge should keep first control point in edge direction"
+        );
+        assert!(
+            control2.x >= to.x,
+            "reverse edge should keep second control point in edge direction"
+        );
+    }
+
+    #[test]
+    fn test_bezier_control_points_clamp_offset_for_long_edges() {
+        let from = egui::pos2(0.0, 0.0);
+        let to = egui::pos2(2000.0, 0.0);
+        let (control1, control2) = bezier_control_points(from, to);
+
+        assert_eq!(control1.x, 220.0);
+        assert_eq!(control2.x, 1780.0);
     }
 
     #[test]

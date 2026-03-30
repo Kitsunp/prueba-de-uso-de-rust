@@ -13,3 +13,6 @@ serde_yaml = "0.9"
 sha2 = "0.10"
 visual_novel_engine = { path = "../../crates/core" }
 walkdir = "2.5"
+
+[dev-dependencies]
+tempfile = "3.15"

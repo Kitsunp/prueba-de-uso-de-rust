@@ -56,10 +56,12 @@ impl<'a> NodeEditorPanel<'a> {
         // 2. Handle Dragging
         if response.dragged_by(egui::PointerButton::Primary) && self.graph.context_menu.is_none() {
             if let Some(id) = self.graph.dragging_node {
-                let delta = response.drag_delta() / self.graph.zoom();
+                let delta = ui.input(|i| i.pointer.delta()) / self.graph.zoom();
                 if let Some(node_pos) = self.graph.get_node_pos_mut(id) {
-                    *node_pos += delta;
-                    self.graph.mark_modified();
+                    if delta.length_sq() > 0.0 {
+                        *node_pos += delta;
+                        self.graph.mark_modified();
+                    }
                 }
             }
         }
@@ -322,14 +324,7 @@ impl<'a> NodeEditorPanel<'a> {
     }
 
     fn get_node_height(&self, node: &StoryNode) -> f32 {
-        match node {
-            StoryNode::Choice { options, .. } => {
-                let header = 40.0;
-                let option_h = 30.0;
-                header + ((options.len() + 1).max(1) as f32 * option_h) + 10.0
-            }
-            _ => NODE_HEIGHT,
-        }
+        crate::editor::node_types::node_visual_height(node)
     }
 
     fn get_node_preview(&self, node: &StoryNode) -> String {
@@ -352,35 +347,40 @@ impl<'a> NodeEditorPanel<'a> {
             }
             StoryNode::SetVariable { key, value } => format!("{} = {}", key, value),
             StoryNode::ScenePatch(patch) => {
-                let mut summary = String::new();
-                if patch.music.is_some() {
-                    summary.push_str("♫ ");
-                }
-                if !patch.add.is_empty() {
-                    summary.push_str("C+ ");
-                }
-                if !patch.update.is_empty() {
-                    summary.push_str("C~ ");
-                }
-                if !patch.remove.is_empty() {
-                    summary.push_str("C- ");
-                }
-                if summary.is_empty() {
-                    "Empty Patch".to_string()
-                } else {
-                    summary
-                }
+                let bg = patch
+                    .background
+                    .as_ref()
+                    .map(|value| value.chars().take(10).collect::<String>())
+                    .unwrap_or_else(|| "-".to_string());
+                let bgm = patch
+                    .music
+                    .as_ref()
+                    .map(|value| value.chars().take(10).collect::<String>())
+                    .unwrap_or_else(|| "-".to_string());
+                format!(
+                    "Scene? bg:{bg} bgm:{bgm} add:{} upd:{} rem:{}",
+                    patch.add.len(),
+                    patch.update.len(),
+                    patch.remove.len()
+                )
             }
             StoryNode::JumpIf { .. } => "Conditional".to_string(),
             StoryNode::Start => "Entry Point".to_string(),
             StoryNode::End => "Exit Point".to_string(),
             StoryNode::Generic(event) => {
-                let json = event.to_json_value();
-                let type_name = json
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("unknown");
-                format!("Generic: {}", type_name)
+                match event {
+                    visual_novel_engine::EventRaw::ExtCall { command, .. } => {
+                        format!("Ext: {}", command.chars().take(12).collect::<String>())
+                    }
+                    _ => {
+                        let json = event.to_json_value();
+                        let type_name = json
+                            .get("type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("unknown");
+                        format!("Generic: {}", type_name)
+                    }
+                }
             }
             StoryNode::AudioAction {
                 channel, action, ..
@@ -431,3 +431,5 @@ impl<'a> NodeEditorPanel<'a> {
         );
     }
 }
+
+

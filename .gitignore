@@ -15,3 +15,4 @@ docs/phase10_execution_tracker.yaml
 crates/runtime/tests/audio_sync_tests.rs
 docs/phase10_p0_checklist.md
 docs/phase10_production_plan.md
+examples/renpy_the_question/

@@ -1,6 +1,7 @@
 use crate::editor::execution_contract;
 use crate::editor::node_graph::NodeGraph;
 use crate::editor::node_types::StoryNode;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LintSeverity {
@@ -109,6 +110,7 @@ pub struct LintIssue {
     pub event_ip: Option<u32>,
     pub edge_from: Option<u32>,
     pub edge_to: Option<u32>,
+    pub blocked_by: Option<String>,
     pub asset_path: Option<String>,
     pub severity: LintSeverity,
     pub phase: ValidationPhase,
@@ -147,6 +149,7 @@ impl LintIssue {
             event_ip: None,
             edge_from: None,
             edge_to: None,
+            blocked_by: None,
             asset_path: None,
             severity,
             phase,
@@ -163,6 +166,11 @@ impl LintIssue {
     pub fn with_edge(mut self, edge_from: Option<u32>, edge_to: Option<u32>) -> Self {
         self.edge_from = edge_from;
         self.edge_to = edge_to;
+        self
+    }
+
+    pub fn with_blocked_by(mut self, blocked_by: impl Into<String>) -> Self {
+        self.blocked_by = Some(blocked_by.into());
         self
     }
 
@@ -210,7 +218,14 @@ where
     rules::validate_with_asset_probe_impl(graph, asset_exists)
 }
 
+pub fn validate_with_project_root(graph: &NodeGraph, project_root: &Path) -> Vec<LintIssue> {
+    rules::validate_with_asset_probe_impl(graph, |asset| {
+        helpers::asset_exists_from_project_root(project_root, asset)
+    })
+}
+
 mod helpers;
+mod context;
 mod rules;
 
 #[cfg(test)]

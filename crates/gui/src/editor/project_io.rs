@@ -1,6 +1,6 @@
 use crate::editor::errors::EditorError;
 use crate::editor::{node_graph::NodeGraph, script_sync};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use visual_novel_engine::{
     manifest::{ManifestMigrationReport, ProjectManifest},
     ScriptRaw,
@@ -17,6 +17,53 @@ pub struct LoadedScript {
     pub was_imported: bool,
 }
 
+pub(crate) fn resolve_existing_project_path(
+    root: &Path,
+    requested: &Path,
+) -> Result<Option<PathBuf>, EditorError> {
+    let canonical_root = root.canonicalize().map_err(EditorError::IoError)?;
+    let candidate = if requested.is_absolute() {
+        requested.to_path_buf()
+    } else {
+        if requested.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        }) {
+            return Err(EditorError::CompileError(format!(
+                "Path escapes project root: {}",
+                requested.display()
+            )));
+        }
+        canonical_root.join(requested)
+    };
+
+    if requested.is_absolute() && !candidate.starts_with(&canonical_root) {
+        return Err(EditorError::CompileError(format!(
+            "Path escapes project root: {}",
+            requested.display()
+        )));
+    }
+
+    if !candidate.exists() {
+        return Ok(None);
+    }
+    if !candidate.is_file() {
+        return Ok(None);
+    }
+
+    let canonical_candidate = candidate.canonicalize().map_err(EditorError::IoError)?;
+    if !canonical_candidate.starts_with(&canonical_root) {
+        return Err(EditorError::CompileError(format!(
+            "Path escapes project root after canonicalization: {}",
+            requested.display()
+        )));
+    }
+
+    Ok(Some(canonical_candidate))
+}
+
 pub fn load_project(path: PathBuf) -> Result<LoadedProject, EditorError> {
     // 1. Load Manifest (TOML)
     let manifest_content = std::fs::read_to_string(&path).map_err(EditorError::IoError)?;
@@ -29,18 +76,13 @@ pub fn load_project(path: PathBuf) -> Result<LoadedProject, EditorError> {
 
     // 2. Load Entry Point Script if exists
     let entry_point_script = {
-        let entry = std::path::PathBuf::from(&manifest.settings.entry_point);
-        let parent = path.parent().unwrap_or(&path);
-        let script_path = if entry.is_absolute() {
-            entry
-        } else {
-            parent.join(entry)
-        };
-
-        if script_path.exists() {
-            Some((script_path.clone(), load_script(script_path)?))
-        } else {
-            None
+        let project_root = path.parent().unwrap_or(&path);
+        match resolve_existing_project_path(
+            project_root,
+            Path::new(&manifest.settings.entry_point),
+        )? {
+            Some(script_path) => Some((script_path.clone(), load_script(script_path)?)),
+            None => None,
         }
     };
 
@@ -125,5 +167,50 @@ entry_point = "main.json"
         );
         assert!(loaded.manifest_migration_report.is_some());
         assert!(loaded.entry_point_script.is_some());
+    }
+
+    #[test]
+    fn load_project_rejects_entry_point_escape_outside_root() {
+        let dir = tempdir().expect("tempdir");
+        let project_root = dir.path().join("project");
+        fs::create_dir_all(&project_root).expect("mkdir project");
+        let manifest_path = project_root.join("project.vnm");
+        let outside_script = dir.path().join("outside.json");
+
+        fs::write(
+            &outside_script,
+            r#"{
+  "script_schema_version": "1.0",
+  "events": [],
+  "labels": {}
+}"#,
+        )
+        .expect("write outside script");
+
+        let manifest = r#"
+schema_version = "1.0"
+
+[metadata]
+name = "Escape Test"
+author = "QA"
+version = "0.1.0"
+
+[settings]
+resolution = [1280, 720]
+default_language = "en"
+supported_languages = ["en"]
+entry_point = "../outside.json"
+
+[assets]
+"#;
+        fs::write(&manifest_path, manifest).expect("write manifest");
+
+        match load_project(manifest_path) {
+            Ok(_) => panic!("escape must be rejected"),
+            Err(EditorError::CompileError(message)) => {
+                assert!(message.contains("escapes project root"))
+            }
+            Err(other) => panic!("unexpected error: {other}"),
+        }
     }
 }

@@ -201,28 +201,42 @@ impl Engine {
                                     resource: AssetId::from_path(path.as_ref()),
                                     path: path.clone(),
                                     r#loop: action.loop_playback.unwrap_or(true),
+                                    volume: action.volume,
                                     fade_in: Duration::from_millis(
                                         action.fade_duration_ms.unwrap_or(DEFAULT_FADE_MS),
                                     ),
                                 })
-                            } else {
+                            } else if action.channel == 1 {
                                 Some(AudioCommand::PlaySfx {
                                     resource: AssetId::from_path(path.as_ref()),
                                     path: path.clone(),
+                                    volume: action.volume,
                                 })
+                            } else if action.channel == 2 {
+                                Some(AudioCommand::PlayVoice {
+                                    resource: AssetId::from_path(path.as_ref()),
+                                    path: path.clone(),
+                                    volume: action.volume,
+                                })
+                            } else {
+                                None
                             }
                         } else {
                             None
                         }
                     }
                     1 | 2 => {
-                        // Stop/FadeOut (for BGM, both map to stop with fade_out duration)
+                        // Stop/FadeOut
                         if action.channel == 0 {
                             Some(AudioCommand::StopBgm {
                                 fade_out: Duration::from_millis(
                                     action.fade_duration_ms.unwrap_or(DEFAULT_FADE_MS),
                                 ),
                             })
+                        } else if action.channel == 1 {
+                            Some(AudioCommand::StopSfx)
+                        } else if action.channel == 2 {
+                            Some(AudioCommand::StopVoice)
                         } else {
                             None
                         }
@@ -492,6 +506,7 @@ fn initial_audio_commands(state: &EngineState) -> Vec<AudioCommand> {
             resource: AssetId::from_path(music.as_ref()),
             path: music.clone(),
             r#loop: true,
+            volume: None,
             fade_in: Duration::from_millis(DEFAULT_FADE_MS),
         });
     }
@@ -511,6 +526,7 @@ fn append_music_delta(
             resource: AssetId::from_path(music.as_ref()),
             path: music.clone(),
             r#loop: true,
+            volume: None,
             fade_in: Duration::from_millis(DEFAULT_FADE_MS),
         }),
         None => audio_commands.push(AudioCommand::StopBgm {

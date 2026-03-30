@@ -1,5 +1,6 @@
 mod assets;
 mod audio;
+mod bundle;
 mod engine;
 mod entity;
 mod error;
@@ -9,6 +10,7 @@ mod localization;
 pub mod manifest;
 mod migration;
 mod render;
+mod renpy_import;
 mod repro;
 mod resource;
 mod script;
@@ -23,6 +25,10 @@ mod visual;
 
 pub use assets::{AssetId, AssetId128, AssetManifest};
 pub use audio::AudioCommand;
+pub use bundle::{
+    export_bundle, BundleAssetEntry, BundleIntegrity, ExportBundleReport, ExportBundleSpec,
+    ExportTargetPlatform,
+};
 pub use engine::{ChoiceHistoryEntry, Engine, StateChange};
 pub use error::{VnError, VnResult};
 pub use event::{
@@ -37,11 +43,16 @@ pub use localization::{
     collect_script_localization_keys, localization_key, LocalizationCatalog, LocalizationIssue,
     LocalizationIssueKind,
 };
+pub use manifest::ProjectManifest;
 pub use migration::{
     migrate_script_json_to_current, migrate_script_json_value, MigrationError, MigrationReport,
     MigrationTraceEntry,
 };
 pub use render::{RenderBackend, RenderOutput, TextRenderer};
+pub use renpy_import::{
+    import_renpy_project, ImportArea, ImportFallbackPolicy, ImportIssue, ImportPhase,
+    ImportProfile, ImportRenpyOptions, ImportReport,
+};
 pub use repro::{
     run_repro_case, run_repro_case_with_limits, ReproCase, ReproMonitor, ReproMonitorResult,
     ReproOracle, ReproRunReport, ReproStepTrace, ReproStopReason, REPRO_CASE_SCHEMA,

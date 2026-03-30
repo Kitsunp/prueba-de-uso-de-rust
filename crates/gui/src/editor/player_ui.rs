@@ -5,8 +5,8 @@ use std::time::Duration;
 use eframe::egui;
 use tracing::{info, instrument};
 use visual_novel_engine::{
-    localization_key, ChoiceHistoryEntry, ChoiceOptionCompiled, Engine, EventCompiled,
-    LocalizationCatalog,
+    localization_key, AssetId, AudioCommand, ChoiceHistoryEntry, ChoiceOptionCompiled, Engine,
+    EventCompiled, LocalizationCatalog,
 };
 
 use super::node_types::ToastState;
@@ -32,6 +32,8 @@ pub struct PlayerSessionState {
     pub bgm_muted: bool,
     pub sfx_muted: bool,
     pub voice_muted: bool,
+    pub last_audio_event: Option<String>,
+    pub last_audio_error: Option<String>,
     current_ip: Option<u32>,
     line_started_at_sec: f64,
     last_auto_step_at_sec: Option<f64>,
@@ -52,6 +54,8 @@ impl Default for PlayerSessionState {
             bgm_muted: false,
             sfx_muted: false,
             voice_muted: false,
+            last_audio_event: None,
+            last_audio_error: None,
             current_ip: None,
             line_started_at_sec: 0.0,
             last_auto_step_at_sec: None,
@@ -60,17 +64,23 @@ impl Default for PlayerSessionState {
 }
 
 impl PlayerSessionState {
-    fn on_position_changed(&mut self, position: u32, now_sec: f64) {
+    fn on_position_changed(&mut self, position: u32, now_sec: f64) -> bool {
         if self.current_ip != Some(position) {
             self.current_ip = Some(position);
             self.line_started_at_sec = now_sec;
+            return true;
         }
+        false
     }
 
     fn reset_runtime_progress(&mut self, now_sec: f64) {
         self.current_ip = None;
         self.line_started_at_sec = now_sec;
         self.last_auto_step_at_sec = None;
+    }
+
+    pub(crate) fn reset_for_restart(&mut self, now_sec: f64) {
+        self.reset_runtime_progress(now_sec);
     }
 
     fn reveal_current_line(&mut self, text: &str, now_sec: f64) {
@@ -139,10 +149,11 @@ pub fn render_player_ui(
     player_locale: &mut String,
     localization_catalog: &LocalizationCatalog,
     ctx: &egui::Context,
-) {
+) -> Vec<AudioCommand> {
+    let mut audio_commands = Vec::new();
     egui::CentralPanel::default().show(ctx, |ui| {
         if let Some(ref mut eng) = engine {
-            render_event_ui(
+            audio_commands.extend(render_event_ui(
                 ui,
                 ctx,
                 eng,
@@ -150,11 +161,12 @@ pub fn render_player_ui(
                 player,
                 player_locale,
                 localization_catalog,
-            );
+            ));
         } else {
             render_no_script_ui(ui);
         }
     });
+    audio_commands
 }
 
 fn render_no_script_ui(ui: &mut egui::Ui) {
@@ -176,10 +188,14 @@ fn render_event_ui(
     player: &mut PlayerSessionState,
     player_locale: &mut String,
     localization_catalog: &LocalizationCatalog,
-) {
+) -> Vec<AudioCommand> {
+    let mut audio_commands = Vec::new();
     let now_sec = ctx.input(|i| i.time);
     let current_ip = engine.state().position;
-    player.on_position_changed(current_ip, now_sec);
+    let ip_changed = player.on_position_changed(current_ip, now_sec);
+    if ip_changed {
+        queue_scene_audio_if_current(engine, &mut audio_commands);
+    }
 
     render_header_bar(ui, engine, toast, player, now_sec);
     ui.separator();
@@ -191,9 +207,16 @@ fn render_event_ui(
     match engine.current_event() {
         Ok(event) => {
             if player.should_skip_current(&event, engine) {
-                let _ = engine.step();
+                if matches!(event, EventCompiled::ExtCall { .. }) {
+                    let _ = engine.resume();
+                    audio_commands.extend(engine.take_audio_commands());
+                } else {
+                    if let Ok((cmd, _)) = engine.step() {
+                        audio_commands.extend(cmd);
+                    }
+                }
                 ctx.request_repaint_after(Duration::from_millis(16));
-                return;
+                return audio_commands;
             }
 
             ui.add_space(14.0);
@@ -214,7 +237,9 @@ fn render_event_ui(
                         &localized_text,
                         now_sec,
                     ) {
-                        let _ = engine.step();
+                        if let Ok((cmd, _)) = engine.step() {
+                            audio_commands.extend(cmd);
+                        }
                     }
                 }
                 EventCompiled::Choice(c) => {
@@ -241,6 +266,7 @@ fn render_event_ui(
                         &localized_prompt,
                         &localized_options,
                         &c.options,
+                        &mut audio_commands,
                     );
                 }
                 EventCompiled::Scene(s) => {
@@ -250,34 +276,50 @@ fn render_event_ui(
                         s.background.as_ref().map(|s| s.as_ref()),
                         now_sec,
                     ) {
-                        let _ = engine.step();
+                        if let Ok((cmd, _)) = engine.step() {
+                            audio_commands.extend(cmd);
+                        }
                     }
                 }
                 EventCompiled::Transition(t) => {
-                    render_transition(ui, ctx, engine, t.kind, t.duration_ms);
+                    render_transition(ui, ctx, engine, t.kind, t.duration_ms, &mut audio_commands);
+                }
+                EventCompiled::ExtCall { .. } => {
+                    ui.label("Processing custom action...");
+                    let _ = engine.resume();
+                    audio_commands.extend(engine.take_audio_commands());
                 }
                 EventCompiled::Jump { .. }
                 | EventCompiled::SetFlag { .. }
                 | EventCompiled::SetVar { .. }
                 | EventCompiled::JumpIf { .. }
                 | EventCompiled::Patch(_)
-                | EventCompiled::ExtCall { .. }
                 | EventCompiled::AudioAction(_)
                 | EventCompiled::SetCharacterPosition(_) => {
                     ui.label("Processing...");
-                    let _ = engine.step();
+                    if let Ok((cmd, _)) = engine.step() {
+                        audio_commands.extend(cmd);
+                    }
                 }
             }
         }
         Err(e) => {
             let error_str = format!("{}", e);
             if error_str.contains("End") || error_str.contains("position") {
-                render_end(ui, engine, toast, player, now_sec);
+                render_end(
+                    ui,
+                    engine,
+                    toast,
+                    player,
+                    now_sec,
+                    &mut audio_commands,
+                );
             } else {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", e));
             }
         }
     }
+    audio_commands
 }
 
 fn render_header_bar(
@@ -352,6 +394,13 @@ fn render_player_controls(
         ui.checkbox(&mut player.voice_muted, "Mute Voice");
         ui.add(egui::Slider::new(&mut player.voice_volume, 0.0..=1.0).text("Voice"));
     });
+
+    if let Some(last_event) = &player.last_audio_event {
+        ui.label(format!("Audio trace: {last_event}"));
+    }
+    if let Some(last_error) = &player.last_audio_error {
+        ui.colored_label(egui::Color32::YELLOW, format!("Audio warning: {last_error}"));
+    }
 }
 
 fn render_backlog_window(ctx: &egui::Context, engine: &Engine, player: &mut PlayerSessionState) {
@@ -434,6 +483,7 @@ fn render_transition(
     engine: &mut Engine,
     kind: u8,
     duration_ms: u32,
+    audio_commands: &mut Vec<AudioCommand>,
 ) {
     let ip = engine.state().position;
     let now = ctx.input(|i| i.time);
@@ -462,7 +512,9 @@ fn render_transition(
     );
 
     if progress >= 1.0 || ui.button("Skip Transition").clicked() {
-        let _ = engine.step();
+        if let Ok((cmd, _)) = engine.step() {
+            audio_commands.extend(cmd);
+        }
         ctx.data_mut(|data| data.remove::<(u32, f64)>(transition_id));
     } else {
         ctx.request_repaint_after(Duration::from_millis(16));
@@ -534,6 +586,7 @@ fn render_choice(
     prompt: &str,
     localized_options: &[String],
     options: &[ChoiceOptionCompiled],
+    audio_commands: &mut Vec<AudioCommand>,
 ) {
     egui::Frame::none()
         .fill(egui::Color32::from_rgb(80, 60, 60))
@@ -555,6 +608,8 @@ fn render_choice(
         {
             info!("Choice selected: {} ({})", option.text.as_ref(), i);
             let _ = engine.choose(i);
+            audio_commands.extend(engine.take_audio_commands());
+            queue_scene_audio_if_current(engine, audio_commands);
             *toast = Some(ToastState::success(format!(
                 "Selected: {}",
                 option.text.as_ref()
@@ -610,6 +665,7 @@ fn render_end(
     toast: &mut Option<ToastState>,
     player: &mut PlayerSessionState,
     now_sec: f64,
+    audio_commands: &mut Vec<AudioCommand>,
 ) {
     ui.vertical_centered(|ui| {
         ui.add_space(50.0);
@@ -627,9 +683,26 @@ fn render_end(
             if engine.jump_to_label("start").is_ok() {
                 engine.clear_session_history();
                 player.reset_runtime_progress(now_sec);
+                queue_scene_audio_if_current(engine, audio_commands);
                 *toast = Some(ToastState::success("Story restarted"));
             }
         }
+    });
+}
+
+fn queue_scene_audio_if_current(engine: &Engine, audio_commands: &mut Vec<AudioCommand>) {
+    let Ok(EventCompiled::Scene(scene)) = engine.current_event() else {
+        return;
+    };
+    let Some(music) = &scene.music else {
+        return;
+    };
+    audio_commands.push(AudioCommand::PlayBgm {
+        resource: AssetId::from_path(music.as_ref()),
+        path: music.clone(),
+        r#loop: true,
+        volume: None,
+        fade_in: Duration::from_millis(500),
     });
 }
 

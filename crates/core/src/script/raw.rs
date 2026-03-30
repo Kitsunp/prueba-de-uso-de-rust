@@ -58,6 +58,11 @@ impl ScriptRaw {
 
     /// Parses a JSON script into a raw script structure with resource limits.
     pub fn from_json_with_limits(input: &str, limits: ResourceLimiter) -> VnResult<Self> {
+        if input.len() > limits.max_script_bytes {
+            return Err(VnError::ResourceLimit(
+                "script json input budget".to_string(),
+            ));
+        }
         let mut payload: serde_json::Value =
             serde_json::from_str(input).map_err(|err| json_deserialize_error(input, &err))?;
         migrate_script_json_value(&mut payload)

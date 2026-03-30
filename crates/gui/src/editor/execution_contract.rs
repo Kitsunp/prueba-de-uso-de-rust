@@ -184,6 +184,7 @@ pub fn contract_for_node(node: &StoryNode) -> EventExecutionContract {
         StoryNode::AudioAction { .. } => AUDIO_ACTION,
         StoryNode::Transition { .. } => TRANSITION,
         StoryNode::CharacterPlacement { .. } => CHARACTER_PLACEMENT,
+        StoryNode::Generic(EventRaw::ExtCall { .. }) => EXT_CALL,
         StoryNode::Generic(_) => GENERIC_EVENT,
     }
 }
@@ -244,10 +245,19 @@ mod tests {
     }
 
     #[test]
-    fn generic_node_is_not_export_supported() {
+    fn extcall_generic_node_is_export_supported() {
         let contract = contract_for_node(&StoryNode::Generic(EventRaw::ExtCall {
             command: "hook".to_string(),
             args: vec!["x".to_string()],
+        }));
+        assert!(contract.export_supported);
+        assert_eq!(contract.fidelity, FidelityClass::RuntimeReal);
+    }
+
+    #[test]
+    fn unsupported_generic_node_remains_preview_only() {
+        let contract = contract_for_node(&StoryNode::Generic(EventRaw::Jump {
+            target: "node_1".to_string(),
         }));
         assert!(!contract.export_supported);
         assert_eq!(contract.fidelity, FidelityClass::PreviewOnly);

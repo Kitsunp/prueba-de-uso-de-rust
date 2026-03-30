@@ -129,6 +129,7 @@ impl StoryNode {
             StoryNode::AudioAction { .. } => "Audio",
             StoryNode::Transition { .. } => "Transition",
             StoryNode::CharacterPlacement { .. } => "Placement",
+            StoryNode::Generic(visual_novel_engine::EventRaw::ExtCall { .. }) => "ExtCall",
             StoryNode::Generic(_) => "Generic Event",
         }
     }
@@ -152,6 +153,7 @@ impl StoryNode {
             StoryNode::AudioAction { .. } => "🔊",
             StoryNode::Transition { .. } => "⏳",
             StoryNode::CharacterPlacement { .. } => "🧍",
+            StoryNode::Generic(visual_novel_engine::EventRaw::ExtCall { .. }) => "🧩",
             StoryNode::Generic(_) => "📦",
         }
     }
@@ -175,6 +177,9 @@ impl StoryNode {
             StoryNode::AudioAction { .. } => egui::Color32::from_rgb(100, 100, 60), // Gold/Yellowish
             StoryNode::Transition { .. } => egui::Color32::from_rgb(60, 100, 100),  // Cyan/Teal
             StoryNode::CharacterPlacement { .. } => egui::Color32::from_rgb(100, 60, 100), // Purple-ish
+            StoryNode::Generic(visual_novel_engine::EventRaw::ExtCall { .. }) => {
+                egui::Color32::from_rgb(90, 85, 110)
+            }
             StoryNode::Generic(_) => egui::Color32::from_rgb(80, 80, 80), // Gray for generic
         }
     }
@@ -201,6 +206,19 @@ impl StoryNode {
     #[inline]
     pub fn can_connect_to(&self) -> bool {
         !matches!(self, StoryNode::Start)
+    }
+}
+
+/// Returns the visual height used by graph hit-testing/layout for a node.
+#[inline]
+pub fn node_visual_height(node: &StoryNode) -> f32 {
+    match node {
+        StoryNode::Choice { options, .. } => {
+            let header = 40.0;
+            let option_h = 30.0;
+            header + ((options.len() + 1).max(1) as f32 * option_h) + 10.0
+        }
+        _ => NODE_HEIGHT,
     }
 }
 

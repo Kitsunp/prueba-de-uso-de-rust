@@ -1,0 +1,21 @@
+manifest_schema_version = "1.0"
+
+[metadata]
+name = "renpy_the_question"
+author = "renpy_import"
+version = "0.1.0"
+
+[settings]
+resolution = [
+    1280,
+    720,
+]
+default_language = "en"
+supported_languages = ["en"]
+entry_point = "main.json"
+
+[assets.backgrounds]
+
+[assets.characters]
+
+[assets.audio]

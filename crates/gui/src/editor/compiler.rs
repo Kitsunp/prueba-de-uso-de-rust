@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::Path;
 
 use crate::editor::{
     node_graph::NodeGraph,
@@ -145,6 +146,13 @@ impl CompilationResult {
 }
 
 pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
+    compile_project_with_project_root(graph, None)
+}
+
+pub fn compile_project_with_project_root(
+    graph: &NodeGraph,
+    project_root: Option<&Path>,
+) -> CompilationResult {
     let mut phase_trace = Vec::new();
 
     phase_trace.push(PhaseTrace {
@@ -154,7 +162,11 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
     });
     let script = script_sync::to_script(graph);
 
-    let mut issues = validator::validate(graph);
+    let mut issues = if let Some(root) = project_root {
+        validator::validate_with_project_root(graph, root)
+    } else {
+        validator::validate(graph)
+    };
     phase_trace.push(PhaseTrace {
         phase: CompilationPhase::GraphValidation,
         ok: !issues.iter().any(|i| i.severity == LintSeverity::Error),
@@ -173,15 +185,31 @@ pub fn compile_project(graph: &NodeGraph) -> CompilationResult {
             let story_graph = StoryGraph::from_script(&compiled);
             let unreachable = story_graph.unreachable_nodes();
             if !unreachable.is_empty() {
-                issues.push(LintIssue::warning(
-                    None,
-                    ValidationPhase::DryRun,
-                    LintCode::DryRunUnreachableCompiled,
-                    format!(
-                        "Dry Run detected {} unreachable compiled event(s)",
-                        unreachable.len()
-                    ),
-                ));
+                for event_ip in unreachable {
+                    let incoming = story_graph
+                        .incoming_edges(event_ip)
+                        .into_iter()
+                        .map(|edge| edge.from.to_string())
+                        .collect::<Vec<_>>();
+                    let blocked_by = if incoming.is_empty() {
+                        "no incoming compiled edges".to_string()
+                    } else {
+                        format!("incoming_event_ips={}", incoming.join(","))
+                    };
+                    let node_id = graph.node_for_event_ip(event_ip);
+                    issues.push(
+                        LintIssue::warning(
+                            node_id,
+                            ValidationPhase::DryRun,
+                            LintCode::DryRunUnreachableCompiled,
+                            format!(
+                                "Dry Run detected unreachable compiled event at ip={event_ip}"
+                            ),
+                        )
+                        .with_event_ip(Some(event_ip))
+                        .with_blocked_by(blocked_by),
+                    );
+                }
             }
 
             match Engine::from_compiled(

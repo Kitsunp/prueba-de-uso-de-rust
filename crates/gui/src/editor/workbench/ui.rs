@@ -2,8 +2,8 @@ use super::*;
 
 impl EditorWorkbench {
     pub(super) fn render_player_mode(&mut self, ctx: &egui::Context) {
-        // Use the player_ui module which manages the central panel itself
-        crate::editor::player_ui::render_player_ui(
+        self.ensure_player_audio_backend();
+        let audio_commands = crate::editor::player_ui::render_player_ui(
             &mut self.engine,
             &mut self.toast,
             &mut self.player_state,
@@ -11,9 +11,12 @@ impl EditorWorkbench {
             &self.localization_catalog,
             ctx,
         );
+        self.apply_player_audio_commands(audio_commands);
     }
 
     pub(super) fn render_editor_mode(&mut self, ctx: &egui::Context) {
+        let selected_before = self.selected_node;
+
         // 1. Bottom Panels (Validation & Timeline)
         if self.show_validation {
             let mut close_validation = false;
@@ -253,7 +256,11 @@ impl EditorWorkbench {
         // 4. Central Area (Composer + detached inspector logic)
 
         // Prepare Data for decoupled rendering to avoid simultaneous mutable borrows
-        let entity_owners = self.build_entity_node_map();
+        let entity_owners = if self.composer_entity_owners.is_empty() {
+            self.build_entity_node_map()
+        } else {
+            self.composer_entity_owners.clone()
+        };
         let mut composer_actions = Vec::new();
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -266,6 +273,9 @@ impl EditorWorkbench {
                                 crate::editor::visual_composer::VisualComposerPanel::new(
                                     &mut self.scene,
                                     &self.engine,
+                                    self.project_root.as_deref(),
+                                    &mut self.composer_image_cache,
+                                    &mut self.composer_image_failures,
                                     &mut self.selected_entity,
                                 );
                             if let Some(act) = composer.ui(ui, &entity_owners) {
@@ -288,6 +298,9 @@ impl EditorWorkbench {
                     let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
                         &mut self.scene,
                         &self.engine,
+                        self.project_root.as_deref(),
+                        &mut self.composer_image_cache,
+                        &mut self.composer_image_failures,
                         &mut self.selected_entity,
                     );
                     if let Some(act) = composer.ui(ui, &entity_owners) {
@@ -299,6 +312,9 @@ impl EditorWorkbench {
                 let mut composer = crate::editor::visual_composer::VisualComposerPanel::new(
                     &mut self.scene,
                     &self.engine,
+                    self.project_root.as_deref(),
+                    &mut self.composer_image_cache,
+                    &mut self.composer_image_failures,
                     &mut self.selected_entity,
                 );
                 if let Some(act) = composer.ui(ui, &entity_owners) {
@@ -322,15 +338,49 @@ impl EditorWorkbench {
                     // users might need to drag it later.
                     let new_id = self.node_graph.add_node(node, pos);
                     self.node_graph.selected = Some(new_id);
+                    self.selected_node = Some(new_id);
                     self.node_graph.mark_modified();
+                }
+                crate::editor::visual_composer::VisualComposerAction::MutateNode {
+                    node_id,
+                    mutation,
+                } => {
+                    if self.apply_composer_node_mutation(node_id, mutation) {
+                        self.node_graph.selected = Some(node_id);
+                        self.selected_node = Some(node_id);
+                        self.node_graph.mark_modified();
+                    }
                 }
             }
         }
 
         // Common Sync
-        if let Some(node_id) = self.node_graph.selected {
-            self.selected_node = Some(node_id);
-            self.selected_entity = None;
+        // External panels may set selected_node directly (lint, diagnostics).
+        // Apply that request only when it changed this frame, otherwise keep
+        // node editor/composer selection as source of truth.
+        if self.selected_node != selected_before {
+            match self.selected_node {
+                Some(requested) if self.node_graph.get_node(requested).is_some() => {
+                    self.node_graph.selected = Some(requested);
+                    self.selected_entity = None;
+                }
+                Some(_) => {
+                    self.selected_node = self.node_graph.selected;
+                }
+                None => {
+                    self.node_graph.selected = None;
+                }
+            }
+        }
+
+        if self.node_graph.selected != self.selected_node {
+            self.selected_node = self.node_graph.selected;
+            if self.selected_node.is_some() {
+                self.selected_entity = None;
+            }
+        }
+        if self.selected_node != selected_before {
+            self.refresh_scene_from_engine_preview();
         }
 
         if self.node_graph.modified {
@@ -380,42 +430,5 @@ impl EditorWorkbench {
                 let _ = self.sync_graph_to_script();
             }
         }
-    }
-
-    fn build_entity_node_map(&self) -> std::collections::HashMap<u32, u32> {
-        let mut map = std::collections::HashMap::new();
-        use crate::editor::node_types::StoryNode;
-        // Simple heuristic: Map entity to the node that DEFINES it (Character Dialog or Scene Background)
-        // This requires traversing the graph.
-        for (nid, node, _) in self.node_graph.nodes() {
-            match node {
-                StoryNode::Dialogue { speaker, .. } => {
-                    // Find entity with this name in scene...
-                    // But entity IDs are dynamic from engine state.
-                    // We match by name.
-                    for entity in self.scene.iter() {
-                        if let visual_novel_engine::EntityKind::Character(c) = &entity.kind {
-                            if c.name.as_ref() == speaker.as_str() {
-                                map.insert(entity.id.raw(), *nid);
-                            }
-                        }
-                    }
-                }
-                StoryNode::Scene {
-                    background: Some(background),
-                    ..
-                } => {
-                    for entity in self.scene.iter() {
-                        if let visual_novel_engine::EntityKind::Image(img) = &entity.kind {
-                            if img.path.as_ref() == background.as_str() {
-                                map.insert(entity.id.raw(), *nid);
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        map
     }
 }

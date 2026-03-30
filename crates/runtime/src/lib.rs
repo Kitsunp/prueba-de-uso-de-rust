@@ -122,7 +122,7 @@ where
             InputAction::None => {}
             InputAction::Quit => return Ok(false),
             InputAction::Advance => {
-                let (audio_commands, _) = self.engine.step()?;
+                let audio_commands = step_or_resume(&mut self.engine)?;
                 self.refresh_state()?;
                 self.apply_audio_commands(&audio_commands);
                 self.prefetch_upcoming_assets();
@@ -171,17 +171,31 @@ where
     fn apply_audio_commands(&mut self, commands: &[AudioCommand]) {
         for command in commands {
             match command {
-                AudioCommand::PlayBgm { path, .. } => {
-                    // Use path directly from the command (no workaround needed)
-                    self.audio.play_music(path.as_ref());
+                AudioCommand::PlayBgm {
+                    path,
+                    r#loop,
+                    volume,
+                    ..
+                } => {
+                    self.audio
+                        .play_music_with_options(path.as_ref(), *r#loop, *volume);
                     self.last_bgm_path = Some(path.as_ref().to_string());
                 }
-                AudioCommand::StopBgm { .. } => {
-                    self.audio.stop_music();
+                AudioCommand::StopBgm { fade_out } => {
+                    self.audio.stop_music_with_fade(Some(*fade_out));
                     self.last_bgm_path = None;
                 }
-                AudioCommand::PlaySfx { path, .. } => {
-                    self.audio.play_sfx(path.as_ref());
+                AudioCommand::PlaySfx { path, volume, .. } => {
+                    self.audio.play_sfx_with_volume(path.as_ref(), *volume);
+                }
+                AudioCommand::StopSfx => {
+                    self.audio.stop_sfx();
+                }
+                AudioCommand::PlayVoice { path, volume, .. } => {
+                    self.audio.play_voice_with_volume(path.as_ref(), *volume);
+                }
+                AudioCommand::StopVoice => {
+                    self.audio.stop_voice();
                 }
             }
         }
@@ -203,6 +217,16 @@ where
 
     pub fn assets(&self) -> &S {
         &self.assets
+    }
+}
+
+fn step_or_resume(engine: &mut Engine) -> visual_novel_engine::VnResult<Vec<AudioCommand>> {
+    if matches!(engine.current_event()?, EventCompiled::ExtCall { .. }) {
+        engine.resume()?;
+        Ok(engine.take_audio_commands())
+    } else {
+        let (audio_commands, _) = engine.step()?;
+        Ok(audio_commands)
     }
 }
 

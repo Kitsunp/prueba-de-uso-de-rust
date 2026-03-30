@@ -35,3 +35,15 @@ fn test_huge_script_rejection() {
     let result = ScriptRaw::from_json_with_limits(&script_json, limits);
     assert!(matches!(result, Err(VnError::ResourceLimit(_))));
 }
+
+#[test]
+fn test_oversized_invalid_json_rejects_before_deserialize() {
+    let limits = ResourceLimiter {
+        max_script_bytes: 16,
+        ..ResourceLimiter::default()
+    };
+    let oversized_invalid_json = "{".repeat(64);
+
+    let result = ScriptRaw::from_json_with_limits(&oversized_invalid_json, limits);
+    assert!(matches!(result, Err(VnError::ResourceLimit(_))));
+}

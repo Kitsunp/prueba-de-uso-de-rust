@@ -11,12 +11,13 @@ use serde::{Deserialize, Serialize};
 use visual_novel_engine::{CharacterPlacementRaw, ScriptRaw};
 
 use super::node_types::{
-    ContextMenu, StoryNode, NODE_HEIGHT, NODE_VERTICAL_SPACING, NODE_WIDTH, ZOOM_DEFAULT, ZOOM_MAX,
-    ZOOM_MIN,
+    node_visual_height, ContextMenu, StoryNode, NODE_HEIGHT, NODE_VERTICAL_SPACING, NODE_WIDTH,
+    ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN,
 };
 use super::script_sync;
 
 mod connections;
+mod layout;
 mod mutations;
 mod navigation;
 mod search;
@@ -169,8 +170,9 @@ impl NodeGraph {
 
     /// Returns the node at the given graph position, if any.
     pub fn node_at_position(&self, graph_pos: egui::Pos2) -> Option<u32> {
-        for (id, _, pos) in &self.nodes {
-            let node_rect = egui::Rect::from_min_size(*pos, egui::vec2(NODE_WIDTH, NODE_HEIGHT));
+        for (id, node, pos) in &self.nodes {
+            let node_rect =
+                egui::Rect::from_min_size(*pos, egui::vec2(NODE_WIDTH, node_visual_height(node)));
             if node_rect.contains(graph_pos) {
                 return Some(*id);
             }

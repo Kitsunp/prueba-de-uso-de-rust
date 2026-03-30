@@ -46,11 +46,11 @@ impl NodeGraph {
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
 
-        for (_, _, pos) in &self.nodes {
+        for (_, node, pos) in &self.nodes {
             min_x = min_x.min(pos.x);
             min_y = min_y.min(pos.y);
             max_x = max_x.max(pos.x + NODE_WIDTH);
-            max_y = max_y.max(pos.y + NODE_HEIGHT);
+            max_y = max_y.max(pos.y + node_visual_height(node));
         }
 
         let padding = 50.0;

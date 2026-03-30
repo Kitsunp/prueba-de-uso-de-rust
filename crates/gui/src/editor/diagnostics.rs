@@ -332,6 +332,9 @@ impl LintIssue {
         if let Some(asset_path) = &self.asset_path {
             parts.push(format!("asset={asset_path}"));
         }
+        if let Some(blocked_by) = &self.blocked_by {
+            parts.push(format!("blocked_by={blocked_by}"));
+        }
         let context = if parts.is_empty() {
             String::new()
         } else {

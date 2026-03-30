@@ -6,12 +6,17 @@ pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
         ui.menu_button("File", |ui| {
             if ui.button("Open Project...").clicked() {
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Project", &["toml"])
+                    .add_filter("VN Manifest", &["vnm"])
+                    .add_filter("Legacy Manifest", &["toml"])
                     .pick_file()
                 {
                     workbench.load_project(path);
                     ui.close_menu();
                 }
+            }
+            if ui.button("Import Ren'Py Project...").clicked() {
+                workbench.import_renpy_project_native();
+                ui.close_menu();
             }
             if ui.button("Save").clicked() {
                 workbench.prepare_save_confirmation();
@@ -19,6 +24,10 @@ pub fn render_menu_bar(ui: &mut egui::Ui, workbench: &mut EditorWorkbench) {
             }
             if ui.button("Export Game (.vnproject)").clicked() {
                 workbench.export_compiled_project();
+                ui.close_menu();
+            }
+            if ui.button("Package Bundle...").clicked() {
+                workbench.package_bundle_native();
                 ui.close_menu();
             }
         });

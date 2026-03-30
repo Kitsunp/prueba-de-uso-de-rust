@@ -1,3 +1,6 @@
+use super::context::{
+    non_exportable_event_name, parse_import_trace_context, unreachable_blocker_context,
+};
 use super::helpers::{
     detect_reachable_cycle_nodes, has_outgoing, is_unsafe_asset_ref, is_valid_audio_action,
     is_valid_audio_channel, is_valid_transition_kind, should_probe_asset_exists, visit_node,
@@ -49,12 +52,18 @@ where
 
     for (id, _, _) in &graph.nodes {
         if !visited.contains(id) {
-            issues.push(LintIssue::warning(
+            let (edge_from, blocked_by) = unreachable_blocker_context(graph, *id, &visited);
+            let mut issue = LintIssue::warning(
                 Some(*id),
                 ValidationPhase::Graph,
                 LintCode::UnreachableNode,
-                "Unreachable node (dead code)",
-            ));
+                "Unreachable node (dead code) - blocked flow",
+            )
+            .with_blocked_by(blocked_by);
+            if let Some(from_id) = edge_from {
+                issue = issue.with_edge(Some(from_id), Some(*id));
+            }
+            issues.push(issue);
         }
     }
 
@@ -70,13 +79,14 @@ where
     for (id, node, _) in &graph.nodes {
         let contract = execution_contract::contract_for_node(node);
         if !node.is_marker() && !contract.export_supported {
+            let event_name = non_exportable_event_name(node, contract.event_name);
             issues.push(LintIssue::error(
                 Some(*id),
                 ValidationPhase::Graph,
                 LintCode::ContractUnsupportedExport,
                 format!(
                     "Event '{}' is not export-compatible (contract mismatch)",
-                    contract.event_name
+                    event_name
                 ),
             ));
         }
@@ -245,12 +255,48 @@ where
                 }
             }
             StoryNode::Generic(_) => {
-                issues.push(LintIssue::warning(
+                let mut issue = LintIssue::warning(
                     Some(*id),
                     ValidationPhase::Graph,
                     LintCode::GenericEventUnchecked,
                     "Generic event has limited semantic validation",
-                ));
+                );
+                if let StoryNode::Generic(visual_novel_engine::EventRaw::ExtCall {
+                    command,
+                    args,
+                }) = node
+                {
+                    if let Some(trace) = parse_import_trace_context(args) {
+                        let ip_segment = trace
+                            .event_ip
+                            .map(|ip| format!(" ip={ip}"))
+                            .unwrap_or_default();
+                        let snippet_segment = trace
+                            .snippet
+                            .as_deref()
+                            .filter(|value| !value.trim().is_empty())
+                            .map(|value| format!(" snippet='{}'", value.trim()))
+                            .unwrap_or_default();
+                        issue.message = format!(
+                            "Import fallback extcall '{}' requires review (trace_id={}, code={}, source={}, area={}, phase={}{}{})",
+                            command,
+                            trace.trace_id,
+                            trace.issue_code,
+                            trace.source_command,
+                            trace.area,
+                            trace.phase,
+                            ip_segment,
+                            snippet_segment
+                        );
+                        issue = issue.with_blocked_by(trace.blocked_by);
+                    } else {
+                        issue.message = format!(
+                            "ExtCall '{}' has no structured trace envelope for semantic validation",
+                            command
+                        );
+                    }
+                }
+                issues.push(issue);
             }
             StoryNode::Transition {
                 kind, duration_ms, ..

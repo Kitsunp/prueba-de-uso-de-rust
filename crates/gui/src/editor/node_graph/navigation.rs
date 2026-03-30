@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::VecDeque;
 
 impl NodeGraph {
     /// Returns node ids that directly connect into `node_id`.
@@ -23,6 +24,15 @@ impl NodeGraph {
     pub fn node_for_event_ip(&self, event_ip: u32) -> Option<u32> {
         let idx = usize::try_from(event_ip).ok()?;
         self.script_order_node_ids().get(idx).copied()
+    }
+
+    /// Returns the event_ip index for a node in script traversal order.
+    pub fn event_ip_for_node(&self, node_id: u32) -> Option<u32> {
+        let idx = self
+            .script_order_node_ids()
+            .iter()
+            .position(|candidate| *candidate == node_id)?;
+        u32::try_from(idx).ok()
     }
 
     /// Returns nodes that reference a concrete asset path.
@@ -57,24 +67,26 @@ impl NodeGraph {
             .map(|(id, _, _)| *id);
 
         let mut visited = Vec::new();
-        let mut queue = Vec::new();
+        let mut queue = VecDeque::new();
         if let Some(start) = start_id {
-            queue.push(start);
+            queue.push_back(start);
         }
 
-        while let Some(id) = queue.pop() {
+        while let Some(id) = queue.pop_front() {
             if visited.contains(&id) {
                 continue;
             }
             visited.push(id);
 
-            for connection in self
+            let mut outgoing: Vec<_> = self
                 .connections
                 .iter()
                 .filter(|connection| connection.from == id)
-            {
-                if !visited.contains(&connection.to) {
-                    queue.push(connection.to);
+                .collect();
+            outgoing.sort_by_key(|connection| (connection.from_port, connection.to));
+            for connection in outgoing {
+                if !visited.contains(&connection.to) && !queue.contains(&connection.to) {
+                    queue.push_back(connection.to);
                 }
             }
         }
