@@ -3,6 +3,7 @@ use super::conversion::{event_to_python, ui_state_to_python};
 use super::types::{vn_error_to_py, PyResourceConfig};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods};
+use std::collections::BTreeSet;
 use visual_novel_engine::{
     AudioCommand, Engine as CoreEngine, EventCompiled, ResourceLimiter, ScriptRaw, SecurityPolicy,
     UiState,
@@ -16,6 +17,8 @@ pub struct PyEngine {
     max_texture_memory: usize,
     prefetch_depth: usize,
     handler: Option<Py<PyAny>>,
+    allowed_ext_call_commands: BTreeSet<String>,
+    last_ext_call_error: Option<String>,
     last_audio_commands: Vec<AudioCommand>,
 }
 
@@ -42,6 +45,8 @@ impl PyEngine {
             max_texture_memory: 512 * 1024 * 1024,
             prefetch_depth: 0,
             handler: None,
+            allowed_ext_call_commands: BTreeSet::new(),
+            last_ext_call_error: None,
             last_audio_commands: Vec::new(),
         })
     }
@@ -56,14 +61,20 @@ impl PyEngine {
         self.last_audio_commands = audio;
         let event = change.event;
         if let EventCompiled::ExtCall { command, args } = &event {
-            if let Some(handler) = &self.handler {
+            if !self.allowed_ext_call_commands.contains(command.as_str()) {
+                self.last_ext_call_error = Some(format!(
+                    "ext_call '{command}' denied by capability policy"
+                ));
+            } else if let Some(handler) = &self.handler {
                 let handler = handler.clone_ref(py);
-                // Catch exceptions from handler
                 if let Err(e) = handler.call1(py, (command.as_str(), args.clone())) {
-                    // Log or store the error, but don't fail the step
-                    eprintln!("ExtCall handler error: {:?}", e);
-                    // Or store in PyEngine for later retrieval
+                    let msg = format!("ExtCall handler error for '{command}': {e}");
+                    self.last_ext_call_error = Some(msg.clone());
+                    return Err(pyo3::exceptions::PyRuntimeError::new_err(msg));
                 }
+                self.last_ext_call_error = None;
+            } else {
+                self.last_ext_call_error = None;
             }
         }
         let event_obj = event_to_python(&event, py)?;
@@ -232,6 +243,18 @@ impl PyEngine {
         self.handler = Some(callback);
     }
 
+    fn allow_ext_call_command(&mut self, command: &str) {
+        self.allowed_ext_call_commands.insert(command.to_string());
+    }
+
+    fn clear_ext_call_capabilities(&mut self) {
+        self.allowed_ext_call_commands.clear();
+    }
+
+    fn last_ext_call_error(&self) -> Option<String> {
+        self.last_ext_call_error.clone()
+    }
+
     fn resume(&mut self) -> PyResult<()> {
         self.inner.resume().map_err(vn_error_to_py)?;
         Ok(())
@@ -241,5 +264,96 @@ impl PyEngine {
         let py = slf.py();
         let engine: Py<PyEngine> = slf.into();
         Py::new(py, PyAudio::new(py, engine)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::ffi::c_str;
+    use pyo3::types::PyModule;
+
+    fn make_ext_call_engine() -> PyEngine {
+        let script_json = r#"{
+  "script_schema_version": "1.0",
+  "events": [
+    { "type": "ext_call", "command": "minigame_start", "args": ["cards"] },
+    { "type": "dialogue", "speaker": "Narrator", "text": "Next" }
+  ],
+  "labels": { "start": 0 }
+}"#;
+        PyEngine::new(script_json).expect("engine should build")
+    }
+
+    #[test]
+    fn ext_call_callbacks_are_denied_by_default() {
+        Python::with_gil(|py| {
+            let mut engine = make_ext_call_engine();
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+calls = []
+def handler(command, args):
+    calls.append((command, list(args)))
+"#
+                ),
+                c_str!("handler.py"),
+                c_str!("handler_mod"),
+            )
+            .expect("python module");
+            let handler = module.getattr("handler").expect("handler").unbind();
+
+            engine.register_handler(handler);
+            let _result = engine.step(py).expect("ext-call step should still succeed");
+            assert_eq!(
+                module
+                    .getattr("calls")
+                    .expect("calls list")
+                    .extract::<Vec<(String, Vec<String>)>>()
+                    .expect("extract calls"),
+                Vec::<(String, Vec<String>)>::new()
+            );
+            assert!(
+                engine
+                    .last_ext_call_error()
+                    .as_deref()
+                    .is_some_and(|message| message.contains("denied")),
+                "denied ext-call should be recorded"
+            );
+        });
+    }
+
+    #[test]
+    fn ext_call_callbacks_require_explicit_authorization() {
+        Python::with_gil(|py| {
+            let mut engine = make_ext_call_engine();
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+calls = []
+def handler(command, args):
+    calls.append((command, list(args)))
+"#
+                ),
+                c_str!("handler.py"),
+                c_str!("handler_mod"),
+            )
+            .expect("python module");
+            let handler = module.getattr("handler").expect("handler").unbind();
+
+            engine.allow_ext_call_command("minigame_start");
+            engine.register_handler(handler);
+            let _ = engine.step(py).expect("authorized ext-call should succeed");
+
+            let calls = module
+                .getattr("calls")
+                .expect("calls list")
+                .extract::<Vec<(String, Vec<String>)>>()
+                .expect("extract calls");
+            assert_eq!(calls, vec![("minigame_start".to_string(), vec!["cards".to_string()])]);
+            assert_eq!(engine.last_ext_call_error(), None);
+        });
     }
 }

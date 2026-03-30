@@ -63,7 +63,7 @@ pub use security::SecurityPolicy;
 pub use state::EngineState;
 pub use storage::{
     compute_script_id, SaveData, SaveError, SaveSlotEntry, SaveSlotMetadata, SaveSlotStore,
-    SaveStoreError, ScriptId,
+    SaveStoreError, ScriptId, AUTH_SAVE_KEY,
 };
 pub use trace::{StateDigest, UiTrace, UiTraceStep, UiView as TraceUiView, VisualDigest};
 pub use ui::{UiState, UiView};

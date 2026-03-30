@@ -84,6 +84,25 @@ class TypesTests(unittest.TestCase):
         self.assertEqual(parsed.events[1].to_dict()["type"], "transition")
         self.assertEqual(parsed.events[2].to_dict()["type"], "set_character_position")
 
+    def test_audio_action_loop_playback_requires_bool(self):
+        with self.assertRaises(ValueError):
+            AudioAction.from_dict(
+                {
+                    "channel": "bgm",
+                    "action": "play",
+                    "asset": None,
+                    "volume": None,
+                    "fade_duration_ms": None,
+                    "loop_playback": "false",
+                }
+            )
+
+    def test_script_labels_require_int_indices(self):
+        with self.assertRaises(ValueError):
+            Script.from_json(
+                '{"script_schema_version":"1.0","events":[],"labels":{"start":true}}'
+            )
+
 
 class LocalizationTests(unittest.TestCase):
     def test_collect_and_validate_localization_keys(self):
@@ -200,6 +219,46 @@ class EngineWrapperTests(unittest.TestCase):
             captured["payload"],
             f'{{"events":[],"labels":{{"start":0}},"script_schema_version":"{SCRIPT_SCHEMA_VERSION}"}}',
         )
+
+    def test_engine_wrapper_extcall_policy_methods_delegate(self):
+        module = types.ModuleType("visual_novel_engine")
+
+        class FakeEngine:
+            def __init__(self, script_json):
+                self.script_json = script_json
+                self.allowed = []
+                self.handler = None
+                self.error = None
+
+            def allow_ext_call_command(self, command):
+                self.allowed.append(command)
+
+            def clear_ext_call_capabilities(self):
+                self.allowed.clear()
+
+            def register_handler(self, callback):
+                self.handler = callback
+
+            def last_ext_call_error(self):
+                return self.error
+
+        module.Engine = FakeEngine
+        sys.modules["visual_novel_engine"] = module
+
+        engine = Engine.from_script(
+            {
+                "script_schema_version": SCRIPT_SCHEMA_VERSION,
+                "events": [],
+                "labels": {"start": 0},
+            }
+        )
+        sentinel = object()
+        engine.allow_ext_call_command("minigame_start")
+        engine.register_handler(sentinel)
+        engine.clear_ext_call_capabilities()
+        self.assertEqual(engine.last_ext_call_error(), None)
+        self.assertEqual(engine.raw.allowed, [])
+        self.assertIs(engine.raw.handler, sentinel)
 
     def test_engine_ui_state_calls_native(self):
         module = types.ModuleType("visual_novel_engine")
@@ -395,11 +454,15 @@ class NativeBindingsTests(unittest.TestCase):
         def handler(command, args):
             calls.append((command, args))
 
+        if hasattr(engine, "allow_ext_call_command"):
+            engine.allow_ext_call_command("minigame_start")
         engine.register_handler(handler)
         result = engine.step()
         event = result.event
         self.assertEqual(event["type"], "ext_call")
         self.assertEqual(calls, [("minigame_start", ["poker"])])
+        if hasattr(engine, "last_ext_call_error"):
+            self.assertIsNone(engine.last_ext_call_error())
 
         engine.resume()
         next_result = engine.step()

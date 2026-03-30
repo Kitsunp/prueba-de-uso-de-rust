@@ -12,6 +12,8 @@ use visual_novel_engine::{
 };
 use walkdir::WalkDir;
 
+const SAVE_AUTH_KEY: &[u8] = b"vnengine.save.v1";
+
 #[derive(Parser)]
 #[command(author, version, about = "Visual Novel Engine CLI")]
 struct Cli {
@@ -338,7 +340,7 @@ fn trace_script(path: &Path, steps: usize, output: &Path) -> Result<()> {
 fn verify_save(save_path: &Path, script_path: &Path) -> Result<()> {
     let save_bytes =
         fs::read(save_path).with_context(|| format!("read {}", save_path.display()))?;
-    let save = SaveData::from_binary(&save_bytes)?;
+    let save = SaveData::from_any_binary(&save_bytes, SAVE_AUTH_KEY)?;
     let script_bytes =
         fs::read(script_path).with_context(|| format!("read {}", script_path.display()))?;
     let compiled = ScriptCompiled::from_binary(&script_bytes)?;

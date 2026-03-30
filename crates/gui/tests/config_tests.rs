@@ -55,8 +55,30 @@ fn saves_and_loads_state() {
     };
 
     save_state_to(&path, &data).expect("save state");
+    let stored = fs::read(&path).expect("read stored state");
+    assert!(
+        SaveData::from_binary(&stored).is_err(),
+        "GUI saves should use authenticated payloads"
+    );
     let loaded = load_state_from(&path).expect("load state");
 
     assert_eq!(loaded.script_id, [7u8; 32]);
     assert_eq!(loaded.state.position, 2);
+}
+
+#[test]
+fn loads_legacy_plain_state_files() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("legacy_state.vns");
+    let mut state = EngineState::new(4, 1);
+    state.position = 7;
+    let data = SaveData {
+        script_id: [9u8; 32],
+        state,
+    };
+
+    fs::write(&path, data.to_binary().expect("plain save")).expect("write plain state");
+    let loaded = load_state_from(&path).expect("load legacy plain state");
+    assert_eq!(loaded.script_id, [9u8; 32]);
+    assert_eq!(loaded.state.position, 7);
 }

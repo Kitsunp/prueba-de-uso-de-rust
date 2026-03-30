@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Mapping, Union
+from typing import Any, Dict, Mapping, Optional, Union
 
 from .types import Script
 
@@ -42,6 +42,38 @@ class Engine:
         """Apply a choice selection and return the choice event."""
 
         return self._engine.choose(option_index)
+
+    def register_handler(self, callback: Any) -> None:
+        """Register a native ext-call callback, if exposed by the binding."""
+
+        if not hasattr(self._engine, "register_handler"):
+            raise RuntimeError("Native engine module does not provide callback bindings")
+        self._engine.register_handler(callback)
+
+    def allow_ext_call_command(self, command: str) -> None:
+        """Allow a single ext-call command for callback dispatch."""
+
+        if not hasattr(self._engine, "allow_ext_call_command"):
+            raise RuntimeError(
+                "Native engine module does not provide ext-call capability bindings"
+            )
+        self._engine.allow_ext_call_command(command)
+
+    def clear_ext_call_capabilities(self) -> None:
+        """Clear the ext-call capability allowlist."""
+
+        if not hasattr(self._engine, "clear_ext_call_capabilities"):
+            raise RuntimeError(
+                "Native engine module does not provide ext-call capability bindings"
+            )
+        self._engine.clear_ext_call_capabilities()
+
+    def last_ext_call_error(self) -> Optional[str]:
+        """Return the last ext-call dispatch error, if any."""
+
+        if not hasattr(self._engine, "last_ext_call_error"):
+            raise RuntimeError("Native engine module does not provide error tracking")
+        return self._engine.last_ext_call_error()
 
     def current_event_json(self) -> str:
         """Return the current event in stable JSON form."""

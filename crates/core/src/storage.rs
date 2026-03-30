@@ -14,7 +14,8 @@ use crate::version::{SAVE_BINARY_MAGIC, SAVE_FORMAT_VERSION};
 
 /// Unique identifier for a compiled script, computed as SHA-256 of its binary representation.
 pub type ScriptId = [u8; 32];
-const AUTH_SAVE_MAGIC: [u8; 4] = *b"VNSA";
+pub const AUTH_SAVE_MAGIC: [u8; 4] = *b"VNSA";
+pub const AUTH_SAVE_KEY: &[u8] = b"vnengine.save.v1";
 type HmacSha256 = Hmac<Sha256>;
 
 /// Computes the canonical script_id from compiled script bytes.
@@ -132,6 +133,17 @@ impl SaveData {
         verify_hmac_sha256(key, payload, tag)?;
 
         SaveData::from_binary(payload)
+    }
+
+    /// Parses either authenticated or legacy save payloads.
+    ///
+    /// Authenticated payloads are verified with `key`; legacy payloads remain
+    /// supported for backwards compatibility.
+    pub fn from_any_binary(input: &[u8], key: &[u8]) -> Result<Self, SaveError> {
+        if is_authenticated_binary(input) {
+            return Self::from_authenticated_binary(input, key);
+        }
+        Self::from_binary(input)
     }
 
     /// Validates that this save matches the given script_id.
@@ -502,6 +514,10 @@ fn backup_path(path: &Path) -> PathBuf {
     let mut output = path.as_os_str().to_os_string();
     output.push(".bak");
     PathBuf::from(output)
+}
+
+fn is_authenticated_binary(input: &[u8]) -> bool {
+    input.starts_with(&AUTH_SAVE_MAGIC)
 }
 
 fn compute_hmac_sha256(key: &[u8], payload: &[u8]) -> Result<[u8; 32], SaveError> {

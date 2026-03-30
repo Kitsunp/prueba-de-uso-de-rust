@@ -9,6 +9,18 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 SCRIPT_SCHEMA_VERSION = "1.0"
 
 
+def _require_bool(value: Any, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be bool, got {type(value).__name__}")
+    return value
+
+
+def _require_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be int, got {type(value).__name__}")
+    return value
+
+
 @dataclass(frozen=True)
 class Dialogue:
     """Dialogue event.
@@ -222,7 +234,7 @@ class AudioAction:
                 else None
             ),
             loop_playback=(
-                bool(data["loop_playback"])
+                _require_bool(data["loop_playback"], "AudioAction 'loop_playback'")
                 if data.get("loop_playback") is not None
                 else None
             ),
@@ -461,7 +473,10 @@ class Script:
                 f"{found_version}, expected {SCRIPT_SCHEMA_VERSION}"
             )
         events = [event_from_dict(item) for item in data.get("events", [])]
-        labels = {str(key): int(value) for key, value in data.get("labels", {}).items()}
+        labels = {
+            str(key): _require_int(value, f"Script label '{key}'")
+            for key, value in data.get("labels", {}).items()
+        }
         return cls(
             events=events, labels=labels, script_schema_version=str(found_version)
         )
