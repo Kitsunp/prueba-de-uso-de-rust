@@ -342,7 +342,7 @@ impl<'a> VisualComposerPanel<'a> {
         let Some(project_root) = self.project_root else {
             self.image_failures.insert(
                 asset_path.to_string(),
-                "project_root not available".to_string(),
+                format!("image '{asset_path}' project_root not available"),
             );
             return None;
         };
@@ -374,34 +374,21 @@ impl<'a> VisualComposerPanel<'a> {
             Err(err) => {
                 self.image_failures.insert(
                     asset_path.to_string(),
-                    format!("asset store initialization failed: {err}"),
+                    format!("image '{asset_path}' asset store initialization failed: {err}"),
                 );
                 return Err(());
             }
         };
 
-        let candidates = candidate_image_paths(asset_path);
-        let mut failures = Vec::new();
-        for candidate in &candidates {
-            match store.load_image(candidate) {
-                Ok(image) => return Ok(image),
-                Err(err) => failures.push(format!("'{}': {}", candidate, err)),
+        match store.load_image(asset_path) {
+            Ok(image) => Ok(image),
+            Err(err) => {
+                self.image_failures.insert(
+                    asset_path.to_string(),
+                    format!("image '{asset_path}' load failed: {err}"),
+                );
+                Err(())
             }
         }
-
-        self.image_failures.insert(
-            asset_path.to_string(),
-            format!(
-                "image load failed after {} candidate(s): {}",
-                candidates.len(),
-                failures.join(" | ")
-            ),
-        );
-        Err(())
     }
-}
-
-fn candidate_image_paths(asset_path: &str) -> Vec<String> {
-    const IMAGE_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "bmp"];
-    crate::editor::asset_candidates::candidate_asset_paths(asset_path, &IMAGE_EXTS)
 }

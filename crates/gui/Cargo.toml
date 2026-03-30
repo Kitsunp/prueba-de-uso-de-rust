@@ -15,7 +15,7 @@ serde_json = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-rfd = { version = "0.14", default-features = false } # File dialogs
+rfd = { version = "0.14", default-features = false, features = ["xdg-portal"] } # Explicit Linux backend for CI and local builds
 directories = "5.0"
 miette = { version = "7.0", features = ["fancy"] } # Nice error reporting
 uuid = { version = "1.0", features = ["v4", "serde"] } # For unique IDs
@@ -28,3 +28,4 @@ translation = [] # Reserved feature flag for automatic translation
 
 [dev-dependencies]
 tempfile = "3.10"
+image = { version = "0.24", default-features = false, features = ["png"] }

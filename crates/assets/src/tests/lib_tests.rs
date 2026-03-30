@@ -1,5 +1,11 @@
 use super::*;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+fn write_png(path: &Path) {
+    let image = image::RgbaImage::from_pixel(1, 1, image::Rgba([12, 34, 56, 255]));
+    image.save(path).expect("write png");
+}
 
 #[test]
 fn load_image_rejects_unsupported_extension_before_io() {
@@ -12,6 +18,60 @@ fn load_image_rejects_unsupported_extension_before_io() {
     };
 
     assert!(matches!(err, AssetError::UnsupportedExtension(_)));
+}
+
+#[test]
+fn load_image_resolves_assets_prefix_and_extensionless_path() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock must be after unix epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("vn_assets_image_resolve_{unique}"));
+    std::fs::create_dir_all(root.join("assets/bg")).expect("asset dir");
+    write_png(&root.join("assets/bg/portrait.png"));
+
+    let store = AssetStore::new(root.clone(), SecurityMode::Trusted, None, false)
+        .expect("asset store should initialize");
+
+    let image = store
+        .load_image("bg/portrait")
+        .expect("image should resolve through assets prefix");
+    assert_eq!(image.name, "assets/bg/portrait.png");
+    assert_eq!(image.size, [1, 1]);
+    assert_eq!(image.pixels.len(), 4);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn load_image_reports_attempted_candidates_when_missing() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock must be after unix epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("vn_assets_image_missing_{unique}"));
+    std::fs::create_dir_all(&root).expect("root dir");
+
+    let store = AssetStore::new(root.clone(), SecurityMode::Trusted, None, false)
+        .expect("asset store should initialize");
+
+    let err = match store.load_image("bg/portrait") {
+        Ok(_) => panic!("missing image should report a structured error"),
+        Err(err) => err,
+    };
+    match err {
+        AssetError::ImageNotFound {
+            requested,
+            attempts,
+        } => {
+            assert_eq!(requested, "bg/portrait");
+            assert!(attempts.iter().any(|item| item == "bg/portrait"));
+            assert!(attempts.iter().any(|item| item == "assets/bg/portrait.png"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

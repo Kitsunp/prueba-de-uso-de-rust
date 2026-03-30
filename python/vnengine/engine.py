@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Mapping, Optional, Union
 
+from .native import call_native_method, load_native_engine
 from .types import Script
 
 
@@ -16,7 +17,7 @@ class Engine:
     """
 
     def __init__(self, script_json: str) -> None:
-        self._engine = _load_native_engine()(script_json)
+        self._engine = load_native_engine()(script_json)
         self._last_audio: Any = []
 
     @classmethod
@@ -32,12 +33,12 @@ class Engine:
     def current_event(self) -> Dict[str, Any]:
         """Return the current event as a Python dict."""
 
-        return self._engine.current_event()
+        return call_native_method(self._engine, "current_event", "current event access")
 
     def step(self) -> Dict[str, Any]:
         """Advance the engine and return the event that was processed."""
 
-        result = self._engine.step()
+        result = call_native_method(self._engine, "step", "step execution")
         if hasattr(result, "event"):
             self._last_audio = getattr(result, "audio", [])
             return result.event
@@ -47,97 +48,96 @@ class Engine:
     def choose(self, option_index: int) -> Dict[str, Any]:
         """Apply a choice selection and return the choice event."""
 
-        return self._engine.choose(option_index)
+        return call_native_method(
+            self._engine, "choose", "choice handling", option_index
+        )
 
     def register_handler(self, callback: Any) -> None:
         """Register a native ext-call callback, if exposed by the binding."""
 
-        if not hasattr(self._engine, "register_handler"):
-            raise RuntimeError(
-                "Native engine module does not provide callback bindings"
-            )
-        self._engine.register_handler(callback)
+        call_native_method(
+            self._engine, "register_handler", "callback bindings", callback
+        )
 
     def allow_ext_call_command(self, command: str) -> None:
         """Allow a single ext-call command for callback dispatch."""
 
-        if not hasattr(self._engine, "allow_ext_call_command"):
-            raise RuntimeError(
-                "Native engine module does not provide ext-call capability bindings"
-            )
-        self._engine.allow_ext_call_command(command)
+        call_native_method(
+            self._engine,
+            "allow_ext_call_command",
+            "ext-call capability bindings",
+            command,
+        )
 
     def clear_ext_call_capabilities(self) -> None:
         """Clear the ext-call capability allowlist."""
 
-        if not hasattr(self._engine, "clear_ext_call_capabilities"):
-            raise RuntimeError(
-                "Native engine module does not provide ext-call capability bindings"
-            )
-        self._engine.clear_ext_call_capabilities()
+        call_native_method(
+            self._engine,
+            "clear_ext_call_capabilities",
+            "ext-call capability bindings",
+        )
 
     def last_ext_call_error(self) -> Optional[str]:
         """Return the last ext-call dispatch error, if any."""
 
-        if not hasattr(self._engine, "last_ext_call_error"):
-            raise RuntimeError("Native engine module does not provide error tracking")
-        return self._engine.last_ext_call_error()
+        return call_native_method(self._engine, "last_ext_call_error", "error tracking")
 
     def current_event_json(self) -> str:
         """Return the current event in stable JSON form."""
 
-        return self._engine.current_event_json()
+        return call_native_method(
+            self._engine, "current_event_json", "current event JSON access"
+        )
 
     def visual_state(self) -> Dict[str, Any]:
         """Return the current visual state as a Python dict."""
 
-        return self._engine.visual_state()
+        return call_native_method(self._engine, "visual_state", "visual state access")
 
     def ui_state(self) -> Dict[str, Any]:
         """Return the current UI state as a Python dict."""
 
-        if not hasattr(self._engine, "ui_state"):
-            raise RuntimeError("Native engine module does not provide ui_state")
-        return self._engine.ui_state()
+        return call_native_method(self._engine, "ui_state", "ui_state access")
 
     def is_current_dialogue_read(self) -> bool:
         """Return whether the current dialogue event was already shown in this session."""
 
-        if not hasattr(self._engine, "is_current_dialogue_read"):
-            raise RuntimeError(
-                "Native engine module does not provide read-tracking bindings"
+        return bool(
+            call_native_method(
+                self._engine,
+                "is_current_dialogue_read",
+                "read-tracking bindings",
             )
-        return bool(self._engine.is_current_dialogue_read())
+        )
 
     def choice_history(self) -> Any:
         """Return recorded choice decisions for the current engine session."""
 
-        if not hasattr(self._engine, "choice_history"):
-            raise RuntimeError(
-                "Native engine module does not provide choice-history bindings"
-            )
-        return self._engine.choice_history()
+        return call_native_method(
+            self._engine, "choice_history", "choice-history bindings"
+        )
 
     def supported_event_types(self) -> Any:
         """Return event types supported by the native runtime binding."""
 
-        if hasattr(self._engine, "supported_event_types"):
-            return self._engine.supported_event_types()
+        method = getattr(self._engine, "supported_event_types", None)
+        if method is not None:
+            return method()
         # Conservative fallback for very old native modules.
         return ["dialogue", "choice", "scene", "jump", "set_flag"]
 
     def set_prefetch_depth(self, depth: int) -> None:
         """Configure lookahead depth used by native prefetch hints."""
 
-        if not hasattr(self._engine, "set_prefetch_depth"):
-            raise RuntimeError("Native engine module does not provide prefetch API")
-        self._engine.set_prefetch_depth(depth)
+        call_native_method(self._engine, "set_prefetch_depth", "prefetch API", depth)
 
     def prefetch_assets_hint(self) -> Any:
         """Return upcoming asset paths suggested for prefetching."""
 
-        if hasattr(self._engine, "prefetch_assets_hint"):
-            return self._engine.prefetch_assets_hint()
+        method = getattr(self._engine, "prefetch_assets_hint", None)
+        if method is not None:
+            return method()
         return []
 
     def last_audio_commands(self) -> Any:
@@ -152,14 +152,4 @@ class Engine:
         return self._engine
 
 
-def _load_native_engine() -> Any:
-    try:
-        import visual_novel_engine as native
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("Native engine module not available") from exc
-
-    if hasattr(native, "Engine"):
-        return native.Engine
-    if hasattr(native, "PyEngine"):
-        return native.PyEngine
-    raise RuntimeError("Native engine module does not provide Engine bindings")
+_load_native_engine = load_native_engine

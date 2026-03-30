@@ -58,13 +58,14 @@ impl AssetManager {
         asset_path: &str,
     ) -> Result<Option<egui::TextureHandle>, AssetError> {
         self.usage_counter = self.usage_counter.wrapping_add(1);
-        if let Some(entry) = self.cache.get_mut(asset_path) {
+        let cache_key = self.store.resolve_image_path(asset_path)?;
+        if let Some(entry) = self.cache.get_mut(&cache_key) {
             entry.last_used = self.usage_counter;
             self.stats.hits += 1;
             return Ok(Some(entry.texture.clone()));
         }
 
-        let loaded = self.store.load_image(asset_path)?;
+        let loaded = self.store.load_image(&cache_key)?;
         let bytes = loaded.pixels.len();
 
         if bytes > self.budget_bytes {
@@ -86,7 +87,7 @@ impl AssetManager {
         );
         self.current_bytes += bytes;
         self.cache.insert(
-            loaded.name.clone(),
+            cache_key.clone(),
             CachedTexture {
                 texture,
                 bytes,
@@ -96,7 +97,7 @@ impl AssetManager {
         );
         Ok(self
             .cache
-            .get(asset_path)
+            .get(&cache_key)
             .map(|entry| entry.texture.clone()))
     }
 
@@ -115,5 +116,45 @@ impl AssetManager {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_png(path: &std::path::Path) {
+        let image = image::RgbaImage::from_pixel(1, 1, image::Rgba([12, 34, 56, 255]));
+        image.save(path).expect("write png");
+    }
+
+    #[test]
+    fn texture_for_asset_reuses_normalized_cache_key() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("assets/bg")).expect("asset dir");
+        write_png(&root.join("assets/bg/portrait.png"));
+
+        let store = AssetStore::new(root.to_path_buf(), SecurityMode::Trusted, None, false)
+            .expect("asset store");
+        let mut manager = AssetManager::new(store, 8 * 1024 * 1024);
+        let ctx = egui::Context::default();
+
+        let first = manager
+            .texture_for_asset(&ctx, "bg/portrait")
+            .expect("first lookup");
+        let first = first.expect("texture should load");
+        let stats_after_first = manager.stats();
+        assert_eq!(stats_after_first.misses, 1);
+        assert_eq!(stats_after_first.hits, 0);
+
+        let second = manager
+            .texture_for_asset(&ctx, "assets/bg/portrait.png")
+            .expect("second lookup");
+        let second = second.expect("texture should load");
+        let stats_after_second = manager.stats();
+        assert_eq!(stats_after_second.misses, 1);
+        assert_eq!(stats_after_second.hits, 1);
+        assert_eq!(first.id(), second.id());
     }
 }

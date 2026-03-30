@@ -26,11 +26,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # Catch build-script/backend regressions early, especially rfd on Linux.
+      - name: Cargo check
+        run: cargo check --workspace --all-targets --locked
       - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
-      - run: cargo audit
+      # RUSTSEC-2024-0436 is transitive through the graphics stack (`pixels` -> `wgpu` -> `metal`).
+      # Keep it isolated here until we can refresh that stack without widening the scope of this CI pass.
+      - run: cargo audit -D warnings --ignore RUSTSEC-2024-0436
 
   test:
     runs-on: ubuntu-latest
@@ -42,9 +47,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --workspace --all-targets --verbose
-      - run: cargo build -p vnengine_py --profile python --verbose
-      - run: cargo bench -p visual_novel_engine --bench core_benches -- --warm-up-time 0.1 --measurement-time 0.1 --sample-size 10
+      - run: cargo test --workspace --all-targets --locked --verbose
+      - run: cargo build -p vnengine_py --profile python --locked --verbose
+      - run: cargo bench -p visual_novel_engine --bench core_benches --locked -- --warm-up-time 0.1 --measurement-time 0.1 --sample-size 10
 
   matrix-smoke:
     runs-on: ${{ matrix.os }}
@@ -61,8 +66,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p visual_novel_engine --verbose
-      - run: cargo test -p vnengine_runtime --verbose
+      - name: Cargo check
+        run: cargo check --workspace --all-targets --locked
+      - run: cargo test -p visual_novel_engine --locked --verbose
+      - run: cargo test -p vnengine_runtime --locked --verbose
 
   reproducible-smoke:
     runs-on: ubuntu-latest
@@ -134,7 +141,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p visual_novel_engine --features arbitrary --test fuzz_tests --verbose
+      - run: cargo test -p visual_novel_engine --features arbitrary --test fuzz_tests --locked --verbose
 
   python-tests:
     runs-on: ubuntu-latest
