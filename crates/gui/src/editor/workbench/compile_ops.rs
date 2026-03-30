@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy)]
+enum ValidationPanelMode {
+    OpenIfIssues,
+    PreserveManualCloseUnlessErrors,
+}
+
 impl EditorWorkbench {
     fn append_localization_issues(&mut self, script: &visual_novel_engine::ScriptRaw) {
         if self.localization_catalog.locales.is_empty() {
@@ -34,15 +40,18 @@ impl EditorWorkbench {
         }
     }
 
-    pub fn run_dry_validation(&mut self) -> bool {
-        let result = crate::editor::compiler::compile_project_with_project_root(
-            &self.node_graph,
-            self.project_root.as_deref(),
-        );
-        self.current_script = Some(result.script);
-        self.last_dry_run_report = result.dry_run_report.clone();
-        self.validation_issues = result.issues;
-        Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
+    fn apply_compilation_state(
+        &mut self,
+        script: &visual_novel_engine::ScriptRaw,
+        dry_run_report: &Option<crate::editor::compiler::DryRunReport>,
+        issues: &[LintIssue],
+        phase_trace: &[crate::editor::compiler::PhaseTrace],
+        panel_mode: ValidationPanelMode,
+    ) -> bool {
+        self.current_script = Some(script.clone());
+        self.last_dry_run_report = dry_run_report.clone();
+        self.validation_issues = issues.to_vec();
+        Self::append_phase_trace_issues(&mut self.validation_issues, phase_trace);
         if let Some(script) = self.current_script.as_ref().cloned() {
             self.append_localization_issues(&script);
         }
@@ -52,13 +61,43 @@ impl EditorWorkbench {
         {
             self.selected_issue = None;
         }
-        self.show_validation = !self.validation_issues.is_empty();
-        self.validation_collapsed = false;
 
         let has_errors = self
             .validation_issues
             .iter()
             .any(|issue| issue.severity == LintSeverity::Error);
+
+        match panel_mode {
+            ValidationPanelMode::OpenIfIssues => {
+                self.show_validation = !self.validation_issues.is_empty();
+                self.validation_collapsed = false;
+            }
+            ValidationPanelMode::PreserveManualCloseUnlessErrors => {
+                if self.validation_issues.is_empty() {
+                    self.show_validation = false;
+                    self.validation_collapsed = false;
+                } else if has_errors {
+                    // Keep critical diagnostics visible automatically.
+                    self.show_validation = true;
+                }
+            }
+        }
+
+        has_errors
+    }
+
+    pub fn run_dry_validation(&mut self) -> bool {
+        let result = crate::editor::compiler::compile_project_with_project_root(
+            &self.node_graph,
+            self.project_root.as_deref(),
+        );
+        let has_errors = self.apply_compilation_state(
+            &result.script,
+            &result.dry_run_report,
+            &result.issues,
+            &result.phase_trace,
+            ValidationPanelMode::OpenIfIssues,
+        );
         if has_errors {
             self.toast = Some(ToastState::error("Validation found blocking errors"));
             return false;
@@ -200,22 +239,13 @@ impl EditorWorkbench {
             self.project_root.as_deref(),
         );
         let repro = result.minimal_repro_script();
-        let script = result.script.clone();
-        self.current_script = Some(script);
-        self.last_dry_run_report = result.dry_run_report.clone();
-        self.validation_issues = result.issues;
-        Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
-        if let Some(script) = self.current_script.as_ref().cloned() {
-            self.append_localization_issues(&script);
-        }
-        if self
-            .selected_issue
-            .is_some_and(|idx| idx >= self.validation_issues.len())
-        {
-            self.selected_issue = None;
-        }
-        self.show_validation = !self.validation_issues.is_empty();
-        self.validation_collapsed = false;
+        self.apply_compilation_state(
+            &result.script,
+            &result.dry_run_report,
+            &result.issues,
+            &result.phase_trace,
+            ValidationPanelMode::OpenIfIssues,
+        );
 
         let Some(repro) = repro else {
             self.toast = Some(ToastState::warning(
@@ -456,31 +486,13 @@ impl EditorWorkbench {
             self.project_root.as_deref(),
         );
 
-        // Update State
-        self.current_script = Some(result.script);
-        self.last_dry_run_report = result.dry_run_report.clone();
-        self.validation_issues = result.issues;
-        Self::append_phase_trace_issues(&mut self.validation_issues, &result.phase_trace);
-        if let Some(script) = self.current_script.as_ref().cloned() {
-            self.append_localization_issues(&script);
-        }
-        if self
-            .selected_issue
-            .is_some_and(|idx| idx >= self.validation_issues.len())
-        {
-            self.selected_issue = None;
-        }
-        let has_errors = self
-            .validation_issues
-            .iter()
-            .any(|issue| issue.severity == LintSeverity::Error);
-        if self.validation_issues.is_empty() {
-            self.show_validation = false;
-            self.validation_collapsed = false;
-        } else if has_errors {
-            // Keep critical diagnostics visible automatically.
-            self.show_validation = true;
-        }
+        self.apply_compilation_state(
+            &result.script,
+            &result.dry_run_report,
+            &result.issues,
+            &result.phase_trace,
+            ValidationPanelMode::PreserveManualCloseUnlessErrors,
+        );
 
         match result.engine_result {
             Ok(engine) => {

@@ -7,6 +7,7 @@
 //! - Inspector for entity properties
 
 mod asset_browser;
+mod asset_candidates;
 pub mod compiler;
 mod diagnostics;
 mod diff_dialog;

@@ -403,34 +403,5 @@ impl<'a> VisualComposerPanel<'a> {
 
 fn candidate_image_paths(asset_path: &str) -> Vec<String> {
     const IMAGE_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "bmp"];
-    let trimmed = asset_path.trim().replace('\\', "/");
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-
-    let mut candidates = Vec::new();
-    push_unique_candidate(&mut candidates, &trimmed);
-    if !trimmed.starts_with("assets/") {
-        push_unique_candidate(&mut candidates, &format!("assets/{trimmed}"));
-    }
-
-    let has_extension = std::path::Path::new(&trimmed).extension().is_some();
-    if has_extension {
-        return candidates;
-    }
-
-    let base_list = candidates.clone();
-    for base in base_list {
-        for ext in IMAGE_EXTS {
-            push_unique_candidate(&mut candidates, &format!("{base}.{ext}"));
-        }
-    }
-    candidates
-}
-
-fn push_unique_candidate(candidates: &mut Vec<String>, value: &str) {
-    if candidates.iter().any(|existing| existing == value) {
-        return;
-    }
-    candidates.push(value.to_string());
+    crate::editor::asset_candidates::candidate_asset_paths(asset_path, &IMAGE_EXTS)
 }

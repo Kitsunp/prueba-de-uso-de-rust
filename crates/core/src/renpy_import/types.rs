@@ -85,6 +85,23 @@ impl ImportPhase {
 }
 
 #[derive(Debug, Clone)]
+pub struct ImportIssueScope {
+    pub area: ImportArea,
+    pub phase: ImportPhase,
+    pub fallback_applied: Option<String>,
+}
+
+impl ImportIssueScope {
+    pub fn new(area: ImportArea, phase: ImportPhase, fallback_applied: Option<String>) -> Self {
+        Self {
+            area,
+            phase,
+            fallback_applied,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ImportRenpyOptions {
     pub project_root: PathBuf,
     pub output_root: PathBuf,
@@ -189,9 +206,11 @@ impl ImportState {
             code,
             message,
             line,
-            classify_area_from_line(line),
-            ImportPhase::Parse,
-            fallback_applied,
+            ImportIssueScope::new(
+                classify_area_from_line(line),
+                ImportPhase::Parse,
+                fallback_applied,
+            ),
         )
     }
 
@@ -201,12 +220,15 @@ impl ImportState {
         code: &str,
         message: impl Into<String>,
         line: Option<&ParsedLine>,
-        area: ImportArea,
-        phase: ImportPhase,
-        fallback_applied: Option<String>,
+        scope: ImportIssueScope,
     ) -> String {
         let trace_id = next_trace_id(&mut self.trace_seq);
-        let docs = compose_issue_docs(code, area, phase, fallback_applied.as_deref());
+        let docs = compose_issue_docs(
+            code,
+            scope.area,
+            scope.phase,
+            scope.fallback_applied.as_deref(),
+        );
         self.issues.push(ImportIssue {
             severity: severity.to_string(),
             code: code.to_string(),
@@ -214,13 +236,13 @@ impl ImportState {
             file: line.map(|ln| normalize_display_path(&ln.file)),
             line: line.map(|ln| ln.line_no),
             column: None,
-            area: area.as_str().to_string(),
-            phase: phase.as_str().to_string(),
+            area: scope.area.as_str().to_string(),
+            phase: scope.phase.as_str().to_string(),
             snippet: line.map(|ln| trim_snippet(&ln.text)),
             path_display: line
                 .map(|ln| normalize_display_path(&ln.file))
                 .unwrap_or_else(|| "unknown".to_string()),
-            fallback_applied,
+            fallback_applied: scope.fallback_applied,
             trace_id: trace_id.clone(),
             root_cause: docs.root_cause,
             how_to_fix: docs.how_to_fix,
@@ -250,9 +272,7 @@ impl ImportState {
             code,
             composed_message,
             line,
-            area,
-            phase,
-            Some("event_raw.ext_call".to_string()),
+            ImportIssueScope::new(area, phase, Some("event_raw.ext_call".to_string())),
         );
         let decorator = GraphTraceDecorator;
         let decorated_event = decorator.decorate_ext_call(ExtCallDecorationInput {

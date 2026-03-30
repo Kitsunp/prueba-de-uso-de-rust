@@ -95,7 +95,7 @@ fn from_any_binary_accepts_authenticated_and_legacy_payloads() {
     let decoded_legacy = SaveData::from_any_binary(&legacy, key)
         .expect("legacy save should still decode through generic loader");
     assert_eq!(decoded_legacy.state.position, 31);
-    assert_eq!(decoded_legacy.state.get_flag(2), true);
+    assert!(decoded_legacy.state.get_flag(2));
 }
 
 #[test]

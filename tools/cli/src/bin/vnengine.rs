@@ -233,19 +233,19 @@ fn main() -> Result<()> {
             fallback_policy,
             entry_label,
             report,
-        } => import_renpy(
-            &project,
-            &output,
-            profile.into(),
-            include_pattern,
-            exclude_pattern,
-            include_tl.then_some(true),
-            include_ui.then_some(true),
+        } => import_renpy(ImportRenpyCliOptions {
+            project: &project,
+            output: &output,
+            profile: profile.into(),
+            include_patterns: include_pattern,
+            exclude_patterns: exclude_pattern,
+            include_tl: include_tl.then_some(true),
+            include_ui: include_ui.then_some(true),
             strict_mode,
-            fallback_policy.into(),
-            &entry_label,
-            report.as_deref(),
-        ),
+            fallback_policy: fallback_policy.into(),
+            entry_label: &entry_label,
+            report: report.as_deref(),
+        }),
         Command::Package {
             project,
             output,
@@ -423,9 +423,9 @@ fn run_repro_bundle(path: &Path, output: Option<&Path>, strict: bool) -> Result<
     Ok(())
 }
 
-fn import_renpy(
-    project: &Path,
-    output: &Path,
+struct ImportRenpyCliOptions<'a> {
+    project: &'a Path,
+    output: &'a Path,
     profile: ImportProfile,
     include_patterns: Vec<String>,
     exclude_patterns: Vec<String>,
@@ -433,22 +433,24 @@ fn import_renpy(
     include_ui: Option<bool>,
     strict_mode: bool,
     fallback_policy: ImportFallbackPolicy,
-    entry_label: &str,
-    report: Option<&Path>,
-) -> Result<()> {
+    entry_label: &'a str,
+    report: Option<&'a Path>,
+}
+
+fn import_renpy(options: ImportRenpyCliOptions<'_>) -> Result<()> {
     let report_result =
         visual_novel_engine::import_renpy_project(visual_novel_engine::ImportRenpyOptions {
-            project_root: project.to_path_buf(),
-            output_root: output.to_path_buf(),
-            entry_label: entry_label.to_string(),
-            report_path: report.map(Path::to_path_buf),
-            profile,
-            include_tl,
-            include_ui,
-            include_patterns,
-            exclude_patterns,
-            strict_mode,
-            fallback_policy,
+            project_root: options.project.to_path_buf(),
+            output_root: options.output.to_path_buf(),
+            entry_label: options.entry_label.to_string(),
+            report_path: options.report.map(Path::to_path_buf),
+            profile: options.profile,
+            include_tl: options.include_tl,
+            include_ui: options.include_ui,
+            include_patterns: options.include_patterns,
+            exclude_patterns: options.exclude_patterns,
+            strict_mode: options.strict_mode,
+            fallback_policy: options.fallback_policy,
         })?;
 
     println!(

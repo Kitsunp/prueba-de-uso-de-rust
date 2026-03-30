@@ -58,14 +58,14 @@ pub fn import_renpy_project(options: ImportRenpyOptions) -> VnResult<ImportRepor
     )?;
     state.issues.extend(asset_issues);
 
-    if options.strict_mode || matches!(options.fallback_policy, ImportFallbackPolicy::Strict) {
-        if state.degraded_events > 0 {
-            let top_codes = summarize_top_issue_codes(&state.issues, 5);
-            return Err(invalid_import(format!(
-                "strict policy rejected degraded import: degraded_events={} top_codes=[{}]",
-                state.degraded_events, top_codes
-            )));
-        }
+    if (options.strict_mode || matches!(options.fallback_policy, ImportFallbackPolicy::Strict))
+        && state.degraded_events > 0
+    {
+        let top_codes = summarize_top_issue_codes(&state.issues, 5);
+        return Err(invalid_import(format!(
+            "strict policy rejected degraded import: degraded_events={} top_codes=[{}]",
+            state.degraded_events, top_codes
+        )));
     }
 
     let script = ScriptRaw::new(state.events.clone(), state.labels.clone());

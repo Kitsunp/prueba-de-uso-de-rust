@@ -5,6 +5,35 @@ impl EditorWorkbench {
     pub(super) fn build_entity_node_map(&self) -> std::collections::HashMap<u32, u32> {
         let mut map = std::collections::HashMap::new();
         use crate::editor::node_types::StoryNode;
+        use std::collections::HashMap;
+
+        let mut characters_by_name: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut images_by_path: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut audio_by_path: HashMap<String, Vec<u32>> = HashMap::new();
+
+        for entity in self.scene.iter() {
+            match &entity.kind {
+                visual_novel_engine::EntityKind::Character(character) => {
+                    characters_by_name
+                        .entry(character.name.to_string())
+                        .or_default()
+                        .push(entity.id.raw());
+                }
+                visual_novel_engine::EntityKind::Image(image) => {
+                    images_by_path
+                        .entry(image.path.to_string())
+                        .or_default()
+                        .push(entity.id.raw());
+                }
+                visual_novel_engine::EntityKind::Audio(audio) => {
+                    audio_by_path
+                        .entry(audio.path.to_string())
+                        .or_default()
+                        .push(entity.id.raw());
+                }
+                _ => {}
+            }
+        }
 
         let mut bind_owner = |entity_id: u32, node_id: u32, prefer_existing: bool| {
             if prefer_existing {
@@ -13,18 +42,19 @@ impl EditorWorkbench {
                 map.insert(entity_id, node_id);
             }
         };
+        let mut bind_matches = |matches: Option<&Vec<u32>>, node_id: u32, prefer_existing: bool| {
+            if let Some(entity_ids) = matches {
+                for &entity_id in entity_ids {
+                    bind_owner(entity_id, node_id, prefer_existing);
+                }
+            }
+        };
 
         // Fallback ownership map when preview trace ownership is unavailable.
         for (nid, node, _) in self.node_graph.nodes() {
             match node {
                 StoryNode::Dialogue { speaker, .. } => {
-                    for entity in self.scene.iter() {
-                        if let visual_novel_engine::EntityKind::Character(c) = &entity.kind {
-                            if c.name.as_ref() == speaker.as_str() {
-                                bind_owner(entity.id.raw(), *nid, false);
-                            }
-                        }
-                    }
+                    bind_matches(characters_by_name.get(speaker.as_str()), *nid, false);
                 }
                 StoryNode::Scene {
                     background,
@@ -33,111 +63,43 @@ impl EditorWorkbench {
                     ..
                 } => {
                     if let Some(background) = background {
-                        for entity in self.scene.iter() {
-                            if let visual_novel_engine::EntityKind::Image(img) = &entity.kind {
-                                if img.path.as_ref() == background.as_str() {
-                                    bind_owner(entity.id.raw(), *nid, false);
-                                }
-                            }
-                        }
+                        bind_matches(images_by_path.get(background.as_str()), *nid, false);
                     }
                     if let Some(music) = music {
-                        for entity in self.scene.iter() {
-                            if let visual_novel_engine::EntityKind::Audio(audio) = &entity.kind {
-                                if audio.path.as_ref() == music.as_str() {
-                                    bind_owner(entity.id.raw(), *nid, false);
-                                }
-                            }
-                        }
+                        bind_matches(audio_by_path.get(music.as_str()), *nid, false);
                     }
                     for character in characters {
-                        for entity in self.scene.iter() {
-                            if let visual_novel_engine::EntityKind::Character(c) = &entity.kind {
-                                if c.name.as_ref() == character.name.as_str() {
-                                    bind_owner(entity.id.raw(), *nid, false);
-                                }
-                            }
-                        }
+                        bind_matches(characters_by_name.get(character.name.as_str()), *nid, false);
                         if let Some(expression) = &character.expression {
-                            for entity in self.scene.iter() {
-                                if let visual_novel_engine::EntityKind::Image(img) = &entity.kind {
-                                    if img.path.as_ref() == expression.as_str() {
-                                        bind_owner(entity.id.raw(), *nid, false);
-                                    }
-                                }
-                            }
+                            bind_matches(images_by_path.get(expression.as_str()), *nid, false);
                         }
                     }
                 }
                 StoryNode::ScenePatch(patch) => {
                     if let Some(background) = &patch.background {
-                        for entity in self.scene.iter() {
-                            if let visual_novel_engine::EntityKind::Image(img) = &entity.kind {
-                                if img.path.as_ref() == background.as_str() {
-                                    bind_owner(entity.id.raw(), *nid, false);
-                                }
-                            }
-                        }
+                        bind_matches(images_by_path.get(background.as_str()), *nid, false);
                     }
                     if let Some(music) = &patch.music {
-                        for entity in self.scene.iter() {
-                            if let visual_novel_engine::EntityKind::Audio(audio) = &entity.kind {
-                                if audio.path.as_ref() == music.as_str() {
-                                    bind_owner(entity.id.raw(), *nid, false);
-                                }
-                            }
-                        }
+                        bind_matches(audio_by_path.get(music.as_str()), *nid, false);
                     }
                     for character in &patch.add {
-                        for entity in self.scene.iter() {
-                            if let visual_novel_engine::EntityKind::Character(c) = &entity.kind {
-                                if c.name.as_ref() == character.name.as_str() {
-                                    bind_owner(entity.id.raw(), *nid, false);
-                                }
-                            }
-                        }
+                        bind_matches(characters_by_name.get(character.name.as_str()), *nid, false);
                     }
                     for character in &patch.update {
-                        for entity in self.scene.iter() {
-                            if let visual_novel_engine::EntityKind::Character(c) = &entity.kind {
-                                if c.name.as_ref() == character.name.as_str() {
-                                    bind_owner(entity.id.raw(), *nid, false);
-                                }
-                            }
-                        }
+                        bind_matches(characters_by_name.get(character.name.as_str()), *nid, false);
                     }
                 }
                 StoryNode::CharacterPlacement { name, .. } => {
-                    for entity in self.scene.iter() {
-                        if let visual_novel_engine::EntityKind::Character(character) = &entity.kind
-                        {
-                            if character.name.as_ref() == name.as_str() {
-                                bind_owner(entity.id.raw(), *nid, false);
-                            }
-                        }
-                    }
+                    bind_matches(characters_by_name.get(name.as_str()), *nid, false);
                 }
                 StoryNode::AudioAction {
                     asset: Some(asset), ..
                 } => {
-                    for entity in self.scene.iter() {
-                        if let visual_novel_engine::EntityKind::Audio(audio) = &entity.kind {
-                            if audio.path.as_ref() == asset.as_str() {
-                                // Keep scene/patch ownership when already resolved.
-                                bind_owner(entity.id.raw(), *nid, true);
-                            }
-                        }
-                    }
+                    // Keep scene/patch ownership when already resolved.
+                    bind_matches(audio_by_path.get(asset.as_str()), *nid, true);
                 }
                 StoryNode::Generic(visual_novel_engine::EventRaw::SetCharacterPosition(pos)) => {
-                    for entity in self.scene.iter() {
-                        if let visual_novel_engine::EntityKind::Character(character) = &entity.kind
-                        {
-                            if character.name.as_ref() == pos.name.as_str() {
-                                bind_owner(entity.id.raw(), *nid, false);
-                            }
-                        }
-                    }
+                    bind_matches(characters_by_name.get(pos.name.as_str()), *nid, false);
                 }
                 _ => {}
             }

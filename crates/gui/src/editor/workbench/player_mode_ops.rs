@@ -70,24 +70,11 @@ impl EditorWorkbench {
                     volume,
                     ..
                 } => {
-                    let resolved_path = super::player_audio_path::resolve_player_audio_asset_path(
-                        self.project_root.as_deref(),
-                        path.as_ref(),
-                    );
-                    let unresolved = resolved_path.is_none();
-                    let playback_path = resolved_path.unwrap_or_else(|| path.as_ref().to_string());
+                    let playback_path = self.resolve_preview_audio_path("BGM", path.as_ref());
                     self.player_state.last_audio_event = Some(format!(
                         "play_bgm path={} loop={} volume={:?}",
                         playback_path, r#loop, volume
                     ));
-                    if unresolved && self.project_root.is_some() {
-                        self.player_state.last_audio_error = Some(format!(
-                            "Audio preview could not resolve BGM path '{}'; checked canonical candidates in project root",
-                            path
-                        ));
-                    } else {
-                        self.player_state.last_audio_error = None;
-                    }
                     if let Some(audio_backend) = self.player_audio_backend.as_mut() {
                         audio_backend.play_music_with_options(
                             playback_path.as_str(),
@@ -104,24 +91,11 @@ impl EditorWorkbench {
                     }
                 }
                 visual_novel_engine::AudioCommand::PlaySfx { path, volume, .. } => {
-                    let resolved_path = super::player_audio_path::resolve_player_audio_asset_path(
-                        self.project_root.as_deref(),
-                        path.as_ref(),
-                    );
-                    let unresolved = resolved_path.is_none();
-                    let playback_path = resolved_path.unwrap_or_else(|| path.as_ref().to_string());
+                    let playback_path = self.resolve_preview_audio_path("SFX", path.as_ref());
                     self.player_state.last_audio_event = Some(format!(
                         "play_sfx path={} volume={:?}",
                         playback_path, volume
                     ));
-                    if unresolved && self.project_root.is_some() {
-                        self.player_state.last_audio_error = Some(format!(
-                            "Audio preview could not resolve SFX path '{}'; checked canonical candidates in project root",
-                            path
-                        ));
-                    } else {
-                        self.player_state.last_audio_error = None;
-                    }
                     if let Some(audio_backend) = self.player_audio_backend.as_mut() {
                         audio_backend.play_sfx_with_volume(playback_path.as_str(), volume);
                     }
@@ -133,24 +107,11 @@ impl EditorWorkbench {
                     }
                 }
                 visual_novel_engine::AudioCommand::PlayVoice { path, volume, .. } => {
-                    let resolved_path = super::player_audio_path::resolve_player_audio_asset_path(
-                        self.project_root.as_deref(),
-                        path.as_ref(),
-                    );
-                    let unresolved = resolved_path.is_none();
-                    let playback_path = resolved_path.unwrap_or_else(|| path.as_ref().to_string());
+                    let playback_path = self.resolve_preview_audio_path("Voice", path.as_ref());
                     self.player_state.last_audio_event = Some(format!(
                         "play_voice path={} volume={:?}",
                         playback_path, volume
                     ));
-                    if unresolved && self.project_root.is_some() {
-                        self.player_state.last_audio_error = Some(format!(
-                            "Audio preview could not resolve Voice path '{}'; checked canonical candidates in project root",
-                            path
-                        ));
-                    } else {
-                        self.player_state.last_audio_error = None;
-                    }
                     if let Some(audio_backend) = self.player_audio_backend.as_mut() {
                         audio_backend.play_voice_with_volume(playback_path.as_str(), volume);
                     }
@@ -163,6 +124,24 @@ impl EditorWorkbench {
                 }
             }
         }
+    }
+
+    fn resolve_preview_audio_path(&mut self, kind: &str, raw_path: &str) -> String {
+        let resolved_path = super::player_audio_path::resolve_player_audio_asset_path(
+            self.project_root.as_deref(),
+            raw_path,
+        );
+        let unresolved = resolved_path.is_none();
+        let playback_path = resolved_path.unwrap_or_else(|| raw_path.to_string());
+        self.player_state.last_audio_error = if unresolved && self.project_root.is_some() {
+            Some(format!(
+                "Audio preview could not resolve {} path '{}'; checked canonical candidates in project root",
+                kind, raw_path
+            ))
+        } else {
+            None
+        };
+        playback_path
     }
 
     pub(super) fn prepare_player_mode(&mut self) -> bool {
@@ -204,10 +183,13 @@ impl EditorWorkbench {
             .selected_node
             .and_then(|node_id| self.node_graph.event_ip_for_node(node_id));
         let visual = Self::preview_visual_for_target(engine, target_ip);
-        let owner_hints = Self::preview_owner_hints(engine, target_ip, &self.node_graph);
-        let audio_hint = Self::preview_audio_from_script(engine, target_ip);
-        let snapshot =
-            Self::scene_from_visual_state(&visual, audio_hint, &owner_hints, &self.node_graph);
+        let script_hints = Self::preview_script_hints(engine, target_ip, &self.node_graph);
+        let snapshot = Self::scene_from_visual_state(
+            &visual,
+            script_hints.audio_hint,
+            &script_hints.owner_hints,
+            &self.node_graph,
+        );
         self.scene = snapshot.scene;
         self.composer_entity_owners = snapshot.owners;
         if self.selected_entity.is_some_and(|id| {
@@ -240,9 +222,7 @@ impl EditorWorkbench {
             let advanced_ok = match &event {
                 visual_novel_engine::EventCompiled::ExtCall { .. } => preview.resume().is_ok(),
                 visual_novel_engine::EventCompiled::Choice(choice) => {
-                    if target_ip.is_none() {
-                        false
-                    } else if choice.options.is_empty() {
+                    if target_ip.is_none() || choice.options.is_empty() {
                         false
                     } else {
                         preview.choose(0).is_ok()
@@ -362,58 +342,15 @@ impl EditorWorkbench {
 
         PreviewSceneSnapshot { scene, owners }
     }
-    fn preview_audio_from_script(engine: &Engine, target_ip: Option<u32>) -> AudioPreviewHint {
-        let upper_bound = target_ip.unwrap_or(engine.state().position);
-        let mut current = None;
-        let mut resolved = false;
-        for (idx, event) in engine.script().events.iter().enumerate() {
-            let ip = idx as u32;
-            if ip > upper_bound {
-                break;
-            }
-            match event {
-                visual_novel_engine::EventCompiled::Scene(scene) => {
-                    if let Some(music) = &scene.music {
-                        resolved = true;
-                        current = Some(music.clone());
-                    }
-                }
-                visual_novel_engine::EventCompiled::Patch(patch) => {
-                    if let Some(music) = &patch.music {
-                        resolved = true;
-                        current = Some(music.clone());
-                    }
-                }
-                visual_novel_engine::EventCompiled::AudioAction(action) => {
-                    if action.channel == 0 {
-                        resolved = true;
-                        match action.action {
-                            0 => {
-                                if let Some(asset) = &action.asset {
-                                    current = Some(asset.clone());
-                                }
-                            }
-                            1 | 2 => current = None,
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        if resolved {
-            AudioPreviewHint::Resolved(current)
-        } else {
-            AudioPreviewHint::Unknown
-        }
-    }
-    fn preview_owner_hints(
+    fn preview_script_hints(
         engine: &Engine,
         target_ip: Option<u32>,
         graph: &crate::editor::node_graph::NodeGraph,
-    ) -> PreviewOwnerHints {
-        let mut hints = PreviewOwnerHints::default();
+    ) -> PreviewScriptHints {
         let upper_bound = target_ip.unwrap_or(engine.state().position);
+        let mut owner_hints = PreviewOwnerHints::default();
+        let mut current_audio = None;
+        let mut audio_resolved = false;
         for (idx, event) in engine.script().events.iter().enumerate() {
             let ip = idx as u32;
             if ip > upper_bound {
@@ -423,14 +360,16 @@ impl EditorWorkbench {
             match event {
                 visual_novel_engine::EventCompiled::Scene(scene) => {
                     if scene.background.is_some() {
-                        hints.background_owner = owner;
+                        owner_hints.background_owner = owner;
                     }
-                    if scene.music.is_some() {
-                        hints.music_owner = owner;
+                    if let Some(music) = &scene.music {
+                        audio_resolved = true;
+                        current_audio = Some(music.clone());
+                        owner_hints.music_owner = owner;
                     }
                     if let Some(owner_id) = owner {
                         for character in &scene.characters {
-                            hints
+                            owner_hints
                                 .character_owners
                                 .insert(character.name.to_string(), owner_id);
                         }
@@ -438,51 +377,71 @@ impl EditorWorkbench {
                 }
                 visual_novel_engine::EventCompiled::Patch(patch) => {
                     if patch.background.is_some() {
-                        hints.background_owner = owner;
+                        owner_hints.background_owner = owner;
                     }
-                    if patch.music.is_some() {
-                        hints.music_owner = owner;
+                    if let Some(music) = &patch.music {
+                        audio_resolved = true;
+                        current_audio = Some(music.clone());
+                        owner_hints.music_owner = owner;
                     }
                     if let Some(owner_id) = owner {
                         for character in &patch.add {
-                            hints
+                            owner_hints
                                 .character_owners
                                 .insert(character.name.to_string(), owner_id);
                         }
                         for character in &patch.update {
-                            hints
+                            owner_hints
                                 .character_owners
                                 .insert(character.name.to_string(), owner_id);
                         }
                     }
                     for removed_name in &patch.remove {
-                        hints.character_owners.remove(removed_name.as_ref());
+                        owner_hints.character_owners.remove(removed_name.as_ref());
+                    }
+                }
+                visual_novel_engine::EventCompiled::AudioAction(action) => {
+                    if action.channel == 0 {
+                        audio_resolved = true;
+                        owner_hints.music_owner = owner;
+                        match action.action {
+                            0 => {
+                                if let Some(asset) = &action.asset {
+                                    current_audio = Some(asset.clone());
+                                }
+                            }
+                            1 | 2 => current_audio = None,
+                            _ => {}
+                        }
                     }
                 }
                 visual_novel_engine::EventCompiled::SetCharacterPosition(pos) => {
                     if let Some(owner_id) = owner {
-                        hints
+                        owner_hints
                             .character_owners
                             .insert(pos.name.to_string(), owner_id);
                     }
                 }
                 visual_novel_engine::EventCompiled::Dialogue(dialogue) => {
                     if let Some(owner_id) = owner {
-                        hints
+                        owner_hints
                             .character_owners
                             .entry(dialogue.speaker.to_string())
                             .or_insert(owner_id);
                     }
                 }
-                visual_novel_engine::EventCompiled::AudioAction(action) => {
-                    if action.channel == 0 {
-                        hints.music_owner = owner;
-                    }
-                }
                 _ => {}
             }
         }
-        hints
+
+        PreviewScriptHints {
+            owner_hints,
+            audio_hint: if audio_resolved {
+                AudioPreviewHint::Resolved(current_audio)
+            } else {
+                AudioPreviewHint::Unknown
+            },
+        }
     }
 }
 
@@ -496,6 +455,11 @@ struct PreviewOwnerHints {
     background_owner: Option<u32>,
     music_owner: Option<u32>,
     character_owners: BTreeMap<String, u32>,
+}
+
+struct PreviewScriptHints {
+    owner_hints: PreviewOwnerHints,
+    audio_hint: AudioPreviewHint,
 }
 
 enum AudioPreviewHint {

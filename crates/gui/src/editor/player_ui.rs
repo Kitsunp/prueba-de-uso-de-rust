@@ -210,10 +210,8 @@ fn render_event_ui(
                 if matches!(event, EventCompiled::ExtCall { .. }) {
                     let _ = engine.resume();
                     audio_commands.extend(engine.take_audio_commands());
-                } else {
-                    if let Ok((cmd, _)) = engine.step() {
-                        audio_commands.extend(cmd);
-                    }
+                } else if let Ok((cmd, _)) = engine.step() {
+                    audio_commands.extend(cmd);
                 }
                 ctx.request_repaint_after(Duration::from_millis(16));
                 return audio_commands;

@@ -336,10 +336,9 @@ impl EditorWorkbench {
                 if ui
                     .selectable_label(self.mode == EditorMode::Player, "Play")
                     .clicked()
+                    && self.prepare_player_mode()
                 {
-                    if self.prepare_player_mode() {
-                        self.mode = EditorMode::Player;
-                    }
+                    self.mode = EditorMode::Player;
                 }
 
                 ui.separator();

@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 impl NodeGraph {
     /// Returns node ids that directly connect into `node_id`.
@@ -59,7 +59,7 @@ impl NodeGraph {
         self.nodes_referencing_asset(asset_path).into_iter().next()
     }
 
-    fn script_order_node_ids(&self) -> Vec<u32> {
+    pub(crate) fn script_order_node_ids(&self) -> Vec<u32> {
         let start_id = self
             .nodes
             .iter()
@@ -67,13 +67,16 @@ impl NodeGraph {
             .map(|(id, _, _)| *id);
 
         let mut visited = Vec::new();
+        let mut visited_set = HashSet::new();
         let mut queue = VecDeque::new();
+        let mut queued = HashSet::new();
         if let Some(start) = start_id {
             queue.push_back(start);
+            queued.insert(start);
         }
 
         while let Some(id) = queue.pop_front() {
-            if visited.contains(&id) {
+            if !visited_set.insert(id) {
                 continue;
             }
             visited.push(id);
@@ -85,7 +88,7 @@ impl NodeGraph {
                 .collect();
             outgoing.sort_by_key(|connection| (connection.from_port, connection.to));
             for connection in outgoing {
-                if !visited.contains(&connection.to) && !queue.contains(&connection.to) {
+                if !visited_set.contains(&connection.to) && queued.insert(connection.to) {
                     queue.push_back(connection.to);
                 }
             }

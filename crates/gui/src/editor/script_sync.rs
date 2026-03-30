@@ -3,7 +3,7 @@
 //! This module provides bidirectional conversion between NodeGraph and ScriptRaw.
 //! Extracted from node_graph.rs to comply with Criterio J (<500 lines).
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use eframe::egui;
 use visual_novel_engine::{
@@ -163,7 +163,7 @@ pub fn from_script(script: &ScriptRaw) -> NodeGraph {
 
     // Connect nodes with no outgoing connections to End
     // Use GraphConnection struct access
-    let nodes_with_outgoing: Vec<u32> = graph.connections().map(|c| c.from).collect();
+    let nodes_with_outgoing: BTreeSet<u32> = graph.connections().map(|c| c.from).collect();
     let nodes_to_connect: Vec<u32> = graph
         .nodes()
         .map(|(id, _, _)| *id)
@@ -188,51 +188,21 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
     let mut events = Vec::new();
     let mut labels = BTreeMap::new();
 
-    // Find start node
-    let start_id = graph
-        .nodes()
-        .find(|(_, node, _)| matches!(node, StoryNode::Start))
-        .map(|(id, _, _)| *id);
-
-    // BFS traversal from start
-    let mut visited = Vec::new();
-    let mut queue = VecDeque::new();
-
-    if let Some(start) = start_id {
-        queue.push_back(start);
-    }
-
-    while let Some(id) = queue.pop_front() {
-        if visited.contains(&id) {
-            continue;
-        }
-        visited.push(id);
-
-        let mut outgoing: Vec<_> = graph.connections().filter(|conn| conn.from == id).collect();
-        outgoing.sort_by_key(|conn| (conn.from_port, conn.to));
-        for conn in outgoing {
-            if !visited.contains(&conn.to) && !queue.contains(&conn.to) {
-                queue.push_back(conn.to);
-            }
-        }
-    }
-
-    // Convert visited nodes to events
-    let mut node_to_label: BTreeMap<u32, String> = BTreeMap::new();
+    let visited = graph.script_order_node_ids();
+    let node_lookup: BTreeMap<u32, &StoryNode> =
+        graph.nodes().map(|(id, node, _)| (*id, node)).collect();
+    let choice_targets: BTreeMap<(u32, usize), u32> = graph
+        .connections()
+        .map(|connection| ((connection.from, connection.from_port), connection.to))
+        .collect();
 
     for &id in &visited {
-        let Some((_, node, _)) = graph.nodes().find(|(nid, _, _)| *nid == id) else {
+        let Some(node) = node_lookup.get(&id).copied() else {
             continue;
         };
 
-        // We only generate labels/events for non-marker nodes
-        if node.is_marker() {
-            continue;
-        }
-
         let event_idx = events.len();
         let label = format!("node_{}", id);
-        node_to_label.insert(id, label.clone());
         labels.insert(label, event_idx);
 
         match node {
@@ -249,21 +219,15 @@ pub fn to_script(graph: &NodeGraph) -> ScriptRaw {
                     .iter()
                     .enumerate()
                     .map(|(i, text)| {
-                        // Find connection from this port
-                        let target_node = graph
-                            .connections()
-                            .find(|c| c.from == id && c.from_port == i)
-                            .map(|c| c.to);
-
-                        let target = target_node
-                            .and_then(|tid| {
-                                let node = graph.get_node(tid)?;
-                                let label = match node {
+                        let target = choice_targets
+                            .get(&(id, i))
+                            .and_then(|target_node_id| {
+                                let node = node_lookup.get(target_node_id).copied()?;
+                                Some(match node {
                                     StoryNode::Start => "start".to_string(),
                                     StoryNode::End => "__end".to_string(),
-                                    _ => format!("node_{}", tid),
-                                };
-                                Some(label)
+                                    _ => format!("node_{}", target_node_id),
+                                })
                             })
                             .unwrap_or_else(|| format!("__unlinked_node_{}_option_{}", id, i));
 

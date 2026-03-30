@@ -118,10 +118,10 @@ impl NodeGraph {
             return false;
         }
 
-        let wrap_rows = ordered
-            .len()
-            .max(AUTO_LAYOUT_LINEAR_WRAP_ROWS_MIN)
-            .min(AUTO_LAYOUT_LINEAR_WRAP_ROWS_MAX);
+        let wrap_rows = ordered.len().clamp(
+            AUTO_LAYOUT_LINEAR_WRAP_ROWS_MIN,
+            AUTO_LAYOUT_LINEAR_WRAP_ROWS_MAX,
+        );
 
         let mut row_heights = vec![NODE_HEIGHT; wrap_rows];
         for (index, node_id) in ordered.iter().copied().enumerate() {
