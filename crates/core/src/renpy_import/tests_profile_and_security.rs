@@ -1,8 +1,8 @@
 use std::fs;
 use tempfile::tempdir;
 
-use super::{import_renpy_project, ImportFallbackPolicy, ImportProfile, ImportRenpyOptions};
 use super::tests::{temp_renpy_fixture, write_renpy_file};
+use super::{import_renpy_project, ImportFallbackPolicy, ImportProfile, ImportRenpyOptions};
 use crate::ScriptRaw;
 
 #[test]

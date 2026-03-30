@@ -62,9 +62,8 @@ impl PyEngine {
         let event = change.event;
         if let EventCompiled::ExtCall { command, args } = &event {
             if !self.allowed_ext_call_commands.contains(command.as_str()) {
-                self.last_ext_call_error = Some(format!(
-                    "ext_call '{command}' denied by capability policy"
-                ));
+                self.last_ext_call_error =
+                    Some(format!("ext_call '{command}' denied by capability policy"));
             } else if let Some(handler) = &self.handler {
                 let handler = handler.clone_ref(py);
                 if let Err(e) = handler.call1(py, (command.as_str(), args.clone())) {
@@ -356,7 +355,10 @@ def handler(command, args):
                 .expect("calls list")
                 .extract::<Vec<(String, Vec<String>)>>()
                 .expect("extract calls");
-            assert_eq!(calls, vec![("minigame_start".to_string(), vec!["cards".to_string()])]);
+            assert_eq!(
+                calls,
+                vec![("minigame_start".to_string(), vec!["cards".to_string()])]
+            );
             assert_eq!(engine.last_ext_call_error(), None);
 
             engine.resume().expect("resume after ext-call");

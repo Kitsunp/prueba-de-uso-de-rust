@@ -1,13 +1,13 @@
-use std::collections::BTreeSet;
-use std::fs;
-use std::path::{Path, PathBuf};
-use tempfile::tempdir;
 use super::import_renpy_project;
 use super::syntax::{
     parse_cond_expr, parse_dialogue_line, parse_menu_option_decl, parse_show_decl,
 };
 use super::{ImportProfile, ImportRenpyOptions};
 use crate::{CmpOp, CondRaw, EventRaw, ScriptRaw};
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+use tempfile::tempdir;
 
 pub(crate) fn temp_renpy_fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
     let dir = tempdir().expect("tempdir");

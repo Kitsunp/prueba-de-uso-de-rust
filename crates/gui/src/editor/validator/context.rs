@@ -18,7 +18,11 @@ pub(super) fn unreachable_blocker_context(
         );
     }
 
-    if let Some(from_id) = incoming.iter().copied().find(|candidate| visited.contains(candidate)) {
+    if let Some(from_id) = incoming
+        .iter()
+        .copied()
+        .find(|candidate| visited.contains(candidate))
+    {
         return (
             Some(from_id),
             format!("reachable predecessor {from_id} cannot advance into this branch"),

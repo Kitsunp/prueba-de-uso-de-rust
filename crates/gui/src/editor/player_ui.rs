@@ -306,14 +306,7 @@ fn render_event_ui(
         Err(e) => {
             let error_str = format!("{}", e);
             if error_str.contains("End") || error_str.contains("position") {
-                render_end(
-                    ui,
-                    engine,
-                    toast,
-                    player,
-                    now_sec,
-                    &mut audio_commands,
-                );
+                render_end(ui, engine, toast, player, now_sec, &mut audio_commands);
             } else {
                 ui.colored_label(egui::Color32::RED, format!("Error: {}", e));
             }
@@ -399,7 +392,10 @@ fn render_player_controls(
         ui.label(format!("Audio trace: {last_event}"));
     }
     if let Some(last_error) = &player.last_audio_error {
-        ui.colored_label(egui::Color32::YELLOW, format!("Audio warning: {last_error}"));
+        ui.colored_label(
+            egui::Color32::YELLOW,
+            format!("Audio warning: {last_error}"),
+        );
     }
 }
 

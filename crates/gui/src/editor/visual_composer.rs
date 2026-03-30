@@ -312,13 +312,7 @@ impl<'a> VisualComposerPanel<'a> {
         action
     }
 
-    fn paint_placeholder(
-        &self,
-        ui: &egui::Ui,
-        rect: egui::Rect,
-        is_selected: bool,
-        label: String,
-    ) {
+    fn paint_placeholder(&self, ui: &egui::Ui, rect: egui::Rect, is_selected: bool, label: String) {
         let color = if is_selected {
             egui::Color32::from_rgb(120, 170, 220)
         } else {
@@ -346,8 +340,10 @@ impl<'a> VisualComposerPanel<'a> {
             return None;
         }
         let Some(project_root) = self.project_root else {
-            self.image_failures
-                .insert(asset_path.to_string(), "project_root not available".to_string());
+            self.image_failures.insert(
+                asset_path.to_string(),
+                "project_root not available".to_string(),
+            );
             return None;
         };
 

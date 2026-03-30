@@ -297,8 +297,7 @@ label start:
         "trace warning should include source flow location"
     );
     assert!(
-        trace_issue.message.contains("area=story")
-            && trace_issue.message.contains("phase=parse"),
+        trace_issue.message.contains("area=story") && trace_issue.message.contains("phase=parse"),
         "trace warning should expose envelope context for graph-driven diagnosis"
     );
 }

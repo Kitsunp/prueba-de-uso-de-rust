@@ -34,10 +34,12 @@ impl EditorWorkbench {
                         self.player_state.last_audio_error = None;
                     }
                     Err(err) => {
-                        self.player_audio_backend = Some(Box::new(visual_novel_runtime::SilentAudio));
+                        self.player_audio_backend =
+                            Some(Box::new(visual_novel_runtime::SilentAudio));
                         self.player_audio_root = Some(project_root);
-                        self.player_state.last_audio_error =
-                            Some(format!("Audio output unavailable; running silent preview: {err}"));
+                        self.player_state.last_audio_error = Some(format!(
+                            "Audio output unavailable; running silent preview: {err}"
+                        ));
                     }
                 }
             }
@@ -87,15 +89,16 @@ impl EditorWorkbench {
                         self.player_state.last_audio_error = None;
                     }
                     if let Some(audio_backend) = self.player_audio_backend.as_mut() {
-                        audio_backend
-                            .play_music_with_options(playback_path.as_str(), r#loop, volume);
+                        audio_backend.play_music_with_options(
+                            playback_path.as_str(),
+                            r#loop,
+                            volume,
+                        );
                     }
                 }
                 visual_novel_engine::AudioCommand::StopBgm { fade_out } => {
-                    self.player_state.last_audio_event = Some(format!(
-                        "stop_bgm fade_out_ms={}",
-                        fade_out.as_millis()
-                    ));
+                    self.player_state.last_audio_event =
+                        Some(format!("stop_bgm fade_out_ms={}", fade_out.as_millis()));
                     if let Some(audio_backend) = self.player_audio_backend.as_mut() {
                         audio_backend.stop_music_with_fade(Some(fade_out));
                     }
@@ -107,8 +110,10 @@ impl EditorWorkbench {
                     );
                     let unresolved = resolved_path.is_none();
                     let playback_path = resolved_path.unwrap_or_else(|| path.as_ref().to_string());
-                    self.player_state.last_audio_event =
-                        Some(format!("play_sfx path={} volume={:?}", playback_path, volume));
+                    self.player_state.last_audio_event = Some(format!(
+                        "play_sfx path={} volume={:?}",
+                        playback_path, volume
+                    ));
                     if unresolved && self.project_root.is_some() {
                         self.player_state.last_audio_error = Some(format!(
                             "Audio preview could not resolve SFX path '{}'; checked canonical candidates in project root",
@@ -134,8 +139,10 @@ impl EditorWorkbench {
                     );
                     let unresolved = resolved_path.is_none();
                     let playback_path = resolved_path.unwrap_or_else(|| path.as_ref().to_string());
-                    self.player_state.last_audio_event =
-                        Some(format!("play_voice path={} volume={:?}", playback_path, volume));
+                    self.player_state.last_audio_event = Some(format!(
+                        "play_voice path={} volume={:?}",
+                        playback_path, volume
+                    ));
                     if unresolved && self.project_root.is_some() {
                         self.player_state.last_audio_error = Some(format!(
                             "Audio preview could not resolve Voice path '{}'; checked canonical candidates in project root",

@@ -114,7 +114,8 @@ pub fn export_bundle(spec: ExportBundleSpec) -> VnResult<ExportBundleReport> {
         .entry_script
         .unwrap_or_else(|| PathBuf::from(manifest.settings.entry_point.clone()));
     let entry_script = sanitize_relative_path(&entry_script, "entry_script")?;
-    let script_source_path = canonicalize_within_root(&project_root, &entry_script, "entry_script")?;
+    let script_source_path =
+        canonicalize_within_root(&project_root, &entry_script, "entry_script")?;
 
     let raw_script = fs::read_to_string(&script_source_path).map_err(|e| {
         invalid_bundle(format!(
@@ -325,7 +326,10 @@ fn copy_assets_tree(
             ))
         })?;
         let bytes = fs::read(&canonical_source).map_err(|e| {
-            invalid_bundle(format!("read copied asset '{}': {e}", canonical_source.display()))
+            invalid_bundle(format!(
+                "read copied asset '{}': {e}",
+                canonical_source.display()
+            ))
         })?;
         manifest.insert(
             normalize_path_display(&rel),

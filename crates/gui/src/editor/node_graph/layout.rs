@@ -245,10 +245,8 @@ impl NodeGraph {
 
                     let half_w_a = (NODE_WIDTH + AUTO_LAYOUT_OVERLAP_PAD_X) * 0.5;
                     let half_w_b = (NODE_WIDTH + AUTO_LAYOUT_OVERLAP_PAD_X) * 0.5;
-                    let half_h_a =
-                        (node_visual_height(node_a) + AUTO_LAYOUT_OVERLAP_PAD_Y) * 0.5;
-                    let half_h_b =
-                        (node_visual_height(node_b) + AUTO_LAYOUT_OVERLAP_PAD_Y) * 0.5;
+                    let half_h_a = (node_visual_height(node_a) + AUTO_LAYOUT_OVERLAP_PAD_Y) * 0.5;
+                    let half_h_b = (node_visual_height(node_b) + AUTO_LAYOUT_OVERLAP_PAD_Y) * 0.5;
 
                     let dx = pos_b.x - pos_a.x;
                     let dy = pos_b.y - pos_a.y;

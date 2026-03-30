@@ -202,7 +202,9 @@ fn slot_store_loads_legacy_plain_payloads() {
     )
     .expect("write metadata");
 
-    let loaded = store.load_slot(1).expect("legacy plain slot should still load");
+    let loaded = store
+        .load_slot(1)
+        .expect("legacy plain slot should still load");
     assert_eq!(loaded.state.position, 5);
 
     let _ = fs::remove_dir_all(root);

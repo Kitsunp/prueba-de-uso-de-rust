@@ -224,8 +224,8 @@ pub fn validate_with_project_root(graph: &NodeGraph, project_root: &Path) -> Vec
     })
 }
 
-mod helpers;
 mod context;
+mod helpers;
 mod rules;
 
 #[cfg(test)]

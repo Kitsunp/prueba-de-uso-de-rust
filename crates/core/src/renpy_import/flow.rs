@@ -126,10 +126,8 @@ impl ImportState {
             return;
         }
 
-        self.events.push(EventRaw::Choice(ChoiceRaw {
-            prompt,
-            options,
-        }));
+        self.events
+            .push(EventRaw::Choice(ChoiceRaw { prompt, options }));
 
         for (target, start, end, opt_line) in block_plan {
             self.labels.insert(target, self.events.len());

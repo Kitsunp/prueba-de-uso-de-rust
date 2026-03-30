@@ -367,21 +367,19 @@ impl<'a> NodeEditorPanel<'a> {
             StoryNode::JumpIf { .. } => "Conditional".to_string(),
             StoryNode::Start => "Entry Point".to_string(),
             StoryNode::End => "Exit Point".to_string(),
-            StoryNode::Generic(event) => {
-                match event {
-                    visual_novel_engine::EventRaw::ExtCall { command, .. } => {
-                        format!("Ext: {}", command.chars().take(12).collect::<String>())
-                    }
-                    _ => {
-                        let json = event.to_json_value();
-                        let type_name = json
-                            .get("type")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("unknown");
-                        format!("Generic: {}", type_name)
-                    }
+            StoryNode::Generic(event) => match event {
+                visual_novel_engine::EventRaw::ExtCall { command, .. } => {
+                    format!("Ext: {}", command.chars().take(12).collect::<String>())
                 }
-            }
+                _ => {
+                    let json = event.to_json_value();
+                    let type_name = json
+                        .get("type")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("unknown");
+                    format!("Generic: {}", type_name)
+                }
+            },
             StoryNode::AudioAction {
                 channel, action, ..
             } => {
@@ -431,5 +429,3 @@ impl<'a> NodeEditorPanel<'a> {
         );
     }
 }
-
-

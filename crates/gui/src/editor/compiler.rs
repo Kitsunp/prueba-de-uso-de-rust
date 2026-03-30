@@ -202,9 +202,7 @@ pub fn compile_project_with_project_root(
                             node_id,
                             ValidationPhase::DryRun,
                             LintCode::DryRunUnreachableCompiled,
-                            format!(
-                                "Dry Run detected unreachable compiled event at ip={event_ip}"
-                            ),
+                            format!("Dry Run detected unreachable compiled event at ip={event_ip}"),
                         )
                         .with_event_ip(Some(event_ip))
                         .with_blocked_by(blocked_by),
