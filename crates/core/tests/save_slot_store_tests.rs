@@ -35,7 +35,13 @@ fn save_slot_compat_matrix() {
         .expect("latest save must succeed");
 
     let slot_path = root.join("slots").join("slot_002.vnsav");
-    let mut bytes = fs::read(&slot_path).expect("slot bytes should exist");
+    let encoded = fs::read(&slot_path).expect("slot bytes should exist");
+    assert!(
+        SaveData::from_binary(&encoded).is_err(),
+        "slot store should persist authenticated payloads"
+    );
+
+    let mut bytes = encoded;
     let incompatible_version = SAVE_FORMAT_VERSION.saturating_add(1);
     bytes[4..6].copy_from_slice(&incompatible_version.to_le_bytes());
     fs::write(&slot_path, bytes).expect("write corrupted version");
@@ -85,6 +91,39 @@ fn corrupted_save_handling() {
         err,
         SaveStoreError::RecoveryFailed { backup: None, .. }
     ));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn load_slot_accepts_legacy_plain_payloads() {
+    let root = unique_root("vn_legacy_slot_payload");
+    let store = SaveSlotStore::new(root.clone());
+    store.ensure_layout().expect("layout must be creatable");
+
+    let save = sample_save(12);
+    fs::write(
+        root.join("slots").join("slot_001.vnsav"),
+        save.to_binary().expect("legacy save"),
+    )
+    .expect("write legacy save");
+    fs::write(
+        root.join("meta").join("slot_001.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "slot_id": 1,
+            "quick": false,
+            "updated_unix_ms": 123,
+            "script_id_hex": "11",
+            "position": 12,
+            "flags_words": 1,
+            "vars_count": 1
+        }))
+        .expect("serialize metadata"),
+    )
+    .expect("write metadata");
+
+    let loaded = store.load_slot(1).expect("legacy slot should still load");
+    assert_eq!(loaded.state.position, 12);
 
     let _ = fs::remove_dir_all(root);
 }

@@ -103,6 +103,29 @@ class TypesTests(unittest.TestCase):
                 '{"script_schema_version":"1.0","events":[],"labels":{"start":true}}'
             )
 
+    def test_set_var_rejects_bool_payload(self):
+        with self.assertRaises(ValueError):
+            SetVar.from_dict({"key": "counter", "value": True})
+
+    def test_character_and_transition_numeric_fields_reject_bool(self):
+        with self.assertRaises(ValueError):
+            CharacterPlacement.from_dict({"name": "Ava", "x": True})
+        with self.assertRaises(ValueError):
+            Transition.from_dict({"kind": "fade", "duration_ms": False})
+        with self.assertRaises(ValueError):
+            SetCharacterPosition.from_dict({"name": "Ava", "x": 1, "y": 2, "scale": True})
+        with self.assertRaises(ValueError):
+            AudioAction.from_dict(
+                {
+                    "channel": "bgm",
+                    "action": "play",
+                    "asset": None,
+                    "volume": True,
+                    "fade_duration_ms": None,
+                    "loop_playback": None,
+                }
+            )
+
 
 class LocalizationTests(unittest.TestCase):
     def test_collect_and_validate_localization_keys(self):
@@ -171,6 +194,11 @@ class BuilderTests(unittest.TestCase):
             )
         )
         self.assertTrue(any(event["type"] == "ext_call" for event in payload["events"]))
+
+    def test_builder_ext_call_rejects_non_string_args(self):
+        builder = ScriptBuilder()
+        with self.assertRaises(ValueError):
+            builder.ext_call("open_minigame", ["cards", 7])
 
 
 class EngineWrapperTests(unittest.TestCase):
@@ -259,6 +287,35 @@ class EngineWrapperTests(unittest.TestCase):
         self.assertEqual(engine.last_ext_call_error(), None)
         self.assertEqual(engine.raw.allowed, [])
         self.assertIs(engine.raw.handler, sentinel)
+
+    def test_engine_step_normalizes_native_step_result_and_tracks_audio(self):
+        module = types.ModuleType("visual_novel_engine")
+
+        class StepResult:
+            def __init__(self):
+                self.event = {"type": "dialogue", "speaker": "Ava", "text": "Hola"}
+                self.audio = [{"type": "play_bgm", "path": "theme.ogg"}]
+
+        class FakeEngine:
+            def __init__(self, script_json):
+                self.script_json = script_json
+
+            def step(self):
+                return StepResult()
+
+        module.Engine = FakeEngine
+        sys.modules["visual_novel_engine"] = module
+
+        engine = Engine.from_script(
+            {
+                "script_schema_version": SCRIPT_SCHEMA_VERSION,
+                "events": [],
+                "labels": {"start": 0},
+            }
+        )
+        event = engine.step()
+        self.assertEqual(event["type"], "dialogue")
+        self.assertEqual(engine.last_audio_commands(), [{"type": "play_bgm", "path": "theme.ogg"}])
 
     def test_engine_ui_state_calls_native(self):
         module = types.ModuleType("visual_novel_engine")
@@ -468,6 +525,8 @@ class NativeBindingsTests(unittest.TestCase):
         next_result = engine.step()
         next_event = next_result.event
         self.assertEqual(next_event["type"], "dialogue")
+        if hasattr(engine, "last_ext_call_error"):
+            self.assertIsNone(engine.last_ext_call_error())
 
     def test_audio_controller_and_prefetch_api(self):
         engine = self.native.Engine(self._dialogue_script_json())

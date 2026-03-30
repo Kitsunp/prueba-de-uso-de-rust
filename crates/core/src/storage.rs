@@ -288,7 +288,7 @@ impl SaveSlotStore {
         self.ensure_layout()?;
         let slot_path = self.slot_path(slot_id, false);
         let metadata_path = self.metadata_path(slot_id, false);
-        self.atomic_write_binary(&slot_path, &save.to_binary()?)?;
+        self.atomic_write_binary(&slot_path, &save.to_authenticated_binary(AUTH_SAVE_KEY)?)?;
         let metadata = self.build_metadata(slot_id, false, save);
         self.atomic_write_binary(
             &metadata_path,
@@ -324,7 +324,7 @@ impl SaveSlotStore {
         self.ensure_layout()?;
         let slot_path = self.slot_path(0, true);
         let metadata_path = self.metadata_path(0, true);
-        self.atomic_write_binary(&slot_path, &save.to_binary()?)?;
+        self.atomic_write_binary(&slot_path, &save.to_authenticated_binary(AUTH_SAVE_KEY)?)?;
         let metadata = self.build_metadata(0, true, save);
         self.atomic_write_binary(
             &metadata_path,
@@ -396,10 +396,10 @@ impl SaveSlotStore {
         backup_path: &Path,
     ) -> Result<SaveData, SaveStoreError> {
         let primary_bytes = fs::read(primary_path)?;
-        match SaveData::from_binary(&primary_bytes) {
+        match SaveData::from_any_binary(&primary_bytes, AUTH_SAVE_KEY) {
             Ok(save) => Ok(save),
             Err(primary_err) => match fs::read(backup_path) {
-                Ok(backup_bytes) => match SaveData::from_binary(&backup_bytes) {
+                Ok(backup_bytes) => match SaveData::from_any_binary(&backup_bytes, AUTH_SAVE_KEY) {
                     Ok(save) => Ok(save),
                     Err(backup_err) => Err(SaveStoreError::RecoveryFailed {
                         primary: primary_err,

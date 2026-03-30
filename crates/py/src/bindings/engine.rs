@@ -76,6 +76,8 @@ impl PyEngine {
             } else {
                 self.last_ext_call_error = None;
             }
+        } else {
+            self.last_ext_call_error = None;
         }
         let event_obj = event_to_python(&event, py)?;
         let audio_obj = self.get_last_audio_commands(py)?;
@@ -287,6 +289,7 @@ mod tests {
 
     #[test]
     fn ext_call_callbacks_are_denied_by_default() {
+        pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let mut engine = make_ext_call_engine();
             let module = PyModule::from_code(
@@ -326,6 +329,7 @@ def handler(command, args):
 
     #[test]
     fn ext_call_callbacks_require_explicit_authorization() {
+        pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let mut engine = make_ext_call_engine();
             let module = PyModule::from_code(
@@ -353,6 +357,12 @@ def handler(command, args):
                 .extract::<Vec<(String, Vec<String>)>>()
                 .expect("extract calls");
             assert_eq!(calls, vec![("minigame_start".to_string(), vec!["cards".to_string()])]);
+            assert_eq!(engine.last_ext_call_error(), None);
+
+            engine.resume().expect("resume after ext-call");
+            let _ = engine
+                .step(py)
+                .expect("post-ext-call dialogue should step cleanly");
             assert_eq!(engine.last_ext_call_error(), None);
         });
     }

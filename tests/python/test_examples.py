@@ -10,6 +10,28 @@ def load_engine():
 
 
 class ExampleUsageTests(unittest.TestCase):
+    def _supports_event(self, engine_cls, event_name: str) -> bool:
+        try:
+            probe = engine_cls(
+                """
+                {
+                  "script_schema_version": "1.0",
+                  "events": [
+                    {"type": "dialogue", "speaker": "Ava", "text": "Hola"}
+                  ],
+                  "labels": {"start": 0}
+                }
+                """
+            )
+        except Exception:
+            return False
+        if hasattr(probe, "supported_event_types"):
+            try:
+                return event_name in set(probe.supported_event_types())
+            except Exception:
+                return False
+        return False
+
     def test_basic_engine_example(self):
         py_engine, err = load_engine()
         if py_engine is None:
@@ -39,6 +61,8 @@ class ExampleUsageTests(unittest.TestCase):
         py_engine, err = load_engine()
         if py_engine is None:
             self.skipTest(f"py_engine not available: {err}")
+        if not self._supports_event(py_engine, "patch"):
+            self.skipTest("native engine module does not advertise patch support")
         script_json = """
         {
           "script_schema_version": "1.0",

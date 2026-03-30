@@ -21,6 +21,12 @@ def _require_int(value: Any, field_name: str) -> int:
     return value
 
 
+def _require_float(value: Any, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field_name} must be float, got {type(value).__name__}")
+    return float(value)
+
+
 @dataclass(frozen=True)
 class Dialogue:
     """Dialogue event.
@@ -105,9 +111,15 @@ class CharacterPlacement:
             name=str(data["name"]),
             expression=str(expression) if expression is not None else None,
             position=str(position) if position is not None else None,
-            x=int(data["x"]) if data.get("x") is not None else None,
-            y=int(data["y"]) if data.get("y") is not None else None,
-            scale=float(data["scale"]) if data.get("scale") is not None else None,
+            x=_require_int(data["x"], "CharacterPlacement 'x'")
+            if data.get("x") is not None
+            else None,
+            y=_require_int(data["y"], "CharacterPlacement 'y'")
+            if data.get("y") is not None
+            else None,
+            scale=_require_float(data["scale"], "CharacterPlacement 'scale'")
+            if data.get("scale") is not None
+            else None,
         )
 
 
@@ -227,9 +239,11 @@ class AudioAction:
             channel=str(data["channel"]),
             action=str(data["action"]),
             asset=str(data["asset"]) if data.get("asset") is not None else None,
-            volume=float(data["volume"]) if data.get("volume") is not None else None,
+            volume=_require_float(data["volume"], "AudioAction 'volume'")
+            if data.get("volume") is not None
+            else None,
             fade_duration_ms=(
-                int(data["fade_duration_ms"])
+                _require_int(data["fade_duration_ms"], "AudioAction 'fade_duration_ms'")
                 if data.get("fade_duration_ms") is not None
                 else None
             ),
@@ -261,7 +275,7 @@ class Transition:
     def from_dict(cls, data: Mapping[str, Any]) -> "Transition":
         return cls(
             kind=str(data["kind"]),
-            duration_ms=int(data["duration_ms"]),
+            duration_ms=_require_int(data["duration_ms"], "Transition 'duration_ms'"),
             color=str(data["color"]) if data.get("color") is not None else None,
         )
 
@@ -288,9 +302,11 @@ class SetCharacterPosition:
     def from_dict(cls, data: Mapping[str, Any]) -> "SetCharacterPosition":
         return cls(
             name=str(data["name"]),
-            x=int(data["x"]),
-            y=int(data["y"]),
-            scale=float(data["scale"]) if data.get("scale") is not None else None,
+            x=_require_int(data["x"], "SetCharacterPosition 'x'"),
+            y=_require_int(data["y"], "SetCharacterPosition 'y'"),
+            scale=_require_float(data["scale"], "SetCharacterPosition 'scale'")
+            if data.get("scale") is not None
+            else None,
         )
 
 
@@ -359,9 +375,7 @@ class SetVar:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SetVar":
         value = data["value"]
-        if not isinstance(value, int):
-            raise ValueError(f"SetVar 'value' must be int, got {type(value).__name__}")
-        return cls(key=str(data["key"]), value=value)
+        return cls(key=str(data["key"]), value=_require_int(value, "SetVar 'value'"))
 
 
 @dataclass(frozen=True)
@@ -394,11 +408,11 @@ class CondVarCmp:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "CondVarCmp":
         value = data["value"]
-        if not isinstance(value, int):
-            raise ValueError(
-                f"CondVarCmp 'value' must be int, got {type(value).__name__}"
-            )
-        return cls(key=str(data["key"]), op=str(data["op"]), value=value)
+        return cls(
+            key=str(data["key"]),
+            op=str(data["op"]),
+            value=_require_int(value, "CondVarCmp 'value'"),
+        )
 
 
 Cond = Union[CondFlag, CondVarCmp]

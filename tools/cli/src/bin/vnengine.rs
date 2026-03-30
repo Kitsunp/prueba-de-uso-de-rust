@@ -8,11 +8,10 @@ use sha2::{Digest, Sha256};
 use visual_novel_engine::{
     compute_script_id, export_bundle, run_repro_case, BundleIntegrity, Engine, ExportBundleSpec,
     ExportTargetPlatform, ImportFallbackPolicy, ImportProfile, ReproCase, ResourceLimiter,
-    SaveData, ScriptCompiled, ScriptRaw, SecurityPolicy, UiTrace, SCRIPT_SCHEMA_VERSION,
+    SaveData, ScriptCompiled, ScriptRaw, SecurityPolicy, UiTrace, AUTH_SAVE_KEY,
+    SCRIPT_SCHEMA_VERSION,
 };
 use walkdir::WalkDir;
-
-const SAVE_AUTH_KEY: &[u8] = b"vnengine.save.v1";
 
 #[derive(Parser)]
 #[command(author, version, about = "Visual Novel Engine CLI")]
@@ -340,7 +339,7 @@ fn trace_script(path: &Path, steps: usize, output: &Path) -> Result<()> {
 fn verify_save(save_path: &Path, script_path: &Path) -> Result<()> {
     let save_bytes =
         fs::read(save_path).with_context(|| format!("read {}", save_path.display()))?;
-    let save = SaveData::from_any_binary(&save_bytes, SAVE_AUTH_KEY)?;
+    let save = SaveData::from_any_binary(&save_bytes, AUTH_SAVE_KEY)?;
     let script_bytes =
         fs::read(script_path).with_context(|| format!("read {}", script_path.display()))?;
     let compiled = ScriptCompiled::from_binary(&script_bytes)?;
@@ -351,6 +350,9 @@ fn verify_save(save_path: &Path, script_path: &Path) -> Result<()> {
 }
 
 fn build_manifest(root: &Path, output: &Path) -> Result<()> {
+    let canonical_root = root
+        .canonicalize()
+        .with_context(|| format!("canonicalize {}", root.display()))?;
     let mut assets = std::collections::BTreeMap::new();
     for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
         let path = entry.path();
@@ -359,7 +361,14 @@ fn build_manifest(root: &Path, output: &Path) -> Result<()> {
         }
         let rel = path.strip_prefix(root).unwrap_or(path);
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+        let canonical_path = path
+            .canonicalize()
+            .with_context(|| format!("canonicalize {}", path.display()))?;
+        if !canonical_path.starts_with(&canonical_root) {
+            anyhow::bail!("manifest asset escapes root: {}", path.display());
+        }
+        let bytes = fs::read(&canonical_path)
+            .with_context(|| format!("read {}", canonical_path.display()))?;
         let size = bytes.len() as u64;
         let sha256 = sha256_hex(&bytes);
         assets.insert(rel_str, AssetEntry { sha256, size });

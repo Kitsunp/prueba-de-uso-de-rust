@@ -17,6 +17,7 @@ class Engine:
 
     def __init__(self, script_json: str) -> None:
         self._engine = _load_native_engine()(script_json)
+        self._last_audio: Any = []
 
     @classmethod
     def from_script(cls, script: Union[Script, Mapping[str, Any], str]) -> "Engine":
@@ -36,7 +37,12 @@ class Engine:
     def step(self) -> Dict[str, Any]:
         """Advance the engine and return the event that was processed."""
 
-        return self._engine.step()
+        result = self._engine.step()
+        if hasattr(result, "event"):
+            self._last_audio = getattr(result, "audio", [])
+            return result.event
+        self._last_audio = []
+        return result
 
     def choose(self, option_index: int) -> Dict[str, Any]:
         """Apply a choice selection and return the choice event."""
@@ -131,6 +137,11 @@ class Engine:
         if hasattr(self._engine, "prefetch_assets_hint"):
             return self._engine.prefetch_assets_hint()
         return []
+
+    def last_audio_commands(self) -> Any:
+        """Return the audio commands emitted by the last `step()` call."""
+
+        return list(self._last_audio)
 
     @property
     def raw(self) -> Any:
