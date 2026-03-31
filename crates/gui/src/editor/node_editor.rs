@@ -184,7 +184,7 @@ impl<'a> NodeEditorPanel<'a> {
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
                 egui::Stroke::new(
                     1.0,
-                    if col_idx % 5 == 0 {
+                    if col_idx.is_multiple_of(5) {
                         grid_color_major
                     } else {
                         grid_color_minor
@@ -201,7 +201,7 @@ impl<'a> NodeEditorPanel<'a> {
                 [egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)],
                 egui::Stroke::new(
                     1.0,
-                    if row_idx % 5 == 0 {
+                    if row_idx.is_multiple_of(5) {
                         grid_color_major
                     } else {
                         grid_color_minor
